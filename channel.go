@@ -63,7 +63,7 @@ func (ck channelKV) execRetrieve(ctx context.Context, q query) error {
 		return newSimpleError(ErrInvalidQuery, "no channel PKs provided to retrieve query")
 	}
 	if len(pks) > 1 {
-		return newSimpleError(ErrInvalidQuery, "retrieve query only supports one channel PK")
+		return newSimpleError(ErrInvalidQuery, "retrieve query only supports one channel ChannelPK")
 	}
 	c, err := ck.get(pks[0])
 	setQueryRecord[Channel](q, c)

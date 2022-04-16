@@ -133,7 +133,7 @@ type Delete struct {
 	query
 }
 
-// |||||| CHANNEL PK ||||||
+// |||||| CHANNEL ChannelPK ||||||
 
 func setChannelPKs(q query, pks ...PK) {
 	q.set(channelPKOptKey, pks)

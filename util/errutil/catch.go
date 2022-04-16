@@ -1,7 +1,7 @@
 package errutil
 
 import (
-	"encoding/binary"
+	"caesium/util/binary"
 	"io"
 )
 
@@ -18,7 +18,7 @@ func (c *CatchWrite) Write(data interface{}) {
 	if c.e != nil {
 		return
 	}
-	if err := binary.Write(c.w, binary.LittleEndian, data); err != nil {
+	if err := binary.Write(c.w, data); err != nil {
 		c.e = err
 	}
 }
@@ -40,7 +40,7 @@ func (c *CatchRead) Read(data interface{}) {
 	if c.e != nil {
 		return
 	}
-	if err := binary.Read(c.w, binary.LittleEndian, data); err != nil {
+	if err := binary.Read(c.w, data); err != nil {
 		c.e = err
 	}
 }
