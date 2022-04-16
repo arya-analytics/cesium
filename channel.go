@@ -1,16 +1,14 @@
-package channel
+package caesium
 
 import (
-	"caesium/pk"
-	"caesium/telem"
 	"caesium/util/errutil"
 	"io"
 )
 
 type Channel struct {
-	PK       pk.PK
-	DataRate telem.DataRate
-	Density  telem.Density
+	PK       PK
+	DataRate DataRate
+	Density  Density
 }
 
 func (c Channel) Flush(w io.Writer) error {

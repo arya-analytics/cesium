@@ -2,7 +2,6 @@ package caesium
 
 import (
 	"caesium/kv"
-	"caesium/query"
 	"github.com/cockroachdb/pebble"
 	"path/filepath"
 )
@@ -10,11 +9,11 @@ import (
 // |||| DB ||||
 
 type DB interface {
-	NewCreate() query.Create
-	NewRetrieve() query.Retrieve
-	NewDelete() query.Delete
-	NewCreateChannel() query.CreateChannel
-	NewRetrieveChannel() query.RetrieveChannel
+	NewCreate() Create
+	NewRetrieve() Retrieve
+	NewDelete() Delete
+	NewCreateChannel() CreateChannel
+	NewRetrieveChannel() RetrieveChannel
 	Close() error
 }
 
@@ -33,24 +32,24 @@ type db struct {
 	kve     kv.Engine
 }
 
-func (d *db) NewCreate() query.Create {
-	return query.NewCreate(d.kve)
+func (d *db) NewCreate() Create {
+	return newCreate()
 }
 
-func (d *db) NewRetrieve() query.Retrieve {
-	return query.NewRetrieve()
+func (d *db) NewRetrieve() Retrieve {
+	return newRetrieve()
 }
 
-func (d *db) NewDelete() query.Delete {
-	return query.NewDelete()
+func (d *db) NewDelete() Delete {
+	return newDelete()
 }
 
-func (d *db) NewCreateChannel() query.CreateChannel {
-	return query.NewCreateChannel(d.kve)
+func (d *db) NewCreateChannel() CreateChannel {
+	return newCreateChannel()
 }
 
-func (d *db) NewRetrieveChannel() query.RetrieveChannel {
-	return query.NewRetrieveChannel(d.kve)
+func (d *db) NewRetrieveChannel() RetrieveChannel {
+	return newRetrieveChannel()
 }
 
 func (d *db) Close() error {
