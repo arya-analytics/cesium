@@ -1,8 +1,7 @@
-package keyfs_test
+package caesium_test
 
 import (
-	"caesium/persist/keyfs"
-	"caesium/pk"
+	"caesium"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"io/ioutil"
@@ -10,10 +9,10 @@ import (
 )
 
 var _ = Describe("Flyfs", func() {
-	Describe("File lock", func() {
-		It("Should l and release the file without error", func() {
-			fs := keyfs.New(keyfs.NewOSFileSource("testdata"))
-			fpk := pk.New()
+	Describe("KeyFile lock", func() {
+		It("Should l and Release the KeyFile without error", func() {
+			fs := caesium.NewKFS(caesium.NewOS("testdata"))
+			fpk := caesium.NewPK()
 			_, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
 			fs.Release(fpk)
@@ -22,9 +21,9 @@ var _ = Describe("Flyfs", func() {
 			fs.Release(fpk)
 			Expect(fs.Delete(fpk)).To(Succeed())
 		})
-		It("Should allow two goroutines to acquire and write to a file concurrently", func() {
-			fs := keyfs.New(keyfs.NewOSFileSource("testdata"))
-			fpk := pk.New()
+		It("Should allow two goroutines to Acquire and write to a KeyFile concurrently", func() {
+			fs := caesium.NewKFS(caesium.NewOS("testdata"))
+			fpk := caesium.NewPK()
 			wg := sync.WaitGroup{}
 			wg.Add(2)
 			go func() {
@@ -58,9 +57,9 @@ var _ = Describe("Flyfs", func() {
 		})
 	})
 	Describe("Delete", func() {
-		It("Should allow the caller to delete the file twice", func() {
-			fs := keyfs.New(keyfs.NewOSFileSource("testdata"))
-			fpk := pk.New()
+		It("Should allow the caller to Delete the KeyFile twice", func() {
+			fs := caesium.NewKFS(caesium.NewOS("testdata"))
+			fpk := caesium.NewPK()
 			_, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
 			fs.Release(fpk)
@@ -69,9 +68,9 @@ var _ = Describe("Flyfs", func() {
 		})
 	})
 	Describe("Create", func() {
-		It("Should allow for hundreds of concurrent writes to the file", func() {
-			fs := keyfs.New(keyfs.NewOSFileSource("testdata"))
-			fpk := pk.New()
+		It("Should allow for hundreds of concurrent writes to the KeyFile", func() {
+			fs := caesium.NewKFS(caesium.NewOS("testdata"))
+			fpk := caesium.NewPK()
 			wg := sync.WaitGroup{}
 			wg.Add(50)
 			var expResBytes []byte

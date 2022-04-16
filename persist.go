@@ -1,8 +1,6 @@
-package persist
+package caesium
 
 import (
-	"caesium/persist/keyfs"
-	"caesium/pk"
 	"context"
 	"encoding/binary"
 	"golang.org/x/sync/semaphore"
@@ -10,11 +8,9 @@ import (
 	"sync"
 )
 
-type Segment struct{}
-
 type Operation interface {
-	FileKey() pk.PK
-	Exec(ctx context.Context, f keyfs.File) error
+	FileKey() PK
+	Exec(ctx context.Context, f KeyFile) error
 }
 
 type Persist interface {
@@ -23,10 +19,10 @@ type Persist interface {
 
 type persist struct {
 	sem *semaphore.Weighted
-	kfs keyfs.FS
+	kfs *KFS
 }
 
-func New(kfs keyfs.FS) Persist {
+func newPersist(kfs *KFS) Persist {
 	return persist{sem: semaphore.NewWeighted(50), kfs: kfs}
 }
 

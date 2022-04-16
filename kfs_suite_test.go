@@ -1,4 +1,4 @@
-package keyfs_test
+package caesium_test
 
 import (
 	"testing"

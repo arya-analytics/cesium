@@ -232,7 +232,7 @@ func setStream[T any](q query, s stream[T]) {
 	q.set(streamOptKey, s)
 }
 
-func getStream[T](q query) stream[T] {
+func getStream[T any](q query) stream[T] {
 	s, ok := getOpt[stream[T]](q, streamOptKey)
 	if !ok {
 		return stream[T]{}
@@ -250,7 +250,7 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, error) {
 }
 
 func (c Create) Errors() <-chan error {
-	return getStream(c.query).errors
+	return getStream[Channel](c.query).errors
 }
 
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {

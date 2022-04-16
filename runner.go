@@ -1,7 +1,6 @@
 package caesium
 
 import (
-	"caesium/persist/keyfs"
 	"context"
 )
 
@@ -11,7 +10,7 @@ type runner struct {
 
 type operation interface {
 	fileKey() PK
-	exec(ctx context.Context, f keyfs.File) error
+	exec(ctx context.Context, f KeyFile) error
 }
 
 func (r *runner) exec(ctx context.Context, q query) error {
