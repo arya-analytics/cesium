@@ -23,37 +23,37 @@ func New(dirname string, opts ...Option) (DB, error) {
 		return nil, err
 	}
 	kve := kv.PebbleEngine{DB: pdb}
-	return &db{dirname: dirname, opts: newOptions(opts...), kve: kve}, nil
+	return &db{dirname: dirname, opts: newOptions(opts...), runner: &runner{kve: kve}}, nil
 }
 
 type db struct {
 	dirname string
 	opts    *options
-	kve     kv.Engine
+	runner  *runner
 }
 
 func (d *db) NewCreate() Create {
-	return newCreate()
+	return newCreate(d.runner)
 }
 
 func (d *db) NewRetrieve() Retrieve {
-	return newRetrieve()
+	return newRetrieve(d.runner)
 }
 
 func (d *db) NewDelete() Delete {
-	return newDelete()
+	return newDelete(d.runner)
 }
 
 func (d *db) NewCreateChannel() CreateChannel {
-	return newCreateChannel()
+	return newCreateChannel(d.runner)
 }
 
 func (d *db) NewRetrieveChannel() RetrieveChannel {
-	return newRetrieveChannel()
+	return newRetrieveChannel(d.runner)
 }
 
 func (d *db) Close() error {
-	return d.kve.Close()
+	return d.runner.close()
 }
 
 // |||| OPTIONS ||||

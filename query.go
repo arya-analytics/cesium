@@ -4,47 +4,84 @@ import "context"
 
 // |||||| QUERY |||||||
 
-type optKey string
+type queryOptKey byte
+
+const (
+	channelPKOptKey queryOptKey = iota + 1
+	timeRangeOptKey
+	dataRateOptKey
+	densityOptKey
+	streamOptKey
+)
 
 type query struct {
-	opts map[optKey]interface{}
+	runner  queryRunner
+	variant interface{}
+	opts    map[queryOptKey]interface{}
 }
 
-func (q query) retrieve(key optKey) (interface{}, bool) {
+type queryRunner interface {
+	exec(ctx context.Context, q query) error
+}
+
+func (q query) retrieve(key queryOptKey) (interface{}, bool) {
 	o, ok := q.opts[key]
 	return o, ok
 }
 
-func (q query) set(key optKey, value interface{}) {
+func (q query) set(key queryOptKey, value interface{}) {
 	q.opts[key] = value
+}
+
+func (q query) switchVariant(ops struct {
+	CreateChannel   func(query)
+	RetrieveChannel func(query)
+	Create          func(query)
+	Retrieve        func(query)
+	Delete          func(query)
+}) {
+	switch q.variant.(type) {
+	case CreateChannel:
+		ops.CreateChannel(q)
+	case RetrieveChannel:
+		ops.RetrieveChannel(q)
+	case Create:
+		ops.Create(q)
+	case Retrieve:
+		ops.Retrieve(q)
+	case Delete:
+		ops.Delete(q)
+	}
 }
 
 // |||||| CONSTRUCTORS |||||||
 
-func newQuery() query {
+func newQuery(variant interface{}, exec queryRunner) query {
 	return query{
-		opts: make(map[optKey]interface{}),
+		variant: variant,
+		opts:    make(map[queryOptKey]interface{}),
+		runner:  exec,
 	}
 }
 
-func newCreateChannel() CreateChannel {
-	return CreateChannel{query: newQuery()}
+func newCreateChannel(exec queryRunner) CreateChannel {
+	return CreateChannel{query: newQuery(CreateChannel{}, exec)}
 }
 
-func newRetrieveChannel() RetrieveChannel {
-	return RetrieveChannel{query: newQuery()}
+func newRetrieveChannel(exec queryRunner) RetrieveChannel {
+	return RetrieveChannel{query: newQuery(RetrieveChannel{}, exec)}
 }
 
-func newDelete() Delete {
-	return Delete{query: newQuery()}
+func newCreate(exec queryRunner) Create {
+	return Create{query: newQuery(Create{}, exec)}
 }
 
-func newCreate() Create {
-	return Create{query: newQuery()}
+func newRetrieve(exec queryRunner) Retrieve {
+	return Retrieve{query: newQuery(Retrieve{}, exec)}
 }
 
-func newRetrieve() Retrieve {
-	return Retrieve{query: newQuery()}
+func newDelete(exec queryRunner) Delete {
+	return Delete{query: newQuery(Delete{}, exec)}
 }
 
 // |||||| TYPE DEFINITIONS ||||||
@@ -84,13 +121,11 @@ type Delete struct {
 
 // |||||| CHANNEL PK ||||||
 
-const channelPKOptKey optKey = "pk"
-
 func setChannelPKs(q query, pks ...PK) {
 	q.set(channelPKOptKey, pks)
 }
 
-func ChannelPKs(q query) []PK {
+func channelPKs(q query) []PK {
 	pks, ok := getOpt[[]PK](q, channelPKOptKey)
 	if !ok {
 		return []PK{}
@@ -98,7 +133,7 @@ func ChannelPKs(q query) []PK {
 	return pks
 }
 
-func getOpt[T any](q query, k optKey) (T, bool) {
+func getOpt[T any](q query, k queryOptKey) (T, bool) {
 	opt, ok := q.retrieve(k)
 	ro, ok := opt.(T)
 	return ro, ok
@@ -125,8 +160,6 @@ func (d Delete) WhereChannels(pks ...PK) Delete {
 }
 
 // |||||| TIME RANGE ||||||
-
-const timeRangeOptKey optKey = "tr"
 
 func setTimeRange(q query, tr TimeRange) {
 	q.set(timeRangeOptKey, tr)
@@ -159,27 +192,49 @@ func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 	return Channel{}, nil
 }
 
+type stream[T any] struct {
+	values chan T
+	errors chan error
+}
+
+func setStream[T any](q query, s stream[T]) {
+	q.set(streamOptKey, s)
+}
+
+func getStream[T](q query) stream[T] {
+	s, ok := getOpt[stream[T]](q, streamOptKey)
+	if !ok {
+		return stream[T]{}
+	}
+	return s
+}
+
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, error) {
-	return nil, nil
+	s := stream[CreateRequest]{
+		values: make(chan CreateRequest),
+		errors: make(chan error),
+	}
+	setStream(c.query, s)
+	return s.values, c.runner.exec(ctx, c.query)
 }
 
-func (c Create) Errors() <-chan CreateResponse {
-	return nil
+func (c Create) Errors() <-chan error {
+	return getStream(c.query).errors
 }
 
-func (r Retrieve) Stream(ctx context.Context) <-chan RetrieveResponse {
-	return nil
+func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
+	s := stream[RetrieveResponse]{values: make(chan RetrieveResponse)}
+	setStream(r.query, s)
+	return s.values, r.runner.exec(ctx, r.query)
 }
 
 func (d Delete) Exec(ctx context.Context) error {
-	return nil
+	return d.runner.exec(ctx, d.query)
 }
 
 // |||||| CREATE CHANNEL OPTIONS ||||||
 
 // |||| DATA RATE ||||
-
-const dataRateOptKey optKey = "dr"
 
 func setDataRate(q query, dr DataRate) {
 	q.set(dataRateOptKey, dr)
@@ -197,8 +252,6 @@ func (c CreateChannel) WithDataRate(dr DataRate) CreateChannel {
 }
 
 // |||| DENSITY ||||
-
-const densityOptKey optKey = "ds"
 
 func setDensity(q query, d Density) {
 	q.set(densityOptKey, d)
