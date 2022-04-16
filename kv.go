@@ -35,6 +35,11 @@ type flush[T any] interface {
 	fill(reader io.Reader) (T, error)
 }
 
+type flushAt[T any] interface {
+	flushAt(writer io.WriterAt, off int64) error
+	fillAt(reader io.ReaderAt, off int64) (T, error)
+}
+
 type flushKV[T any] struct {
 	kvEngine
 }

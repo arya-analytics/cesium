@@ -1,6 +1,9 @@
 package caesium
 
-import "context"
+import (
+	"context"
+	"go/types"
+)
 
 // |||||| QUERY |||||||
 
@@ -113,7 +116,11 @@ type CreateRequest struct {
 }
 
 type CreateResponse struct {
-	Error error
+	Err error
+}
+
+func (cr CreateResponse) Error() error {
+	return cr.Err
 }
 
 type Create struct {
@@ -122,7 +129,11 @@ type Create struct {
 
 type RetrieveResponse struct {
 	Segments []Segment
-	Error    error
+	Err      error
+}
+
+func (rr RetrieveResponse) Error() error {
+	return rr.Err
 }
 
 type Retrieve struct {
@@ -145,6 +156,17 @@ func channelPKs(q query) []PK {
 		return []PK{}
 	}
 	return pks
+}
+
+func channelPK(q query) (PK, error) {
+	pks := channelPKs(q)
+	if len(pks) == 0 {
+		return PK{}, newSimpleError(ErrInvalidQuery, "no channel PKs provided to retrieve query")
+	}
+	if len(pks) > 1 {
+		return PK{}, newSimpleError(ErrInvalidQuery, "query only supports on channel pk")
+	}
+	return pks[0], nil
 }
 
 func getOpt[T any](q query, k queryOptKey) (T, bool) {
@@ -223,40 +245,19 @@ func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 	return c, nil
 }
 
-type stream[T any] struct {
-	values chan T
-	errors chan error
-}
-
-func setStream[T any](q query, s stream[T]) {
-	q.set(streamOptKey, s)
-}
-
-func getStream[T any](q query) stream[T] {
-	s, ok := getOpt[stream[T]](q, streamOptKey)
-	if !ok {
-		return stream[T]{}
-	}
-	return s
-}
-
-func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, error) {
-	s := stream[CreateRequest]{
-		values: make(chan CreateRequest),
-		errors: make(chan error),
+func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
+	s := stream[CreateRequest, CreateResponse]{
+		req: make(chan CreateRequest),
+		res: make(chan CreateResponse),
 	}
 	setStream(c.query, s)
-	return s.values, c.runner.exec(ctx, c.query)
-}
-
-func (c Create) Errors() <-chan error {
-	return getStream[Channel](c.query).errors
+	return s.req, s.res, c.runner.exec(ctx, c.query)
 }
 
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
-	s := stream[RetrieveResponse]{values: make(chan RetrieveResponse)}
-	setStream(r.query, s)
-	return s.values, r.runner.exec(ctx, r.query)
+	s := stream[types.Nil, RetrieveResponse]{res: make(chan RetrieveResponse)}
+	setStream[types.Nil, RetrieveResponse](r.query, s)
+	return s.res, r.runner.exec(ctx, r.query)
 }
 
 func (d Delete) Exec(ctx context.Context) error {

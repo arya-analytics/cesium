@@ -5,7 +5,7 @@ package caesium
 import "strconv"
 
 func _() {
-	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// An "invalid array index" compiler Error signifies that the constant req have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[ErrUnknown-0]

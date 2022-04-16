@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("CreateChannel", func() {
+var _ = FDescribe("CreateChannel", func() {
 	var db caesium.DB
 	BeforeEach(func() {
 		var err error

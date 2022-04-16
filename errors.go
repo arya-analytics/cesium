@@ -13,7 +13,7 @@ func (e Error) Error() string {
 	if e.Base != nil {
 		return e.Base.Error()
 	}
-	return "caesium - no error message"
+	return "caesium - no Error message"
 }
 
 //go:generate stringer --type=ErrorType --output=errors_string.go
@@ -23,6 +23,7 @@ const (
 	ErrUnknown ErrorType = iota
 	ErrInternal
 	ErrInvalidQuery
+	ErrChannelLock
 )
 
 func newDerivedError(t ErrorType, base error) error {

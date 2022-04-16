@@ -10,7 +10,7 @@ import (
 
 var _ = Describe("Flyfs", func() {
 	Describe("KeyFile lock", func() {
-		It("Should l and Release the KeyFile without error", func() {
+		It("Should l and Release the KeyFile without Error", func() {
 			fs := caesium.NewKFS(caesium.NewOS("testdata"))
 			fpk := caesium.NewPK()
 			_, err := fs.Acquire(fpk)

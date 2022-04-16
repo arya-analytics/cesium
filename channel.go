@@ -10,6 +10,7 @@ type Channel struct {
 	PK       PK
 	DataRate DataRate
 	Density  Density
+	Active   bool
 }
 
 func (c Channel) flush(w io.Writer) error {
@@ -50,6 +51,27 @@ func (ck channelKV) set(pk PK, c Channel) error {
 	return ck.flush.flush(ck.prefix.pk(pk), c)
 }
 
+func (ck channelKV) lock(pk PK) error {
+	c, err := ck.get(pk)
+	if err != nil {
+		return err
+	}
+	if c.Active {
+		return newSimpleError(ErrChannelLock, "channel is already locked")
+	}
+	c.Active = true
+	return ck.set(pk, c)
+}
+
+func (ck channelKV) unlock(pk PK) error {
+	c, err := ck.get(pk)
+	if err != nil {
+		return err
+	}
+	c.Active = false
+	return ck.set(pk, c)
+}
+
 func (ck channelKV) exec(ctx context.Context, q query) error {
 	return q.switchVariant(ctx, variantOpts{
 		CreateChannel:   ck.execCreate,
@@ -58,14 +80,11 @@ func (ck channelKV) exec(ctx context.Context, q query) error {
 }
 
 func (ck channelKV) execRetrieve(ctx context.Context, q query) error {
-	pks := channelPKs(q)
-	if len(pks) == 0 {
-		return newSimpleError(ErrInvalidQuery, "no channel PKs provided to retrieve query")
+	cpk, err := channelPK(q)
+	if err != nil {
+		return err
 	}
-	if len(pks) > 1 {
-		return newSimpleError(ErrInvalidQuery, "retrieve query only supports one channel ChannelPK")
-	}
-	c, err := ck.get(pks[0])
+	c, err := ck.get(cpk)
 	setQueryRecord[Channel](q, c)
 	return err
 }

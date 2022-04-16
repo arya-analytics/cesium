@@ -25,7 +25,7 @@ func New(dirname string, opts ...Option) (DB, error) {
 	return &db{
 		dirname: dirname,
 		opts:    newOptions(opts...),
-		runner:  &runner{ckv: newChannelKV(kve)},
+		runner:  &runner{ckv: newChannelKV(kve), kve: kve},
 	}, nil
 }
 

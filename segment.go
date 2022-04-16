@@ -10,7 +10,7 @@ import (
 
 type Segment struct {
 	segmentHeader
-	segmentData
+	Data SegmentData
 }
 
 // |||||| HEADER ||||||
@@ -23,33 +23,31 @@ type segmentHeader struct {
 }
 
 func (sg segmentHeader) flush(w io.Writer) error {
-	cw := errutil.NewCatchWrite(w)
-	cw.Write(&sg.ChannelPK)
-	cw.Write(&sg.Start)
-	cw.Write(&sg.Size)
-	return cw.Error()
+	c := errutil.NewCatchWrite(w)
+	c.Write(&sg.ChannelPK)
+	c.Write(&sg.Start)
+	c.Write(&sg.Size)
+	return c.Error()
 }
 
 func (sg segmentHeader) fill(r io.Reader) (segmentHeader, error) {
-	cr := errutil.NewCatchRead(r)
-	cr.Read(&sg.ChannelPK)
-	cr.Read(&sg.Start)
-	cr.Read(&sg.Size)
-	return sg, cr.Error()
+	c := errutil.NewCatchRead(r)
+	c.Read(&sg.ChannelPK)
+	c.Read(&sg.Start)
+	c.Read(&sg.Size)
+	return sg, c.Error()
 }
 
 // |||||| DATA ||||||
 
-type segmentData struct {
-	Data []byte
+type SegmentData []byte
+
+func (sg SegmentData) flush(w io.Writer) error {
+	return binary.Write(w, sg)
 }
 
-func (sg segmentData) flush(w io.Writer) error {
-	return binary.Write(w, sg.Data)
-}
-
-func (sg segmentData) fill(r io.Reader) (segmentData, error) {
-	return sg, binary.Read(r, &sg.Data)
+func (sg SegmentData) fill(r io.Reader) (SegmentData, error) {
+	return sg, binary.Read(r, sg)
 }
 
 // |||||| KV ||||||
@@ -59,9 +57,11 @@ type segmentKV struct {
 	flush  flushKV[segmentHeader]
 }
 
+const segmentKVPrefix = "seg"
+
 func newSegmentKV(kve kvEngine) segmentKV {
 	return segmentKV{
-		prefix: kvPrefix{[]byte("seg")},
+		prefix: kvPrefix{[]byte(segmentKVPrefix)},
 		flush:  flushKV[segmentHeader]{kve},
 	}
 }
