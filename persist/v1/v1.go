@@ -17,7 +17,7 @@ type Segment struct {
 	Data      []byte
 }
 
-func (s Segment) Flush(w io.Writer) error {
+func (s Segment) flush(w io.Writer) error {
 	c := errutil.NewCatchWrite(w)
 	c.Write(s.ChannelPK)
 	c.Write(s.Size)
@@ -103,7 +103,7 @@ func (c *Create) FileKey() pk.PK {
 
 func (c *Create) Exec(ctx context.Context, f keyfs.File) error {
 	for _, segment := range c.Segments {
-		if err := segment.Flush(f); err != nil {
+		if err := segment.flush(f); err != nil {
 			return err
 		}
 	}

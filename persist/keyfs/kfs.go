@@ -1,6 +1,7 @@
 package keyfs
 
 import (
+	"caesium"
 	"caesium/pk"
 	"io"
 	"sync"
@@ -9,7 +10,7 @@ import (
 // |||| FS |||||
 
 type File interface {
-	PK() pk.PK
+	PK() caesium.PK
 	io.ReaderAt
 	io.Reader
 	io.Seeker

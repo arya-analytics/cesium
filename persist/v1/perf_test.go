@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("Perf", func() {
-	Describe("Segment Flush", func() {
+	Describe("Segment flush", func() {
 		It("Should write to disk quickly", func() {
 			fs := keyfs.New(keyfs.NewOSFileSource("testdata"))
 			fpk := pk.New()
@@ -28,7 +28,7 @@ var _ = Describe("Perf", func() {
 			f, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
 			testutil.RunDurationExp("io_write", 100, func() {
-				Expect(s.Flush(f)).To(Succeed())
+				Expect(s.flush(f)).To(Succeed())
 			})
 			fs.Release(fpk)
 			Expect(fs.Delete(fpk)).To(Succeed())
@@ -48,7 +48,7 @@ var _ = Describe("Perf", func() {
 			}
 			f, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(s.Flush(f)).To(Succeed())
+			Expect(s.flush(f)).To(Succeed())
 			testutil.RunDurationExp("io_read", 1000, func() {
 				r := &v1.Retrieve{
 					ChannelPK: cpk,

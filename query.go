@@ -12,6 +12,7 @@ const (
 	dataRateOptKey
 	densityOptKey
 	streamOptKey
+	recordOptKey
 )
 
 type query struct {
@@ -33,25 +34,38 @@ func (q query) set(key queryOptKey, value interface{}) {
 	q.opts[key] = value
 }
 
-func (q query) switchVariant(ops struct {
-	CreateChannel   func(query)
-	RetrieveChannel func(query)
-	Create          func(query)
-	Retrieve        func(query)
-	Delete          func(query)
-}) {
+type execFunc func(ctx context.Context, q query) error
+
+type variantOpts struct {
+	CreateChannel   execFunc
+	RetrieveChannel execFunc
+	Create          execFunc
+	Retrieve        execFunc
+	Delete          execFunc
+}
+
+func (q query) switchVariant(ctx context.Context, ops variantOpts) error {
 	switch q.variant.(type) {
 	case CreateChannel:
-		ops.CreateChannel(q)
+		return q.runVariant(ctx, ops.CreateChannel)
 	case RetrieveChannel:
-		ops.RetrieveChannel(q)
+		return q.runVariant(ctx, ops.RetrieveChannel)
 	case Create:
-		ops.Create(q)
+		return q.runVariant(ctx, ops.Create)
 	case Retrieve:
-		ops.Retrieve(q)
+		return q.runVariant(ctx, ops.Retrieve)
 	case Delete:
-		ops.Delete(q)
+		return q.runVariant(ctx, ops.Delete)
 	}
+	panic("invalid query variant received")
+}
+
+func (q query) runVariant(ctx context.Context, e execFunc) error {
+	if e == nil {
+		panic("received unknown variant")
+	}
+	return e(ctx, q)
+
 }
 
 // |||||| CONSTRUCTORS |||||||
@@ -182,14 +196,31 @@ func (d Delete) WhereTimeRange(tr TimeRange) Delete {
 	return d
 }
 
-func (c CreateChannel) Exec(ctx context.Context) (Channel, error) {
-	return Channel{}, nil
+// |||||| EXEC ||||||
+
+func setQueryRecord[T any](q query, r T) {
+	q.set(recordOptKey, r)
 }
 
-// |||||| RETRIEVE CHANNEL ||||||
+func queryRecord[T any](q query) (T, bool) {
+	r, ok := getOpt[T](q, recordOptKey)
+	return r, ok
+}
+
+func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
+	if err := cc.runner.exec(ctx, cc.query); err != nil {
+		return Channel{}, err
+	}
+	c, _ := queryRecord[Channel](cc.query)
+	return c, nil
+}
 
 func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
-	return Channel{}, nil
+	if err := r.runner.exec(ctx, r.query); err != nil {
+		return Channel{}, err
+	}
+	c, _ := queryRecord[Channel](r.query)
+	return c, nil
 }
 
 type stream[T any] struct {
@@ -246,9 +277,9 @@ func dataRate(q query) (DataRate, bool) {
 
 }
 
-func (c CreateChannel) WithDataRate(dr DataRate) CreateChannel {
-	setDataRate(c.query, dr)
-	return c
+func (cc CreateChannel) WithDataRate(dr DataRate) CreateChannel {
+	setDataRate(cc.query, dr)
+	return cc
 }
 
 // |||| DENSITY ||||
@@ -262,7 +293,7 @@ func density(q query) (Density, bool) {
 	return d, ok
 }
 
-func (c CreateChannel) WithDensity(density Density) CreateChannel {
-	setDensity(c.query, density)
-	return c
+func (cc CreateChannel) WithDensity(density Density) CreateChannel {
+	setDensity(cc.query, density)
+	return cc
 }

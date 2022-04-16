@@ -1,7 +1,6 @@
 package caesium
 
 import (
-	"caesium/kv"
 	"github.com/cockroachdb/pebble"
 	"path/filepath"
 )
@@ -22,8 +21,12 @@ func New(dirname string, opts ...Option) (DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	kve := kv.PebbleEngine{DB: pdb}
-	return &db{dirname: dirname, opts: newOptions(opts...), runner: &runner{kve: kve}}, nil
+	kve := pebbleKV{DB: pdb}
+	return &db{
+		dirname: dirname,
+		opts:    newOptions(opts...),
+		runner:  &runner{ckv: newChannelKV(kve)},
+	}, nil
 }
 
 type db struct {
