@@ -30,25 +30,35 @@ func (c Channel) fill(r io.Reader) (Channel, error) {
 }
 
 type channelKV struct {
-	prefix kvPrefix
-	flush  flushKV[Channel]
+	flush flushKV[Channel]
 }
 
 const channelKVPrefix = "chan"
 
 func newChannelKV(kve kvEngine) channelKV {
 	return channelKV{
-		prefix: kvPrefix{[]byte(channelKVPrefix)},
-		flush:  flushKV[Channel]{kve},
+		flush: flushKV[Channel]{kve},
 	}
 }
 
+func generateChannelKey(pk PK) ([]byte, error) {
+	return generateKey(channelKVPrefix, pk)
+}
+
 func (ck channelKV) get(pk PK) (c Channel, err error) {
-	return ck.flush.fill(ck.prefix.pk(pk), c)
+	key, err := generateChannelKey(pk)
+	if err != nil {
+		return c, err
+	}
+	return ck.flush.fill(key, c)
 }
 
 func (ck channelKV) set(pk PK, c Channel) error {
-	return ck.flush.flush(ck.prefix.pk(pk), c)
+	key, err := generateChannelKey(pk)
+	if err != nil {
+		return err
+	}
+	return ck.flush.flush(key, c)
 }
 
 func (ck channelKV) lock(pk PK) error {

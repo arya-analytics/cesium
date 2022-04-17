@@ -31,3 +31,25 @@ func (pe pebbleKV) Delete(key []byte) error {
 func (pe pebbleKV) Close() error {
 	return pe.DB.Close()
 }
+
+func (pe pebbleKV) IterPrefix(prefix []byte) kvIterator {
+	keyUpperBound := func(b []byte) []byte {
+		end := make([]byte, len(b))
+		copy(end, b)
+		for i := len(end) - 1; i >= 0; i-- {
+			end[i] = end[i] + 1
+			if end[i] != 0 {
+				return end[:i+1]
+			}
+		}
+		return nil // no upper-bound
+	}
+
+	prefixIterOptions := func(prefix []byte) *pebble.IterOptions {
+		return &pebble.IterOptions{
+			LowerBound: prefix,
+			UpperBound: keyUpperBound(prefix),
+		}
+	}
+	return pe.DB.NewIter(prefixIterOptions(prefix))
+}

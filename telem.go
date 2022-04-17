@@ -1,19 +1,40 @@
 package caesium
 
+import (
+	"encoding/binary"
+	"strconv"
+	"time"
+)
+
 // |||||| TIME STAMP ||||||
 
 type TimeStamp int64
 
-func (s TimeStamp) After(t TimeStamp) bool {
-	return s > t
+func (ts TimeStamp) String() string {
+	return time.UnixMicro(int64(ts)).String()
 }
 
-func (s TimeStamp) Before(t TimeStamp) bool {
-	return s < t
+var (
+	TimeStampMin = TimeStamp(0)
+	TimeStampMax = TimeStamp(^uint64(0) >> 1)
+)
+
+func (ts TimeStamp) Bytes() []byte {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(ts))
+	return b
 }
 
-func (s TimeStamp) Add(tspan TimeSpan) TimeStamp {
-	return TimeStamp(int64(s) + int64(tspan))
+func (ts TimeStamp) After(t TimeStamp) bool {
+	return ts > t
+}
+
+func (ts TimeStamp) Before(t TimeStamp) bool {
+	return ts < t
+}
+
+func (ts TimeStamp) Add(tspan TimeSpan) TimeStamp {
+	return TimeStamp(int64(ts) + int64(tspan))
 }
 
 // |||||| TIME RANGE ||||||
@@ -22,6 +43,18 @@ type TimeRange struct {
 	Start TimeStamp
 	End   TimeStamp
 }
+
+func (tr TimeRange) Span() TimeSpan {
+	return TimeSpan(tr.End - tr.Start)
+}
+
+func (tr TimeRange) IsZero() bool {
+	return tr.Span() == 0
+}
+
+var (
+	TimeRangeMax = TimeRange{Start: TimeStampMin, End: TimeStampMax}
+)
 
 // |||||| TIME SPAN ||||||
 
@@ -37,7 +70,15 @@ const (
 
 // |||||| SIZE ||||||
 
-type Size uint64
+type Size int64
+
+const (
+	Kilobytes Size = 1024
+)
+
+func (s Size) String() string {
+	return strconv.FormatInt(int64(s), 10)
+}
 
 // |||||| DATA RATE ||||||
 

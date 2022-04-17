@@ -119,8 +119,8 @@ type CreateResponse struct {
 	Err error
 }
 
-func (cr CreateResponse) Error() error {
-	return cr.Err
+func (c CreateResponse) Error() error {
+	return c.Err
 }
 
 type Create struct {
@@ -128,12 +128,12 @@ type Create struct {
 }
 
 type RetrieveResponse struct {
-	Segments []Segment
 	Err      error
+	Segments []Segment
 }
 
-func (rr RetrieveResponse) Error() error {
-	return rr.Err
+func (r RetrieveResponse) Error() error {
+	return r.Err
 }
 
 type Retrieve struct {
@@ -204,7 +204,7 @@ func setTimeRange(q query, tr TimeRange) {
 func timeRange(q query) TimeRange {
 	tr, ok := getOpt[TimeRange](q, timeRangeOptKey)
 	if !ok {
-		return TimeRange{}
+		return TimeRangeMax
 	}
 	return tr
 }

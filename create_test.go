@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var _ = FDescribe("Create", func() {
+var _ = Describe("Create", func() {
 	var (
 		db  caesium.DB
 		cpk caesium.PK

@@ -2,6 +2,8 @@ package caesium
 
 import (
 	"context"
+	"go/types"
+	"io"
 )
 
 type runner struct {
@@ -21,11 +23,55 @@ func (r *runner) exec(ctx context.Context, q query) error {
 		CreateChannel:   r.ckv.exec,
 		RetrieveChannel: r.ckv.exec,
 		Create:          r.create,
+		Retrieve:        r.retrieve,
 	})
 }
 
 func (r *runner) close() error {
 	return r.kve.Close()
+}
+
+func (r *runner) retrieve(ctx context.Context, q query) error {
+	cpk, err := channelPK(q)
+	if err != nil {
+		return err
+	}
+	tr := timeRange(q)
+
+	s := getStream[types.Nil, RetrieveResponse](q)
+
+	segments, err := r.skv.filter(tr, cpk)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for _, seg := range segments {
+			errs := r.pst.Exec(ctx, retrieveOperation{seg: &seg})
+			s.res <- RetrieveResponse{
+				Segments: []Segment{seg},
+				Err:      errs[0],
+			}
+		}
+		s.res <- RetrieveResponse{Err: io.EOF}
+	}()
+	return nil
+}
+
+type retrieveOperation struct {
+	seg *Segment
+}
+
+func (ro retrieveOperation) FileKey() PK {
+	return ro.seg.FilePK
+}
+
+func (ro retrieveOperation) Exec(ctx context.Context, f KeyFile) (err error) {
+	if _, err := f.Seek(ro.seg.Offset, io.SeekStart); err != nil {
+		return err
+	}
+	ro.seg.Data = make([]byte, ro.seg.Size)
+	ro.seg.Data, err = ro.seg.Data.fill(f)
+	return err
 }
 
 func (r *runner) create(ctx context.Context, q query) error {
@@ -51,7 +97,9 @@ func (r *runner) create(ctx context.Context, q query) error {
 			seg:     req.Segments,
 			kv:      r.skv,
 		})
-		return CreateResponse{Err: errs[0]}
+		c := CreateResponse{}
+		c.Err = errs[0]
+		return c
 	})
 	return nil
 }
@@ -69,13 +117,18 @@ func (cr createOperation) FileKey() PK {
 
 func (cr createOperation) Exec(ctx context.Context, f KeyFile) error {
 	for _, s := range cr.seg {
-		pk := NewPK()
 		s.FilePK = f.PK()
 		s.ChannelPK = cr.cpk
-		if err := cr.kv.set(pk, s); err != nil {
+		s.Size = s.Data.Size()
+		if err := s.Data.flush(f); err != nil {
 			return err
 		}
-		if err := s.Data.flush(f); err != nil {
+		ret, err := f.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+		s.Offset = ret
+		if err := cr.kv.set(s); err != nil {
 			return err
 		}
 	}

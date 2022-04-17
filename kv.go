@@ -2,6 +2,7 @@ package caesium
 
 import (
 	"bytes"
+	"caesium/util/errutil"
 	"io"
 )
 
@@ -10,22 +11,34 @@ import (
 type kvEngine interface {
 	Set(key []byte, value []byte) error
 	Get(key []byte) ([]byte, error)
+	IterPrefix(prefix []byte) kvIterator
 	Delete(key []byte) error
+	Close() error
+}
+
+type kvIterator interface {
+	First() bool
+	Next() bool
+	Key() []byte
+	Valid() bool
+	Value() []byte
 	Close() error
 }
 
 // |||||| PREFIX ||||||
 
-type kvPrefix struct {
-	prefix []byte
-}
-
-func (p kvPrefix) key(key []byte) []byte {
-	return bytes.Join([][]byte{p.prefix, key}, nil)
-}
-
-func (p kvPrefix) pk(pk PK) []byte {
-	return p.key(pk.Bytes())
+func generateKey(elems ...interface{}) ([]byte, error) {
+	b := new(bytes.Buffer)
+	cw := errutil.NewCatchWrite(b)
+	for _, e := range elems {
+		switch e.(type) {
+		case string:
+			cw.Write([]byte(e.(string)))
+		default:
+			cw.Write(e)
+		}
+	}
+	return b.Bytes(), cw.Error()
 }
 
 // |||||| FLUSH ||||||
