@@ -1,8 +1,8 @@
-package caesium_test
+package cesium_test
 
 import (
-	"caesium"
-	"caesium/util/testutil"
+	"cesium"
+	"cesium/util/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"time"
@@ -10,16 +10,16 @@ import (
 
 var _ = Describe("Create", func() {
 	var (
-		db  caesium.DB
-		cpk caesium.PK
+		db  cesium.DB
+		cpk cesium.PK
 	)
 	BeforeEach(func() {
 		var err error
-		db, err = caesium.Open("testdata")
+		db, err = cesium.Open("testdata")
 		Expect(err).ToNot(HaveOccurred())
 		c, err := db.NewCreateChannel().
-			WithRate(caesium.Hz1).
-			WithType(caesium.Float64).
+			WithRate(cesium.Hz1).
+			WithType(cesium.Float64).
 			Exec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		cpk = c.PK
@@ -34,16 +34,16 @@ var _ = Describe("Create", func() {
 			defer GinkgoRecover()
 			Expect((<-res).Err).ToNot(HaveOccurred())
 		}()
-		ts := caesium.TimeStamp(0)
+		ts := cesium.TimeStamp(0)
 		for i := 0; i < 10; i++ {
-			req <- caesium.CreateRequest{
-				Segments: []caesium.Segment{
+			req <- cesium.CreateRequest{
+				Segments: []cesium.Segment{
 					{
 						Start: ts,
 						Data:  testutil.RandomFloat64Segment(100),
 					},
 					{
-						Start: ts.Add(100 * caesium.Second),
+						Start: ts.Add(100 * cesium.Second),
 						Data:  testutil.RandomFloat64Segment(100),
 					},
 				},

@@ -1,4 +1,4 @@
-package caesium
+package cesium
 
 import (
 	"github.com/google/uuid"

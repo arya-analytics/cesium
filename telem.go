@@ -1,4 +1,4 @@
-package caesium
+package cesium
 
 import (
 	"encoding/binary"

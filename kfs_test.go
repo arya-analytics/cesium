@@ -1,7 +1,7 @@
-package caesium_test
+package cesium_test
 
 import (
-	"caesium"
+	"cesium"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"io/ioutil"
@@ -11,8 +11,8 @@ import (
 var _ = Describe("Flyfs", func() {
 	Describe("KeyFile lock", func() {
 		It("Should l and Release the KeyFile without Error", func() {
-			fs := caesium.NewKFS(caesium.NewOS("testdata"))
-			fpk := caesium.NewPK()
+			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+			fpk := cesium.NewPK()
 			_, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
 			fs.Release(fpk)
@@ -22,8 +22,8 @@ var _ = Describe("Flyfs", func() {
 			Expect(fs.Delete(fpk)).To(Succeed())
 		})
 		It("Should allow two goroutines to Acquire and write to a KeyFile concurrently", func() {
-			fs := caesium.NewKFS(caesium.NewOS("testdata"))
-			fpk := caesium.NewPK()
+			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+			fpk := cesium.NewPK()
 			wg := sync.WaitGroup{}
 			wg.Add(2)
 			go func() {
@@ -58,8 +58,8 @@ var _ = Describe("Flyfs", func() {
 	})
 	Describe("Delete", func() {
 		It("Should allow the caller to Delete the KeyFile twice", func() {
-			fs := caesium.NewKFS(caesium.NewOS("testdata"))
-			fpk := caesium.NewPK()
+			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+			fpk := cesium.NewPK()
 			_, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
 			fs.Release(fpk)
@@ -69,8 +69,8 @@ var _ = Describe("Flyfs", func() {
 	})
 	Describe("Create", func() {
 		It("Should allow for hundreds of concurrent writes to the KeyFile", func() {
-			fs := caesium.NewKFS(caesium.NewOS("testdata"))
-			fpk := caesium.NewPK()
+			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+			fpk := cesium.NewPK()
 			wg := sync.WaitGroup{}
 			wg.Add(50)
 			var expResBytes []byte

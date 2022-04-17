@@ -1,4 +1,4 @@
-package caesium_test
+package cesium_test
 
 import (
 	"context"

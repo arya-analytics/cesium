@@ -1,4 +1,4 @@
-package caesium
+package cesium
 
 type Error struct {
 	Type    ErrorType
@@ -13,7 +13,7 @@ func (e Error) Error() string {
 	if e.Base != nil {
 		return e.Base.Error()
 	}
-	return "caesium - no Error message"
+	return "cesium - no Error message"
 }
 
 //go:generate stringer --type=ErrorType --output=errors_string.go

@@ -1,28 +1,28 @@
-package caesium_test
+package cesium_test
 
 import (
-	"caesium/util/testutil"
+	"cesium/util/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"time"
 
-	"caesium"
+	"cesium"
 )
 
 var _ = Describe("Retrieve", func() {
 	var (
-		db  caesium.DB
-		cpk caesium.PK
+		db  cesium.DB
+		cpk cesium.PK
 	)
 	BeforeEach(func() {
 		var err error
-		db, err = caesium.Open("testdata")
+		db, err = cesium.Open("testdata")
 		Expect(err).ToNot(HaveOccurred())
 		c, err := db.NewCreateChannel().
-			WithRate(caesium.Hz1).
-			WithType(caesium.Float64).
+			WithRate(cesium.Hz1).
+			WithType(cesium.Float64).
 			Exec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		cpk = c.PK
@@ -39,12 +39,12 @@ var _ = Describe("Retrieve", func() {
 			Expect((<-res).Err).ToNot(HaveOccurred())
 		}()
 		for i := 0; i < 10; i++ {
-			sampleSpan := caesium.TimeSpan(nSamples) * caesium.Second
-			ts := caesium.TimeStamp(0).Add(
-				caesium.TimeSpan(i) * 2 * sampleSpan,
+			sampleSpan := cesium.TimeSpan(nSamples) * cesium.Second
+			ts := cesium.TimeStamp(0).Add(
+				cesium.TimeSpan(i) * 2 * sampleSpan,
 			)
-			req <- caesium.CreateRequest{
-				Segments: []caesium.Segment{
+			req <- cesium.CreateRequest{
+				Segments: []cesium.Segment{
 					{
 						Start: ts,
 						Data:  testutil.RandomFloat64Segment(nSamples),
@@ -59,9 +59,9 @@ var _ = Describe("Retrieve", func() {
 		time.Sleep(10 * time.Millisecond)
 
 		t0 := time.Now()
-		rResV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(caesium.TimeRange{
-			Start: caesium.TimeStamp(0),
-			End:   caesium.TimeStamp(200 * caesium.Second),
+		rResV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRange{
+			Start: cesium.TimeStamp(0),
+			End:   cesium.TimeStamp(200 * cesium.Second),
 		}).Stream(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		for resV := range rResV {

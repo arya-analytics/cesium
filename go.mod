@@ -1,4 +1,4 @@
-module caesium
+module cesium
 
 go 1.18
 

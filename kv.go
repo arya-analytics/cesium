@@ -1,8 +1,8 @@
-package caesium
+package cesium
 
 import (
 	"bytes"
-	"caesium/util/errutil"
+	"cesium/util/errutil"
 	"io"
 )
 

@@ -1,7 +1,7 @@
-package caesium
+package cesium
 
 import (
-	"caesium/util/errutil"
+	"cesium/util/errutil"
 	"context"
 	"io"
 )

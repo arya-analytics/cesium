@@ -1,4 +1,4 @@
-package caesium
+package cesium
 
 import (
 	"github.com/cockroachdb/pebble"
@@ -28,7 +28,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		runner: &runner{
 			ckv: newChannelKV(kve),
 			kve: kve,
-			pst: newPersist(NewKFS(NewOS(filepath.Join(dirname, "caesium")))),
+			pst: newPersist(NewKFS(NewOS(filepath.Join(dirname, "cesium")))),
 			skv: newSegmentKV(kve),
 		},
 	}, nil

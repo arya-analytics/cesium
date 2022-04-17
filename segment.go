@@ -1,9 +1,9 @@
-package caesium
+package cesium
 
 import (
 	"bytes"
-	"caesium/util/binary"
-	"caesium/util/errutil"
+	"cesium/util/binary"
+	"cesium/util/errutil"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -100,23 +100,20 @@ func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error)
 	}
 	iter := sk.flush.kvEngine.IterPrefix(p)
 	defer func(iter kvIterator) {
-		err := iter.Close()
-		if err != nil {
-			panic(err)
+		if err := iter.Close(); err != nil {
+			log.Errorf("Error closing iterator: %s", err)
 		}
 	}(iter)
 	for iter.First(); iter.Valid(); iter.Next() {
-		s := Segment{}
 		b := new(bytes.Buffer)
 		b.Write(iter.Value())
-		s, err := s.fill(b)
+		s, err := Segment{}.fill(b)
 		if err != nil {
 			return nil, err
 		}
 		if s.Start >= tr.Start && s.Start < tr.End {
 			segments = append(segments, s)
 		}
-		log.Info(s)
 	}
 	return segments, nil
 }

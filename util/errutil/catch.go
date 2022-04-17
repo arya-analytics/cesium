@@ -1,7 +1,7 @@
 package errutil
 
 import (
-	"caesium/util/binary"
+	"cesium/util/binary"
 	"io"
 )
 
