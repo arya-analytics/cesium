@@ -16,7 +16,7 @@ type DB interface {
 	Close() error
 }
 
-func New(dirname string, opts ...Option) (DB, error) {
+func Open(dirname string, opts ...Option) (DB, error) {
 	pdb, err := pebble.Open(filepath.Join(dirname, "db"), &pebble.Options{})
 	if err != nil {
 		return nil, err
@@ -25,7 +25,12 @@ func New(dirname string, opts ...Option) (DB, error) {
 	return &db{
 		dirname: dirname,
 		opts:    newOptions(opts...),
-		runner:  &runner{ckv: newChannelKV(kve), kve: kve},
+		runner: &runner{
+			ckv: newChannelKV(kve),
+			kve: kve,
+			pst: newPersist(NewKFS(NewOS(filepath.Join(dirname, "caesium")))),
+			skv: newSegmentKV(kve),
+		},
 	}, nil
 }
 

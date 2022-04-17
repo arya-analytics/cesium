@@ -9,20 +9,16 @@ import (
 // |||||| SEGMENT ||||||
 
 type Segment struct {
-	segmentHeader
-	Data SegmentData
-}
-
-// |||||| HEADER ||||||
-
-type segmentHeader struct {
 	ChannelPK PK
 	FilePK    PK
 	Start     TimeStamp
 	Size      Size
+	Data      SegmentData
 }
 
-func (sg segmentHeader) flush(w io.Writer) error {
+// |||||| HEADER ||||||
+
+func (sg Segment) flush(w io.Writer) error {
 	c := errutil.NewCatchWrite(w)
 	c.Write(&sg.ChannelPK)
 	c.Write(&sg.Start)
@@ -30,7 +26,7 @@ func (sg segmentHeader) flush(w io.Writer) error {
 	return c.Error()
 }
 
-func (sg segmentHeader) fill(r io.Reader) (segmentHeader, error) {
+func (sg Segment) fill(r io.Reader) (Segment, error) {
 	c := errutil.NewCatchRead(r)
 	c.Read(&sg.ChannelPK)
 	c.Read(&sg.Start)
@@ -54,7 +50,7 @@ func (sg SegmentData) fill(r io.Reader) (SegmentData, error) {
 
 type segmentKV struct {
 	prefix kvPrefix
-	flush  flushKV[segmentHeader]
+	flush  flushKV[Segment]
 }
 
 const segmentKVPrefix = "seg"
@@ -62,15 +58,14 @@ const segmentKVPrefix = "seg"
 func newSegmentKV(kve kvEngine) segmentKV {
 	return segmentKV{
 		prefix: kvPrefix{[]byte(segmentKVPrefix)},
-		flush:  flushKV[segmentHeader]{kve},
+		flush:  flushKV[Segment]{kve},
 	}
 }
 
 func (sk segmentKV) get(pk PK) (s Segment, error error) {
-	h, err := sk.flush.fill(sk.prefix.pk(pk), s.segmentHeader)
-	return Segment{segmentHeader: h}, err
+	return sk.flush.fill(sk.prefix.pk(pk), s)
 }
 
 func (sk segmentKV) set(pk PK, s Segment) error {
-	return sk.flush.flush(sk.prefix.pk(pk), s.segmentHeader)
+	return sk.flush.flush(sk.prefix.pk(pk), s)
 }

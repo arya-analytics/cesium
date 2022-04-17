@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bytes"
+	"caesium"
 	"encoding/binary"
 )
 
@@ -27,4 +28,8 @@ func RandomFloat64Bytes(n int) []byte {
 		panic(err)
 	}
 	return buf.Bytes()
+}
+
+func RandomFloat64Segment(n int) caesium.SegmentData {
+	return RandomFloat64Bytes(n)
 }

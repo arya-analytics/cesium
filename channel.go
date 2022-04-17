@@ -9,7 +9,7 @@ import (
 type Channel struct {
 	PK       PK
 	DataRate DataRate
-	Density  Density
+	Density  DataType
 	Active   bool
 }
 

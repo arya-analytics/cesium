@@ -278,23 +278,23 @@ func dataRate(q query) (DataRate, bool) {
 
 }
 
-func (cc CreateChannel) WithDataRate(dr DataRate) CreateChannel {
+func (cc CreateChannel) WithRate(dr DataRate) CreateChannel {
 	setDataRate(cc.query, dr)
 	return cc
 }
 
 // |||| DENSITY ||||
 
-func setDensity(q query, d Density) {
+func setDensity(q query, d DataType) {
 	q.set(densityOptKey, d)
 }
 
-func density(q query) (Density, bool) {
-	d, ok := getOpt[Density](q, densityOptKey)
+func density(q query) (DataType, bool) {
+	d, ok := getOpt[DataType](q, densityOptKey)
 	return d, ok
 }
 
-func (cc CreateChannel) WithDensity(density Density) CreateChannel {
-	setDensity(cc.query, density)
+func (cc CreateChannel) WithType(dt DataType) CreateChannel {
+	setDensity(cc.query, dt)
 	return cc
 }
