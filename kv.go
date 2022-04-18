@@ -12,6 +12,7 @@ type kvEngine interface {
 	Set(key []byte, value []byte) error
 	Get(key []byte) ([]byte, error)
 	IterPrefix(prefix []byte) kvIterator
+	IterRange(start []byte, end []byte) kvIterator
 	Delete(key []byte) error
 	Close() error
 }

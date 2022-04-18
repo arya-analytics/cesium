@@ -93,19 +93,19 @@ type fly struct {
 }
 
 func newEntry(f KeyFile) fly {
-	return fly{l: make(chan struct{}), f: f}
+	return fly{l: make(chan struct{}, 1), f: f}
 }
 
 func (e fly) lock() {
 	<-e.l
-	e.l = make(chan struct{})
+	e.l = make(chan struct{}, 1)
 }
 
 func (e fly) unlock() {
 	select {
 	case <-e.l:
 	default:
-		close(e.l)
+		e.l <- struct{}{}
 	}
 }
 

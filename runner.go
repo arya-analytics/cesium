@@ -1,21 +1,26 @@
 package cesium
 
 import (
+	"cesium/util/errutil"
 	"context"
+	log "github.com/sirupsen/logrus"
 	"go/types"
 	"io"
 )
 
 type runner struct {
-	ckv channelKV
-	skv segmentKV
-	pst Persist
-	kve kvEngine
+	ckv   channelKV
+	skv   segmentKV
+	pst   Persist
+	kve   kvEngine
+	queue *tickQueue
 }
 
 type operation interface {
-	fileKey() PK
-	exec(ctx context.Context, f KeyFile) error
+	filePK() PK
+	exec(f KeyFile)
+	sendError(err error)
+	context() context.Context
 }
 
 func (r *runner) exec(ctx context.Context, q query) error {
@@ -44,34 +49,57 @@ func (r *runner) retrieve(ctx context.Context, q query) error {
 	if err != nil {
 		return err
 	}
+
 	go func() {
-		for _, seg := range segments {
-			errs := r.pst.Exec(ctx, retrieveOperation{seg: &seg})
-			s.res <- RetrieveResponse{
-				Segments: []Segment{seg},
-				Err:      errs[0],
-			}
+		o := opSet{
+			done: make(chan struct{}, len(segments)),
+			ops:  make([]operation, 0, len(segments)),
 		}
+		for _, seg := range segments {
+			op := retrieveOperation{seg: seg, done: o.done, stream: s, ctx: ctx}
+			o.ops = append(o.ops, op)
+			r.queue.ops <- op
+		}
+		o.wait()
 		s.res <- RetrieveResponse{Err: io.EOF}
 	}()
 	return nil
 }
 
 type retrieveOperation struct {
-	seg *Segment
+	seg    Segment
+	stream stream[types.Nil, RetrieveResponse]
+	done   chan struct{}
+	ctx    context.Context
 }
 
-func (ro retrieveOperation) FileKey() PK {
+func (ro retrieveOperation) filePK() PK {
 	return ro.seg.FilePK
 }
 
-func (ro retrieveOperation) Exec(ctx context.Context, f KeyFile) (err error) {
-	if _, err := f.Seek(ro.seg.Offset, io.SeekStart); err != nil {
-		return err
+func (ro retrieveOperation) context() context.Context {
+	return ro.ctx
+}
+
+func (ro retrieveOperation) sendError(err error) {
+	ro.stream.res <- RetrieveResponse{Err: err}
+}
+
+func (ro retrieveOperation) exec(f KeyFile) {
+	//log.WithFields(log.Fields{
+	//	"file":   f.PK(),
+	//	"offset": ro.seg.Offset,
+	//}).Info("retrieving segment")
+	c := errutil.NewCatchReadWriteSeek(f)
+	c.Seek(ro.seg.Offset, io.SeekStart)
+	b := make([]byte, ro.seg.Size)
+	c.Read(b)
+	ro.seg.Data = b
+	if c.Error() == io.EOF {
+		log.Fatal("unexpected EOF")
 	}
-	ro.seg.Data = make([]byte, ro.seg.Size)
-	ro.seg.Data, err = ro.seg.Data.fill(f)
-	return err
+	ro.stream.res <- RetrieveResponse{Segments: []Segment{ro.seg}, Err: c.Error()}
+	ro.done <- struct{}{}
 }
 
 func (r *runner) create(ctx context.Context, q query) error {
@@ -90,47 +118,53 @@ func (r *runner) create(ctx context.Context, q query) error {
 	fpk := NewPK()
 
 	// 3. Fork a goroutine to execute the query
-	s.goPipe(ctx, func(req CreateRequest) CreateResponse {
-		errs := r.pst.Exec(ctx, createOperation{
-			cpk:     cpk,
-			fileKey: fpk,
-			seg:     req.Segments,
-			kv:      r.skv,
+	s.goPipe(ctx, func(req CreateRequest) {
+		r.pst.Exec(createOperation{
+			ctx: ctx,
+			cpk: cpk,
+			fpk: fpk,
+			seg: req.Segments,
+			kv:  r.skv,
 		})
-		c := CreateResponse{}
-		c.Err = errs[0]
-		return c
 	})
 	return nil
 }
 
 type createOperation struct {
-	fileKey PK
-	cpk     PK
-	seg     []Segment
-	kv      segmentKV
+	fpk PK
+	cpk PK
+	seg []Segment
+	kv  segmentKV
+	s   stream[CreateRequest, CreateResponse]
+	ctx context.Context
 }
 
-func (cr createOperation) FileKey() PK {
-	return cr.fileKey
+func (cr createOperation) filePK() PK {
+	return cr.fpk
 }
 
-func (cr createOperation) Exec(ctx context.Context, f KeyFile) error {
+func (cr createOperation) sendError(err error) {
+	cr.s.res <- CreateResponse{Err: err}
+}
+
+func (cr createOperation) exec(f KeyFile) {
 	for _, s := range cr.seg {
+		c := errutil.NewCatchReadWriteSeek(f)
 		s.FilePK = f.PK()
 		s.ChannelPK = cr.cpk
-		s.Size = s.Data.Size()
-		if err := s.Data.flush(f); err != nil {
-			return err
-		}
-		ret, err := f.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return err
-		}
-		s.Offset = ret
-		if err := cr.kv.set(s); err != nil {
-			return err
+		s.Size = s.size()
+		s.Offset = c.Seek(0, io.SeekCurrent)
+		c.Exec(func() error { return s.flushData(f) })
+		c.Exec(func() error { return cr.kv.set(s) })
+		if c.Error() != nil {
+			if c.Error() == io.EOF {
+				panic(io.ErrUnexpectedEOF)
+			}
+			cr.s.res <- CreateResponse{Err: c.Error()}
 		}
 	}
-	return nil
+}
+
+func (cr createOperation) context() context.Context {
+	return cr.ctx
 }

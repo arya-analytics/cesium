@@ -3,6 +3,7 @@ package cesium
 import (
 	"context"
 	"go/types"
+	"io"
 )
 
 // |||||| QUERY |||||||
@@ -247,8 +248,9 @@ func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
 	s := stream[CreateRequest, CreateResponse]{
-		req: make(chan CreateRequest),
-		res: make(chan CreateResponse),
+		req:     make(chan CreateRequest),
+		res:     make(chan CreateResponse),
+		doneRes: CreateResponse{Err: io.EOF},
 	}
 	setStream(c.query, s)
 	return s.req, s.res, c.runner.exec(ctx, c.query)

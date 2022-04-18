@@ -1,7 +1,7 @@
 package cesium
 
 import (
-	"cesium/util/errutil"
+	"cesium/util/binary"
 	"context"
 	"io"
 )
@@ -14,19 +14,11 @@ type Channel struct {
 }
 
 func (c Channel) flush(w io.Writer) error {
-	cw := errutil.NewCatchWrite(w)
-	cw.Write(c.PK)
-	cw.Write(c.DataRate)
-	cw.Write(c.Density)
-	return cw.Error()
+	return binary.Write(w, c)
 }
 
 func (c Channel) fill(r io.Reader) (Channel, error) {
-	cr := errutil.NewCatchRead(r)
-	cr.Read(&c.PK)
-	cr.Read(&c.DataRate)
-	cr.Read(&c.Density)
-	return c, cr.Error()
+	return c, binary.Read(r, &c)
 }
 
 type channelKV struct {

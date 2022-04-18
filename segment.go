@@ -7,6 +7,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"time"
 )
 
 // |||||| SEGMENT ||||||
@@ -17,22 +18,39 @@ type Segment struct {
 	Offset    int64
 	Start     TimeStamp
 	Size      Size
-	Data      SegmentData
+	Data      []byte
 }
 
 // |||||| HEADER ||||||
 
+type segmentHeader struct {
+	ChannelPK PK
+	FilePK    PK
+	Offset    int64
+	Start     TimeStamp
+	Size      Size
+}
+
+func (sg Segment) header() segmentHeader {
+	return segmentHeader{
+		ChannelPK: sg.ChannelPK,
+		FilePK:    sg.FilePK,
+		Offset:    sg.Offset,
+		Start:     sg.Start,
+		Size:      sg.Size,
+	}
+}
+
+func (sg Segment) size() Size {
+	return Size(len(sg.Data))
+}
+
 func (sg Segment) flush(w io.Writer) error {
-	c := errutil.NewCatchWrite(w)
-	c.Write(&sg.ChannelPK)
-	c.Write(&sg.FilePK)
-	c.Write(&sg.Offset)
-	c.Write(&sg.Start)
-	c.Write(&sg.Size)
-	return c.Error()
+	return binary.Write(w, sg.header())
 }
 
 func (sg Segment) fill(r io.Reader) (Segment, error) {
+	// Unfortunately this is the most efficient way to read the header
 	c := errutil.NewCatchRead(r)
 	c.Read(&sg.ChannelPK)
 	c.Read(&sg.FilePK)
@@ -40,6 +58,28 @@ func (sg Segment) fill(r io.Reader) (Segment, error) {
 	c.Read(&sg.Start)
 	c.Read(&sg.Size)
 	return sg, c.Error()
+}
+
+func (sg Segment) flushData(w io.Writer) error {
+	t0 := time.Now()
+	err := binary.Write(w, sg.Data)
+	log.WithFields(log.Fields{
+		"duration": time.Since(t0),
+		"size":     len(sg.Data),
+	}).Debug("Flushed segment data")
+	return err
+}
+
+func readSegmentData(r io.Reader, sg Segment) ([]byte, error) {
+	t0 := time.Now()
+	data := make([]byte, sg.Size)
+	c := errutil.NewCatchRead(r)
+	c.Read(data)
+	log.WithFields(log.Fields{
+		"duration": time.Since(t0),
+		"size":     len(data),
+	}).Debug("Read segment data")
+	return data, c.Error()
 }
 
 func (sg Segment) String() string {
@@ -51,22 +91,6 @@ func (sg Segment) String() string {
 		Size: %s
 		Data: %s
 	`, sg.ChannelPK, sg.FilePK, sg.Offset, sg.Start, sg.Size, sg.Data)
-}
-
-// |||||| DATA ||||||
-
-type SegmentData []byte
-
-func (sg SegmentData) flush(w io.Writer) error {
-	return binary.Write(w, sg)
-}
-
-func (sg SegmentData) fill(r io.Reader) (SegmentData, error) {
-	return sg, binary.Read(r, sg)
-}
-
-func (sg SegmentData) Size() Size {
-	return Size(len(sg))
 }
 
 // |||||| KV ||||||
@@ -94,11 +118,12 @@ func (sk segmentKV) set(s Segment) error {
 }
 
 func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error) {
-	p, err := generateKey(segmentKVPrefix, cpk)
+	startKey, err := generateKey(segmentKVPrefix, cpk)
 	if err != nil {
 		return nil, err
 	}
-	iter := sk.flush.kvEngine.IterPrefix(p)
+	endKey, err := generateKey(segmentKVPrefix, cpk, tr.End)
+	iter := sk.flush.kvEngine.IterRange(startKey, endKey)
 	defer func(iter kvIterator) {
 		if err := iter.Close(); err != nil {
 			log.Errorf("Error closing iterator: %s", err)
@@ -111,9 +136,10 @@ func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error)
 		if err != nil {
 			return nil, err
 		}
-		if s.Start >= tr.Start && s.Start < tr.End {
-			segments = append(segments, s)
-		}
+		segments = append(segments, s)
+	}
+	if err := iter.Close(); err != nil {
+		panic(err)
 	}
 	return segments, nil
 }

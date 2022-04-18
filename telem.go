@@ -1,7 +1,7 @@
 package cesium
 
 import (
-	"encoding/binary"
+	"cesium/util/binary"
 	"strconv"
 	"time"
 )
@@ -21,7 +21,7 @@ var (
 
 func (ts TimeStamp) Bytes() []byte {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, uint64(ts))
+	binary.Encoding().PutUint64(b, uint64(ts))
 	return b
 }
 
@@ -60,6 +60,11 @@ var (
 
 type TimeSpan int64
 
+// Duration converts TimeSpan to a time.Duration.
+func (ts TimeSpan) Duration() time.Duration {
+	return time.Duration(ts) * time.Microsecond
+}
+
 const (
 	Microsecond = TimeSpan(1)
 	Millisecond = TimeSpan(1000 * Microsecond)
@@ -83,6 +88,12 @@ func (s Size) String() string {
 // |||||| DATA RATE ||||||
 
 type DataRate float64
+
+const secondsToMicroseconds = 1000000
+
+func (dr DataRate) Period() TimeSpan {
+	return TimeSpan(1 / float64(dr) * secondsToMicroseconds)
+}
 
 const (
 	Hz1   DataRate = 1

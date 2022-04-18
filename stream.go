@@ -9,25 +9,26 @@ type streamResponse interface {
 }
 
 type stream[REQ any, RES streamResponse] struct {
-	req chan REQ
-	res chan RES
+	req     chan REQ
+	res     chan RES
+	doneRes RES
 }
 
-func (s stream[REQ, RES]) goPipe(ctx context.Context, action func(REQ) RES) {
+func (s stream[REQ, RES]) goPipe(ctx context.Context, action func(REQ)) {
 	go func() {
+	o:
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case t, ok := <-s.req:
 				if !ok {
-					return
+					break o
 				}
-				if r := action(t); r.Error() != nil {
-					s.res <- r
-				}
+				action(t)
+			case <-ctx.Done():
+				break o
 			}
 		}
+		close(s.res)
 	}()
 }
 

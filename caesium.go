@@ -22,14 +22,18 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		return nil, err
 	}
 	kve := pebbleKV{DB: pdb}
+	pst := newPersist(NewKFS(NewOS(filepath.Join(dirname, "cesium"))))
+	tq := newQueue(newBatcher(pst).exec)
+	go tq.tick()
 	return &db{
 		dirname: dirname,
 		opts:    newOptions(opts...),
 		runner: &runner{
-			ckv: newChannelKV(kve),
-			kve: kve,
-			pst: newPersist(NewKFS(NewOS(filepath.Join(dirname, "cesium")))),
-			skv: newSegmentKV(kve),
+			ckv:   newChannelKV(kve),
+			kve:   kve,
+			pst:   pst,
+			skv:   newSegmentKV(kve),
+			queue: tq,
 		},
 	}, nil
 }
