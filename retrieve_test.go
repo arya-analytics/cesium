@@ -34,10 +34,6 @@ var _ = Describe("Retrieve", func() {
 		const nSamples = 5000
 		req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		go func() {
-			defer GinkgoRecover()
-			Expect((<-res).Err).ToNot(HaveOccurred())
-		}()
 		sampleSpan := cesium.TimeSpan(nSamples) * cesium.Second
 		segCount := 10000
 		for i := 0; i < segCount/2; i++ {
