@@ -25,7 +25,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	// |||| PERSIST ||||
 
 	kve := pebbleKV{DB: pdb}
-	pst := newPersist(NewKFS(NewOS(filepath.Join(dirname, "cesium"))))
+	pst := newPersist(NewOS(filepath.Join(dirname, "cesium")))
 
 	// |||| BATCH QUEUE ||||
 

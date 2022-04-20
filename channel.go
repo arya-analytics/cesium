@@ -2,7 +2,6 @@ package cesium
 
 import (
 	"cesium/util/binary"
-	"context"
 	"io"
 )
 
@@ -72,14 +71,4 @@ func (ck channelKV) unlock(pk PK) error {
 	}
 	c.Active = false
 	return ck.set(pk, c)
-}
-
-func (ck channelKV) execRetrieve(ctx context.Context, q query) error {
-	cpk, err := channelPK(q)
-	if err != nil {
-		return err
-	}
-	c, err := ck.get(cpk)
-	setQueryRecord[Channel](q, c)
-	return err
 }

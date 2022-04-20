@@ -12,7 +12,7 @@ import (
 
 // |||||| KFS |||||||
 
-type KeyFile interface {
+type keyFile interface {
 	PK() PK
 	io.ReaderAt
 	io.Reader
@@ -21,22 +21,22 @@ type KeyFile interface {
 	io.Closer
 }
 
-type KFSSource interface {
-	open(pk PK) (KeyFile, error)
+type kfsSource interface {
+	open(pk PK) (keyFile, error)
 	delete(pk PK) error
 }
 
 type KFS struct {
 	mu      sync.Mutex
-	source  KFSSource
+	source  kfsSource
 	entries map[PK]fly
 }
 
-func NewKFS(source KFSSource) *KFS {
+func NewKFS(source kfsSource) *KFS {
 	return &KFS{source: source, entries: make(map[PK]fly)}
 }
 
-func (fs *KFS) Acquire(pk PK) (KeyFile, error) {
+func (fs *KFS) Acquire(pk PK) (keyFile, error) {
 	fs.mu.Lock()
 	e, ok := fs.entries[pk]
 	if !ok {
@@ -78,7 +78,7 @@ func (fs *KFS) Delete(pk PK) error {
 	return fs.source.delete(pk)
 }
 
-func (fs *KFS) openOrCreate(pk PK) (KeyFile, error) {
+func (fs *KFS) openOrCreate(pk PK) (keyFile, error) {
 	f, err := fs.source.open(pk)
 	if err != nil {
 		return nil, err
@@ -90,10 +90,10 @@ func (fs *KFS) openOrCreate(pk PK) (KeyFile, error) {
 
 type fly struct {
 	l chan struct{}
-	f KeyFile
+	f keyFile
 }
 
-func newEntry(f KeyFile) fly {
+func newEntry(f keyFile) fly {
 	return fly{l: make(chan struct{}, 1), f: f}
 }
 
@@ -114,18 +114,18 @@ func (e fly) unlock() {
 	log.Debugf("[KFS] released lock on file %s", e.f.PK())
 }
 
-type keyFile struct {
+type baseKeyFile struct {
 	pk PK
 }
 
-func (k keyFile) PK() PK {
+func (k baseKeyFile) PK() PK {
 	return k.pk
 }
 
 // |||||| OS FILE SOURCE ||||||
 
 type osFile struct {
-	keyFile
+	baseKeyFile
 	*os.File
 }
 
@@ -133,8 +133,8 @@ type OSKFSSource struct {
 	Root string
 }
 
-func NewOS(root string) KFSSource {
-	return &OSKFSSource{Root: root}
+func NewOS(root string) *KFS {
+	return NewKFS(&OSKFSSource{Root: root})
 }
 
 func (kfs *OSKFSSource) delete(pk PK) error {
@@ -145,13 +145,13 @@ func (kfs *OSKFSSource) path(pk PK) string {
 	return filepath.Join(kfs.Root, pk.String())
 }
 
-func (kfs *OSKFSSource) open(pk PK) (KeyFile, error) {
+func (kfs *OSKFSSource) open(pk PK) (keyFile, error) {
 	log.Infof("[KFS] opening file %s", pk)
 	f, err := os.Open(kfs.path(pk))
 	if !kfs.exists(err) {
 		f, err = kfs.create(pk)
 	}
-	return &osFile{keyFile: keyFile{pk: pk}, File: f}, err
+	return &osFile{baseKeyFile: baseKeyFile{pk: pk}, File: f}, err
 }
 
 func (kfs *OSKFSSource) exists(err error) bool {

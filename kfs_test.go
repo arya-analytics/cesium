@@ -9,9 +9,9 @@ import (
 )
 
 var _ = Describe("Flyfs", func() {
-	Describe("KeyFile lock", func() {
-		It("Should l and Release the KeyFile without Error", func() {
-			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+	Describe("keyFile lock", func() {
+		It("Should l and Release the keyFile without Error", func() {
+			fs := cesium.NewOS("testdata")
 			fpk := cesium.NewPK()
 			_, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
@@ -21,8 +21,8 @@ var _ = Describe("Flyfs", func() {
 			fs.Release(fpk)
 			Expect(fs.Delete(fpk)).To(Succeed())
 		})
-		It("Should allow two goroutines to Acquire and write to a KeyFile concurrently", func() {
-			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+		It("Should allow two goroutines to Acquire and write to a keyFile concurrently", func() {
+			fs := cesium.NewOS("testdata")
 			fpk := cesium.NewPK()
 			wg := sync.WaitGroup{}
 			wg.Add(2)
@@ -57,8 +57,8 @@ var _ = Describe("Flyfs", func() {
 		})
 	})
 	Describe("Delete", func() {
-		It("Should allow the caller to Delete the KeyFile twice", func() {
-			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+		It("Should allow the caller to Delete the keyFile twice", func() {
+			fs := cesium.NewOS("testdata")
 			fpk := cesium.NewPK()
 			_, err := fs.Acquire(fpk)
 			Expect(err).ToNot(HaveOccurred())
@@ -68,8 +68,8 @@ var _ = Describe("Flyfs", func() {
 		})
 	})
 	Describe("Create", func() {
-		It("Should allow for hundreds of concurrent writes to the KeyFile", func() {
-			fs := cesium.NewKFS(cesium.NewOS("testdata"))
+		It("Should allow for hundreds of concurrent writes to the keyFile", func() {
+			fs := cesium.NewOS("testdata")
 			fpk := cesium.NewPK()
 			wg := sync.WaitGroup{}
 			wg.Add(50)

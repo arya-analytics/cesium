@@ -12,7 +12,7 @@ import (
 
 type operation interface {
 	filePK() PK
-	exec(f KeyFile)
+	exec(f keyFile)
 	sendError(err error)
 	context() context.Context
 	String() string
@@ -87,7 +87,7 @@ func (ro retrieveOperation) sendError(err error) {
 	ro.stream.res <- RetrieveResponse{Err: err}
 }
 
-func (ro retrieveOperation) exec(f KeyFile) {
+func (ro retrieveOperation) exec(f keyFile) {
 	c := errutil.NewCatchReadWriteSeek(f)
 	c.Seek(ro.seg.Offset, io.SeekStart)
 	b := make([]byte, ro.seg.Size)
@@ -176,7 +176,7 @@ func (cr createOperation) sendError(err error) {
 	cr.s.res <- CreateResponse{Err: err}
 }
 
-func (cr createOperation) exec(f KeyFile) {
+func (cr createOperation) exec(f keyFile) {
 	for _, s := range cr.seg {
 		c := errutil.NewCatchReadWriteSeek(f)
 		s.FilePK = f.PK()
@@ -279,7 +279,7 @@ func (brc batchOperation[T]) filePK() PK {
 	return brc[0].filePK()
 }
 
-func (brc batchOperation[T]) exec(f KeyFile) {
+func (brc batchOperation[T]) exec(f keyFile) {
 	for _, op := range brc {
 		op.exec(f)
 	}
