@@ -123,6 +123,11 @@ func (sk segmentKV) latest(cPK PK) (Segment, error) {
 		return Segment{}, err
 	}
 	iter := sk.flush.kvEngine.IterPrefix(key)
+	defer func() {
+		if err := iter.Close(); err != nil {
+			panic(err)
+		}
+	}()
 	if ok := iter.Last(); !ok {
 		return Segment{}, newSimpleError(ErrNotFound, "No segments found")
 	}
@@ -139,11 +144,11 @@ func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error)
 	}
 	endKey, err := generateKey(segmentKVPrefix, cpk, tr.End)
 	iter := sk.flush.kvEngine.IterRange(startKey, endKey)
-	defer func(iter kvIterator) {
+	defer func() {
 		if err := iter.Close(); err != nil {
-			log.Errorf("Error closing iterator: %s", err)
+			panic(err)
 		}
-	}(iter)
+	}()
 	for iter.First(); iter.Valid(); iter.Next() {
 		b := new(bytes.Buffer)
 		b.Write(iter.Value())
@@ -152,9 +157,6 @@ func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error)
 			return nil, err
 		}
 		segments = append(segments, s)
-	}
-	if err := iter.Close(); err != nil {
-		panic(err)
 	}
 	return segments, nil
 }

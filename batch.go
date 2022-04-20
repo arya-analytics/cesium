@@ -80,10 +80,13 @@ func batchByChannelPK(ops []createOperation) map[PK][]createOperation {
 
 type batchSet []batch
 
-func (b batchSet) exec(ops []operation) ([]operation, error) {
+func (bs batchSet) exec(ops []operation) ([]operation, error) {
 	var oOps []operation
-	for _, b := range b {
-		bOps, _ := b.exec(ops)
+	for _, b := range bs {
+		bOps, err := b.exec(ops)
+		if err != nil {
+			panic(err)
+		}
 		oOps = append(oOps, bOps...)
 	}
 	return oOps, nil

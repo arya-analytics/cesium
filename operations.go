@@ -3,6 +3,8 @@ package cesium
 import (
 	"cesium/util/errutil"
 	"context"
+	"fmt"
+	log "github.com/sirupsen/logrus"
 	"go/types"
 	"io"
 	"sync"
@@ -13,6 +15,7 @@ type operation interface {
 	exec(f KeyFile)
 	sendError(err error)
 	context() context.Context
+	String() string
 }
 
 type operationWaitGroup struct {
@@ -48,6 +51,9 @@ func (rp retrieveParse) parse(ctx context.Context, q query) (opSet operationWait
 	if err != nil {
 		return opSet, err
 	}
+	if len(segments) == 0 {
+		return opSet, newSimpleError(ErrNotFound, "no segments found to satisfy query")
+	}
 	opSet.done = make(chan struct{}, len(segments))
 	s := getStream[types.Nil, RetrieveResponse](q)
 	for _, seg := range segments {
@@ -60,7 +66,7 @@ func (rp retrieveParse) parse(ctx context.Context, q query) (opSet operationWait
 
 type retrieveOperation struct {
 	seg    Segment
-	stream stream[types.Nil, RetrieveResponse]
+	stream *stream[types.Nil, RetrieveResponse]
 	done   chan struct{}
 	ctx    context.Context
 }
@@ -98,13 +104,23 @@ func (ro retrieveOperation) offset() int64 {
 	return ro.seg.Offset
 }
 
+func (ro retrieveOperation) String() string {
+	return fmt.Sprintf(
+		"[OP] Retrieve - Channel %s | File %s | Offset %d | Size %d",
+		ro.channelPK(),
+		ro.filePK(),
+		ro.offset(),
+		ro.seg.Size,
+	)
+}
+
 // |||||| CREATE ||||||
 
 // || PARSE ||
 
 // || OP ||
 
-const maxFileOffset = 1e10
+const maxFileOffset = 1e8
 
 type createParse struct {
 	fpk PK
@@ -129,6 +145,7 @@ func (cp createParse) parse(ctx context.Context, q query, req CreateRequest) (op
 			createOperation{
 				ctx:  ctx,
 				fpk:  fpk,
+				cpk:  cPK,
 				kv:   cp.skv,
 				s:    s,
 				seg:  req.Segments,
@@ -142,7 +159,7 @@ type createOperation struct {
 	cpk  PK
 	seg  []Segment
 	kv   segmentKV
-	s    stream[CreateRequest, CreateResponse]
+	s    *stream[CreateRequest, CreateResponse]
 	ctx  context.Context
 	done chan struct{}
 }
@@ -182,87 +199,105 @@ func (cr createOperation) context() context.Context {
 	return cr.ctx
 }
 
-const maxOffset = -2
-
-func (cr createOperation) offset() int64 {
-	return maxOffset
+func (cr createOperation) String() string {
+	return fmt.Sprintf(
+		"[OP] Create - Channel %s | File %s",
+		cr.channelPK(),
+		cr.filePK(),
+	)
 }
 
 // |||||| FILE ALLOCATE  ||||||
 
+type fileAllocateInfo struct {
+	pk   PK
+	size Size
+}
+
 type fileAllocate struct {
-	mu    sync.Mutex
-	files map[PK]Size
+	mu    *sync.Mutex
+	files map[PK]fileAllocateInfo
 	skv   segmentKV
 }
 
 func newFileAllocate(skv segmentKV) *fileAllocate {
-	return &fileAllocate{files: make(map[PK]Size), skv: skv}
+	return &fileAllocate{files: make(map[PK]fileAllocateInfo), mu: &sync.Mutex{}, skv: skv}
 }
 
-func (fa *fileAllocate) allocate(cPK PK) (PK, error) {
-	latestSeg, err := fa.skv.latest(cPK)
-	if (latestSeg.Offset > maxFileOffset) || IsErrorOfType(err, ErrNotFound) {
-		return fa.allocateNew()
+func (fa *fileAllocate) allocate(cpk PK) (PK, error) {
+	fa.mu.Lock()
+	defer fa.mu.Unlock()
+	latestSeg, err := fa.skv.latest(cpk)
+	fpk, _ := fa.files[cpk]
+	log.Debugf(`[FALLOC]:
+		Channel: %s
+		Latest Segment File PK: %s
+		Latest Mem File PK: %s
+		`, cpk, latestSeg.FilePK, fpk.pk)
+	if IsErrorOfType(err, ErrNotFound) {
+		log.Error("[FALLOC]: Channel has no segments")
+		fEntry, ok := fa.files[cpk]
+		if ok {
+			return fEntry.pk, nil
+		}
+		return fa.allocateNew(cpk)
 	}
 	if err != nil {
-		return PK{}, err
+		panic(err)
 	}
-	fa.setFile(latestSeg.FilePK, Size(latestSeg.Offset)+latestSeg.Size)
+
+	fa.setFile(cpk, Size(latestSeg.Offset)+latestSeg.Size, latestSeg.FilePK)
+	if latestSeg.Offset > maxFileOffset {
+		log.Debugf("[FALLOC]: File %s filled up. Allocating new file.", latestSeg.FilePK)
+		return fa.allocateNew(cpk)
+	}
 	return latestSeg.FilePK, nil
 }
 
-func (fa *fileAllocate) allocateNew() (PK, error) {
-	fa.mu.Lock()
-	for pk, size := range fa.files {
-		if size < maxFileOffset {
-			fa.mu.Unlock()
-			return pk, nil
+func (fa *fileAllocate) allocateNew(cpk PK) (PK, error) {
+	for _, info := range fa.files {
+		if info.size < maxFileOffset {
+			return info.pk, nil
 		}
 	}
-	fa.mu.Unlock()
-	nPk := NewPK()
-	fa.setFile(nPk, 0)
-	return NewPK(), nil
+	fpk := NewPK()
+	log.Infof("[FALLOC]: creating new file %s", fpk)
+	fa.setFile(cpk, 0, fpk)
+	log.Infof("[FALLOC]: total of %v unique files allocated", len(fa.files))
+	return fpk, nil
 }
 
-func (fa *fileAllocate) setFile(f PK, s Size) {
-	fa.mu.Lock()
-	defer fa.mu.Unlock()
-	fa.files[f] = s
+func (fa *fileAllocate) setFile(cpk PK, s Size, fpk PK) {
+	fa.files[cpk] = fileAllocateInfo{pk: fpk, size: s}
 }
 
 // |||||| BATCHED OPERATION ||||||
 
 type batchOperation[T operation] []T
 
-func (brc batchOperation) filePK() PK {
-	panic("not implemented")
+func (brc batchOperation[T]) filePK() PK {
+	return brc[0].filePK()
 }
 
-func (brc batchOperation) offset() int64 {
-	panic("not implemented")
-}
-
-func (brc batchOperation) channelPK() PK {
-	panic("not implemented")
-}
-
-func (brc batchOperation) exec(f KeyFile) {
+func (brc batchOperation[T]) exec(f KeyFile) {
 	for _, op := range brc {
 		op.exec(f)
 	}
 }
 
-func (brc batchOperation) sendError(err error) {
+func (brc batchOperation[T]) sendError(err error) {
 	for _, brc := range brc {
 		brc.sendError(err)
 	}
 }
 
-func (brc batchOperation) context() context.Context {
+func (brc batchOperation[T]) context() context.Context {
 	if len(brc) > 0 {
 		return brc[0].context()
 	}
 	return context.Background()
+}
+
+func (brc batchOperation[T]) String() string {
+	return fmt.Sprintf("[OP] Batch | Type - %T | Count - %v | File - %s", brc[0], len(brc), brc.filePK())
 }

@@ -1,11 +1,14 @@
 package cesium_test
 
 import (
+	"cesium/util/binary"
 	"cesium/util/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"math"
+	"sync"
 	"time"
 
 	"cesium"
@@ -30,31 +33,35 @@ var _ = Describe("Retrieve", func() {
 	AfterEach(func() {
 		Expect(db.Close()).To(Succeed())
 	})
-	FIt("Should read the segments correctly", func() {
-		cesium.
-		const nSamples = 5000
+	It("Should read the segments correctly", func() {
+		const nSamples = 100000
 		req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		sampleSpan := cesium.TimeSpan(nSamples) * cesium.Second
-		segCount := 10000
-		for i := 0; i < segCount/2; i++ {
-			ts := cesium.TimeStamp(0).Add(
-				cesium.TimeSpan(i) * 2 * sampleSpan,
-			)
-			req <- cesium.CreateRequest{
-				Segments: []cesium.Segment{
-					{
-						Start: ts,
-						Data:  testutil.RandomFloat64Segment(nSamples),
+		segCount := 50
+		go func() {
+			for i := 0; i < segCount/2; i++ {
+				ts := cesium.TimeStamp(0).Add(
+					cesium.TimeSpan(i) * 2 * sampleSpan,
+				)
+				req <- cesium.CreateRequest{
+					Segments: []cesium.Segment{
+						{
+							Start: ts,
+							Data:  testutil.RandomFloat64Segment(nSamples),
+						},
+						{
+							Start: ts.Add(sampleSpan),
+							Data:  testutil.RandomFloat64Segment(nSamples),
+						},
 					},
-					{
-						Start: ts.Add(sampleSpan),
-						Data:  testutil.RandomFloat64Segment(nSamples),
-					},
-				},
+				}
 			}
-		}
-		close(req)
+			close(req)
+		}()
+		go func() {
+
+		}()
 		for cResV := range res {
 			if cResV.Err == io.EOF {
 				break
@@ -74,9 +81,9 @@ var _ = Describe("Retrieve", func() {
 				break
 			}
 			c++
-			//b := resV.Segments[0].Data
+			b := resV.Segments[0].Data
 			Expect(resV.Err).ToNot(HaveOccurred())
-			//Expect(math.Float64frombits(binary.Encoding().Uint64(b[len(b)-8:]))).To(Equal(float64(10099)))
+			Expect(math.Float64frombits(binary.Encoding().Uint64(b[len(b)-8:]))).To(Equal(float64(nSamples + 9999)))
 			Expect(len(resV.Segments[0].Data)).To(Equal(nSamples * 8))
 		}
 		//Expect(c).To(Equal(20))
@@ -87,5 +94,87 @@ var _ = Describe("Retrieve", func() {
 	Throughput: %v samples/s`,
 			c*nSamples, time.Since(t0), c, float64(c*nSamples)/time.Since(t0).Seconds())
 		time.Sleep(5 * time.Millisecond)
+	})
+	FIt("Should support multiple concurrent create requests", func() {
+		var channels []cesium.PK
+		const (
+			nSamples     = 500000
+			channelCount = 5
+		)
+		sampleSpan := cesium.TimeSpan(nSamples) * cesium.Second
+		segCount := 50
+		wg := &sync.WaitGroup{}
+		wg.Add(channelCount)
+		for i := 0; i < channelCount; i++ {
+			c, err := db.NewCreateChannel().
+				WithRate(cesium.Hz1).
+				WithType(cesium.Float64).
+				Exec(ctx)
+			channels = append(channels, c.PK)
+			Expect(err).ToNot(HaveOccurred())
+			req, res, err := db.NewCreate().WhereChannels(c.PK).Stream(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			go func() {
+				go func() {
+					for i := 0; i < segCount/2; i++ {
+						ts := cesium.TimeStamp(0).Add(
+							cesium.TimeSpan(i) * 2 * sampleSpan,
+						)
+						req <- cesium.CreateRequest{
+							Segments: []cesium.Segment{
+								{
+									Start: ts,
+									Data:  testutil.RandomFloat64Segment(nSamples),
+								},
+								{
+									Start: ts.Add(sampleSpan),
+									Data:  testutil.RandomFloat64Segment(nSamples),
+								},
+							},
+						}
+					}
+					close(req)
+				}()
+				for cResV := range res {
+					if cResV.Err == io.EOF {
+						break
+					}
+					Expect(cResV.Err).ToNot(HaveOccurred())
+				}
+				wg.Done()
+			}()
+		}
+
+		wg.Wait()
+
+		wg = &sync.WaitGroup{}
+		wg.Add(channelCount)
+		t01 := time.Now()
+		for _, pk := range channels {
+			go func() {
+				t0 := time.Now()
+				rResV, err := db.NewRetrieve().WhereChannels(pk).WhereTimeRange(cesium.TimeRange{
+					Start: cesium.TimeStamp(0),
+					End:   cesium.TimeStamp(sampleSpan * cesium.TimeSpan(segCount)),
+				}).Stream(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				c := 0
+				for resV := range rResV {
+					if resV.Err == io.EOF {
+						break
+					}
+					c++
+				}
+				log.Infof(`Retrieved 
+							Sample count: %d
+							Time: %s
+							Segment Count: %v,
+							Throughput: %v samples/s`,
+					c*nSamples, time.Since(t0), c, float64(c*nSamples)/time.Since(t0).Seconds())
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+		log.Info("Aggregate Throughput", float64(nSamples*segCount*channelCount)/time.Since(t01).Seconds())
 	})
 })

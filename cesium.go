@@ -97,7 +97,8 @@ func (d *db) Close() error {
 
 type Option func(*options)
 
-type options struct{}
+type options struct {
+}
 
 func newOptions(opts ...Option) *options {
 	o := &options{}

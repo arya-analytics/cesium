@@ -60,7 +60,7 @@ var (
 
 type TimeSpan int64
 
-// Duration converts TimeSpan to a time.Duration.
+// Duration converts TimeSpan to a values.Duration.
 func (ts TimeSpan) Duration() time.Duration {
 	return time.Duration(ts) * time.Microsecond
 }

@@ -1,6 +1,7 @@
 package cesium
 
 import (
+	log "github.com/sirupsen/logrus"
 	"io"
 	"io/fs"
 	"os"
@@ -97,16 +98,20 @@ func newEntry(f KeyFile) fly {
 }
 
 func (e fly) lock() {
+	log.Debugf("[KFS] acquiring lock on file %s", e.f.PK())
 	<-e.l
+	log.Debugf("[KFS] acquired lock on file %s", e.f.PK())
 	e.l = make(chan struct{}, 1)
 }
 
 func (e fly) unlock() {
+	log.Debugf("[KFS] releasing lock on file %s", e.f.PK())
 	select {
 	case <-e.l:
 	default:
 		e.l <- struct{}{}
 	}
+	log.Debugf("[KFS] released lock on file %s", e.f.PK())
 }
 
 type keyFile struct {
@@ -141,6 +146,7 @@ func (kfs *OSKFSSource) path(pk PK) string {
 }
 
 func (kfs *OSKFSSource) open(pk PK) (KeyFile, error) {
+	log.Infof("[KFS] opening file %s", pk)
 	f, err := os.Open(kfs.path(pk))
 	if !kfs.exists(err) {
 		f, err = kfs.create(pk)

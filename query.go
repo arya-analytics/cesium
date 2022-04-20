@@ -2,6 +2,7 @@ package cesium
 
 import (
 	"context"
+	"fmt"
 	"go/types"
 	"io"
 )
@@ -36,6 +37,10 @@ func (q query) retrieve(key queryOptKey) (interface{}, bool) {
 
 func (q query) set(key queryOptKey, value interface{}) {
 	q.opts[key] = value
+}
+
+func (q query) String() string {
+	return fmt.Sprintf("[QUERY] Variant %T | Opts %v", q.variant, q.opts)
 }
 
 type execFunc func(ctx context.Context, q query) error
@@ -247,17 +252,19 @@ func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 }
 
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
-	s := stream[CreateRequest, CreateResponse]{
-		req:     make(chan CreateRequest),
-		res:     make(chan CreateResponse),
+	req := make(chan CreateRequest)
+	res := make(chan CreateResponse)
+	s := &stream[CreateRequest, CreateResponse]{
+		req:     req,
+		res:     res,
 		doneRes: CreateResponse{Err: io.EOF},
 	}
 	setStream(c.query, s)
-	return s.req, s.res, c.exec.exec(ctx, c.query)
+	return s.req, res, c.exec.exec(ctx, c.query)
 }
 
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
-	s := stream[types.Nil, RetrieveResponse]{res: make(chan RetrieveResponse)}
+	s := &stream[types.Nil, RetrieveResponse]{res: make(chan RetrieveResponse)}
 	setStream[types.Nil, RetrieveResponse](r.query, s)
 	return s.res, r.exec.exec(ctx, r.query)
 }

@@ -1,6 +1,7 @@
 package cesium
 
 import (
+	log "github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -10,7 +11,7 @@ type tickQueue struct {
 }
 
 const (
-	queueDefaultSize = 10
+	queueDefaultSize = 300
 	queueDefaultTick = DataRate(100)
 )
 
@@ -22,7 +23,9 @@ func (q *tickQueue) tick() {
 	t := time.NewTicker(queueDefaultTick.Period().Duration())
 	defer t.Stop()
 	for {
-		q.setRunner(q.opSet(t))
+		ops := q.opSet(t)
+		log.Infof("[QUEUE] sending %v operations to batch", len(ops))
+		q.setRunner(ops)
 	}
 }
 
@@ -31,6 +34,7 @@ func (q *tickQueue) opSet(t *time.Ticker) []operation {
 	for {
 		select {
 		case op := <-q.ops:
+			//log.Infof("[QUEUE] received operation %s %v", op, len(ops))
 			ops = append(ops, op)
 			if len(ops) >= queueDefaultSize {
 				return ops

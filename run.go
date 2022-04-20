@@ -2,6 +2,7 @@ package cesium
 
 import (
 	"context"
+	log "github.com/sirupsen/logrus"
 	"go/types"
 	"io"
 )
@@ -16,6 +17,7 @@ type runService interface {
 }
 
 func (r *run) exec(ctx context.Context, q query) error {
+	log.Infof("[RUNNER] Executing query %s", q)
 	for _, svc := range r.services {
 		handled, err := svc.exec(ctx, r.batchQueue, q)
 		if handled {
@@ -36,7 +38,7 @@ type retrieveRunService struct {
 }
 
 func (rp *retrieveRunService) exec(ctx context.Context, queue chan<- operation, q query) (handled bool, err error) {
-	_, ok := q.variant.(*Retrieve)
+	_, ok := q.variant.(Retrieve)
 	if !ok {
 		return false, nil
 	}
@@ -46,12 +48,15 @@ func (rp *retrieveRunService) exec(ctx context.Context, queue chan<- operation, 
 	}
 	s := getStream[types.Nil, RetrieveResponse](q)
 	go func() {
+		log.Info("[RUNNER] Waiting for retrieve to finish")
 		opWg.wait()
 		s.res <- RetrieveResponse{Err: io.EOF}
 	}()
-	for _, op := range opWg.ops {
-		queue <- op
-	}
+	go func() {
+		for _, op := range opWg.ops {
+			queue <- op
+		}
+	}()
 	return true, nil
 }
 
@@ -68,7 +73,7 @@ type createRunService struct {
 }
 
 func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q query) (handled bool, err error) {
-	_, ok := q.variant.(*Create)
+	_, ok := q.variant.(Create)
 	if !ok {
 		return false, nil
 	}
@@ -76,12 +81,14 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 	if err != nil {
 		return true, err
 	}
+	log.Infof("[RUNNER] acquiring write lock on channel %v", cpk)
 	if err := cp.ckv.lock(cpk); err != nil {
 		return true, err
 	}
+	log.Info("[RUNNER] acquired write lock on channel")
 	s := getStream[CreateRequest, CreateResponse](q)
 	parse := createParse{skv: cp.skv, fa: cp.fa}
-	var o operationWaitGroup
+	var opWg operationWaitGroup
 	go func() {
 	o:
 		for {
@@ -90,7 +97,7 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 				if !ok {
 					break o
 				}
-				opWg, err := parse.parse(ctx, q, req)
+				opWg, err = parse.parse(ctx, q, req)
 				if err != nil {
 					s.res <- CreateResponse{Err: err}
 					break o
@@ -101,10 +108,10 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 			case <-ctx.Done():
 				break o
 			}
-			o.wait()
-			s.res <- CreateResponse{Err: io.EOF}
-			close(s.res)
 		}
+		opWg.wait()
+		s.res <- CreateResponse{Err: io.EOF}
+		close(s.res)
 	}()
 	return true, nil
 }
@@ -120,7 +127,7 @@ type createChannelRunService struct {
 }
 
 func (cr *createChannelRunService) exec(_ context.Context, _ chan<- operation, q query) (handled bool, err error) {
-	_, ok := q.variant.(*CreateChannel)
+	_, ok := q.variant.(CreateChannel)
 	if !ok {
 		return false, nil
 	}
@@ -150,7 +157,7 @@ type retrieveChannelRunService struct {
 }
 
 func (rc *retrieveChannelRunService) exec(_ context.Context, _ chan<- operation, q query) (handled bool, err error) {
-	_, ok := q.variant.(*RetrieveChannel)
+	_, ok := q.variant.(RetrieveChannel)
 	if !ok {
 		return false, nil
 	}
@@ -176,5 +183,6 @@ func (br batchRunner) exec(ops []operation) {
 	if err != nil {
 		panic(err)
 	}
+	log.Infof("[BATCH] executing %v operations on persist", len(bOps))
 	br.persist.Exec(bOps)
 }
