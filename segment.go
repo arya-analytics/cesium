@@ -117,6 +117,21 @@ func (sk segmentKV) set(s Segment) error {
 	return sk.flush.flush(key, s)
 }
 
+func (sk segmentKV) latest(cPK PK) (Segment, error) {
+	key, err := generateKey(segmentKVPrefix, cPK)
+	if err != nil {
+		return Segment{}, err
+	}
+	iter := sk.flush.kvEngine.IterPrefix(key)
+	if ok := iter.Last(); !ok {
+		return Segment{}, newSimpleError(ErrNotFound, "No segments found")
+	}
+	b := new(bytes.Buffer)
+	b.Write(iter.Value())
+	s, err := Segment{}.fill(b)
+	return s, err
+}
+
 func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error) {
 	startKey, err := generateKey(segmentKVPrefix, cpk)
 	if err != nil {

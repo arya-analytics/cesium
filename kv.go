@@ -19,6 +19,7 @@ type kvEngine interface {
 
 type kvIterator interface {
 	First() bool
+	Last() bool
 	Next() bool
 	Key() []byte
 	Valid() bool

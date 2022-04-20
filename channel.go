@@ -74,34 +74,12 @@ func (ck channelKV) unlock(pk PK) error {
 	return ck.set(pk, c)
 }
 
-func (ck channelKV) exec(ctx context.Context, q query) error {
-	return q.switchVariant(ctx, variantOpts{
-		CreateChannel:   ck.execCreate,
-		RetrieveChannel: ck.execRetrieve,
-	})
-}
-
 func (ck channelKV) execRetrieve(ctx context.Context, q query) error {
 	cpk, err := channelPK(q)
 	if err != nil {
 		return err
 	}
 	c, err := ck.get(cpk)
-	setQueryRecord[Channel](q, c)
-	return err
-}
-
-func (ck channelKV) execCreate(ctx context.Context, q query) error {
-	dr, ok := dataRate(q)
-	if !ok {
-		return newSimpleError(ErrInvalidQuery, "no data rate provided to create query")
-	}
-	ds, ok := density(q)
-	if !ok {
-		return newSimpleError(ErrInvalidQuery, "no density provided to create query")
-	}
-	c := Channel{PK: NewPK(), DataRate: dr, Density: ds}
-	err := ck.set(c.PK, c)
 	setQueryRecord[Channel](q, c)
 	return err
 }

@@ -6,7 +6,7 @@ import (
 )
 
 type Persist interface {
-	Exec(ops ...operation)
+	Exec(ops []operation)
 }
 
 type persist struct {
@@ -18,7 +18,7 @@ func newPersist(kfs *KFS) Persist {
 	return &persist{sem: semaphore.NewWeighted(50), kfs: kfs}
 }
 
-func (p *persist) Exec(ops ...operation) {
+func (p *persist) Exec(ops []operation) {
 	wg := sync.WaitGroup{}
 	for i, op := range ops {
 		wg.Add(1)

@@ -24,7 +24,19 @@ const (
 	ErrInternal
 	ErrInvalidQuery
 	ErrChannelLock
+	ErrNotFound
 )
+
+func IsErrorOfType(err error, t ErrorType) bool {
+	if err == nil {
+		return false
+	}
+	e, ok := err.(Error)
+	if !ok {
+		return false
+	}
+	return e.Type == t
+}
 
 func newDerivedError(t ErrorType, base error) error {
 	return Error{Type: t, Message: base.Error(), Base: base}

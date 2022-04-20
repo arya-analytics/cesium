@@ -31,6 +31,7 @@ var _ = Describe("Retrieve", func() {
 		Expect(db.Close()).To(Succeed())
 	})
 	FIt("Should read the segments correctly", func() {
+		cesium.
 		const nSamples = 5000
 		req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
 		Expect(err).ToNot(HaveOccurred())

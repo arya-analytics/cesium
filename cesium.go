@@ -21,27 +21,52 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// |||| PERSIST ||||
+
 	kve := pebbleKV{DB: pdb}
 	pst := newPersist(NewKFS(NewOS(filepath.Join(dirname, "cesium"))))
-	tq := newQueue(newBatcher(pst).exec)
-	go tq.tick()
+
+	// |||| BATCH QUEUE ||||
+
+	bRunner := batchRunner{
+		persist: pst,
+		batch:   batchSet{retrieveBatch{}, createBatch{}},
+	}
+
+	batchQueue := newQueue(bRunner.exec)
+	go batchQueue.tick()
+
+	// |||| RUNNER ||||
+
+	skv := newSegmentKV(kve)
+	ckv := newChannelKV(kve)
+	fa := newFileAllocate(skv)
+
+	crSvc := newCreateChannelRunService(ckv)
+	rcSvc := newRetrieveChannelRunService(ckv)
+
+	cr := newCreateRunService(fa, skv, ckv)
+	rc := newRetrieveRunService(skv)
+
+	runner := &run{
+		batchQueue: batchQueue.ops,
+		services:   []runService{crSvc, rcSvc, cr, rc},
+	}
+
 	return &db{
 		dirname: dirname,
 		opts:    newOptions(opts...),
-		runner: &runner{
-			ckv:   newChannelKV(kve),
-			kve:   kve,
-			pst:   pst,
-			skv:   newSegmentKV(kve),
-			queue: tq,
-		},
+		kve:     kve,
+		runner:  runner,
 	}, nil
 }
 
 type db struct {
 	dirname string
 	opts    *options
-	runner  *runner
+	runner  *run
+	kve     kvEngine
 }
 
 func (d *db) NewCreate() Create {
@@ -65,7 +90,7 @@ func (d *db) NewRetrieveChannel() RetrieveChannel {
 }
 
 func (d *db) Close() error {
-	return d.runner.close()
+	return d.kve.Close()
 }
 
 // |||| OPTIONS ||||

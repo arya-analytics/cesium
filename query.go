@@ -20,12 +20,12 @@ const (
 )
 
 type query struct {
-	runner  queryRunner
+	exec    queryExec
 	variant interface{}
 	opts    map[queryOptKey]interface{}
 }
 
-type queryRunner interface {
+type queryExec interface {
 	exec(ctx context.Context, q query) error
 }
 
@@ -74,31 +74,31 @@ func (q query) runVariant(ctx context.Context, e execFunc) error {
 
 // |||||| CONSTRUCTORS |||||||
 
-func newQuery(variant interface{}, exec queryRunner) query {
+func newQuery(variant interface{}, exec queryExec) query {
 	return query{
 		variant: variant,
 		opts:    make(map[queryOptKey]interface{}),
-		runner:  exec,
+		exec:    exec,
 	}
 }
 
-func newCreateChannel(exec queryRunner) CreateChannel {
+func newCreateChannel(exec queryExec) CreateChannel {
 	return CreateChannel{query: newQuery(CreateChannel{}, exec)}
 }
 
-func newRetrieveChannel(exec queryRunner) RetrieveChannel {
+func newRetrieveChannel(exec queryExec) RetrieveChannel {
 	return RetrieveChannel{query: newQuery(RetrieveChannel{}, exec)}
 }
 
-func newCreate(exec queryRunner) Create {
+func newCreate(exec queryExec) Create {
 	return Create{query: newQuery(Create{}, exec)}
 }
 
-func newRetrieve(exec queryRunner) Retrieve {
+func newRetrieve(exec queryExec) Retrieve {
 	return Retrieve{query: newQuery(Retrieve{}, exec)}
 }
 
-func newDelete(exec queryRunner) Delete {
+func newDelete(exec queryExec) Delete {
 	return Delete{query: newQuery(Delete{}, exec)}
 }
 
@@ -231,7 +231,7 @@ func queryRecord[T any](q query) (T, bool) {
 }
 
 func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
-	if err := cc.runner.exec(ctx, cc.query); err != nil {
+	if err := cc.exec.exec(ctx, cc.query); err != nil {
 		return Channel{}, err
 	}
 	c, _ := queryRecord[Channel](cc.query)
@@ -239,7 +239,7 @@ func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
 }
 
 func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
-	if err := r.runner.exec(ctx, r.query); err != nil {
+	if err := r.exec.exec(ctx, r.query); err != nil {
 		return Channel{}, err
 	}
 	c, _ := queryRecord[Channel](r.query)
@@ -253,17 +253,17 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 		doneRes: CreateResponse{Err: io.EOF},
 	}
 	setStream(c.query, s)
-	return s.req, s.res, c.runner.exec(ctx, c.query)
+	return s.req, s.res, c.exec.exec(ctx, c.query)
 }
 
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	s := stream[types.Nil, RetrieveResponse]{res: make(chan RetrieveResponse)}
 	setStream[types.Nil, RetrieveResponse](r.query, s)
-	return s.res, r.runner.exec(ctx, r.query)
+	return s.res, r.exec.exec(ctx, r.query)
 }
 
 func (d Delete) Exec(ctx context.Context) error {
-	return d.runner.exec(ctx, d.query)
+	return d.exec.exec(ctx, d.query)
 }
 
 // |||||| CREATE CHANNEL OPTIONS ||||||

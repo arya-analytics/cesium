@@ -51,7 +51,9 @@ func (pe pebbleKV) IterPrefix(prefix []byte) kvIterator {
 			UpperBound: keyUpperBound(prefix),
 		}
 	}
-	return pe.DB.NewIter(prefixIterOptions(prefix))
+	iter := pe.DB.NewIter(prefixIterOptions(prefix))
+	iter.Last()
+	return iter
 }
 
 func (pe pebbleKV) IterRange(start, end []byte) kvIterator {
