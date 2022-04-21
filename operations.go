@@ -1,6 +1,7 @@
 package cesium
 
 import (
+	"cesium/alamos"
 	"cesium/util/errutil"
 	"context"
 	"fmt"
@@ -177,6 +178,7 @@ func (cr createOperation) exec(f keyFile) {
 		cr.sendError(err)
 		return
 	}
+	log.Debug(cr.String())
 	for _, s := range cr.seg {
 		c := errutil.NewCatchReadWriteSeek(f)
 		s.filePk = f.PK()
@@ -211,27 +213,29 @@ type fileAllocateInfo struct {
 }
 
 type fileAllocate struct {
-	mu    *sync.Mutex
-	files map[PK]fileAllocateInfo
-	skv   segmentKV
+	mu        *sync.Mutex
+	files     map[PK]fileAllocateInfo
+	skv       segmentKV
+	allocTime alamos.DurationMeasurement
 }
 
-func newFileAllocate(skv segmentKV) *fileAllocate {
-	return &fileAllocate{files: make(map[PK]fileAllocateInfo), mu: &sync.Mutex{}, skv: skv}
+func newFileAllocate(skv segmentKV, exp alamos.Experiment) *fileAllocate {
+	return &fileAllocate{
+		files:     make(map[PK]fileAllocateInfo),
+		mu:        &sync.Mutex{},
+		skv:       skv,
+		allocTime: alamos.NewDurationSeries(exp, "cesium.fileAllocate.allocate"),
+	}
 }
 
 func (fa *fileAllocate) allocate(cpk PK) (PK, error) {
+	//fa.allocTime.Start()
+	//defer fa.allocTime.Stop()
 	fa.mu.Lock()
 	defer fa.mu.Unlock()
 	latestSeg, err := fa.skv.latest(cpk)
-	fpk, _ := fa.files[cpk]
-	log.Debugf(`[FALLOC]:
-		Channel: %s
-		Latest Segment File PK: %s
-		Latest Mem File PK: %s
-		`, cpk, latestSeg.filePk, fpk.pk)
 	if IsErrorOfType(err, ErrNotFound) {
-		log.Debug("[FALLOC]: Channel has no segments")
+		log.Debug("[cesium.fileAllocate]: Channel has no segments")
 		fEntry, ok := fa.files[cpk]
 		if ok {
 			return fEntry.pk, nil

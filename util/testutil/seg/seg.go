@@ -3,6 +3,7 @@ package seg
 import (
 	"cesium"
 	"cesium/util/binary"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"math/rand"
 )
@@ -132,6 +133,7 @@ func (sc *StreamCreate) CreateCRequestsOfN(c, n int) []cesium.CreateRequest {
 func (sc *StreamCreate) CloseAndWait() error {
 	close(sc.Req)
 	for resV := range sc.Res {
+		log.Debugf("[seg.StreamCreate] Got response: %v", resV)
 		if resV.Err == io.EOF {
 			return nil
 		}

@@ -1,0 +1,15 @@
+package alamos_test
+
+import (
+	"cesium/alamos"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("Experiment", func() {
+	Describe("Creating a new experiment", func() {
+		It("Should create the experiment without panicking", func() {
+			Expect(func() { alamos.New("test") }).ToNot(Panic())
+		})
+	})
+})

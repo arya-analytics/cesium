@@ -1,14 +1,20 @@
 package cesium
 
 import (
+	"cesium/alamos"
+	"cesium/shut"
 	"context"
+	"fmt"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
+	log "github.com/sirupsen/logrus"
+	"time"
 )
 
 // |||| DB ||||
 
 type DB interface {
+
 	// NewCreate opens a new Create query that is used for writing data to the DB. A simple synchronous create query
 	// looks like the following:
 	//
@@ -73,6 +79,7 @@ type DB interface {
 	//  Adding and waiting for a sync.WaitGroup is a common pattern for Create queries, but is not required.
 	//  cesium will ensure all writes are acknowledged upon DB.Close.
 	NewCreate() Create
+
 	// NewRetrieve opens a new Retrieve query that is used for retrieving data from the DB. A simple synchronous retrieve query
 	// looks like the following:
 	//
@@ -136,6 +143,8 @@ type DB interface {
 func Open(dirname string, opts ...Option) (DB, error) {
 	o := newOptions(dirname, opts...)
 
+	shutter := shut.New(o.shutdownOpts...)
+
 	// |||| PERSIST ||||
 
 	kve, err := openPebbleKVDB(o)
@@ -149,14 +158,14 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	batchQueue := newQueue(batchRunner{
 		persist: pst,
 		batch:   batchSet{retrieveBatch{}, createBatchFileChannel{}},
-	}.exec)
-	go batchQueue.tick()
+	}.exec, shutter)
+	go batchQueue.goTick()
 
 	// |||| RUNNER ||||
 
 	skv := newSegmentKV(kve)
 	ckv := newChannelKV(kve)
-	fa := newFileAllocate(skv)
+	fa := newFileAllocate(skv, o.exp)
 
 	crSvc := newCreateChannelRunService(ckv)
 	rcSvc := newRetrieveChannelRunService(ckv)
@@ -174,12 +183,14 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		opts:    o,
 		kve:     kve,
 		runner:  runner,
+		shutter: shutter,
 	}, nil
 }
 
 type db struct {
 	dirname string
 	opts    *options
+	shutter shut.Shutter
 	runner  *run
 	kve     kvEngine
 }
@@ -215,7 +226,13 @@ func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
 }
 
 func (d *db) Close() error {
-	return d.kve.Close()
+	log.Info("[cesium.DB] shutting down gracefully")
+	dbErr := d.shutter.Close()
+	kvErr := d.kve.Close()
+	if dbErr != nil {
+		return dbErr
+	}
+	return kvErr
 }
 
 // |||| OPTIONS ||||
@@ -223,8 +240,10 @@ func (d *db) Close() error {
 type Option func(*options)
 
 type options struct {
-	dirname   string
-	memBacked bool
+	dirname      string
+	memBacked    bool
+	exp          alamos.Experiment
+	shutdownOpts []shut.Option
 }
 
 func newOptions(dirname string, opts ...Option) *options {
@@ -238,6 +257,28 @@ func newOptions(dirname string, opts ...Option) *options {
 func MemBacked() Option {
 	return func(o *options) {
 		o.memBacked = true
+	}
+}
+
+func WithExperiment(exp alamos.Experiment) Option {
+	return func(o *options) {
+		if exp != nil {
+			o.exp = exp.Sub(fmt.Sprintf("cesium-%s", o.dirname))
+		} else {
+			o.exp = exp
+		}
+	}
+}
+
+func WithShutdownThreshold(threshold time.Duration) Option {
+	return func(o *options) {
+		o.shutdownOpts = append(o.shutdownOpts, shut.WithThreshold(threshold))
+	}
+}
+
+func WithShutdownOpts(opts ...shut.Option) Option {
+	return func(o *options) {
+		o.shutdownOpts = append(o.shutdownOpts, opts...)
 	}
 }
 

@@ -35,8 +35,9 @@ func (p *persist) Exec(ops []operation) {
 				op.sendError(err)
 				return
 			}
-			log.Infof("[PERSIST] executing Operation %s", op)
+			log.Infof("[cesium.Persist] executing operation %s", op)
 			op.exec(f)
+			log.Infof("[cesium.Persist] execution complete %s", op)
 			p.kfs.Release(op.filePK())
 		}(i, op)
 	}

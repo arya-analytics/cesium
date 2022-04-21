@@ -17,7 +17,7 @@ type runService interface {
 }
 
 func (r *run) exec(ctx context.Context, q query) error {
-	log.Infof("[RUNNER] executing query %s", q)
+	log.Infof("[cesium.Runner] executing query %s", q)
 	for _, svc := range r.services {
 		handled, err := svc.exec(ctx, r.batchQueue, q)
 		if handled {
@@ -85,7 +85,7 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 	if err := cp.ckv.lock(cPKs...); err != nil {
 		return true, err
 	}
-	log.Info("[RUNNER] acquired write lock on channels")
+	log.Info("[cesium.createRunService] acquired write lock on channels")
 	s := getStream[CreateRequest, CreateResponse](q)
 	parse := createParse{
 		skv:    cp.skv,
@@ -114,11 +114,15 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 				break o
 			}
 		}
+		log.Debug("[cesium.createRunService] waiting for create to finish")
 		opWg.wait()
-		s.res <- CreateResponse{Err: io.EOF}
+		log.Debug("[cesium.createRunService] releasing write lock on channels")
 		if err := cp.ckv.unlock(cPKs...); err != nil {
 			log.Errorf("[RUNNER] failed to unlock channel %v: %v", cPKs, err)
 		}
+		log.Debug("[cesium.createRunService] released write lock on channels. sending eof.")
+		s.res <- CreateResponse{Err: io.EOF}
+		log.Debug("[cesium.createRunService] sent eof. closing response pipe.")
 		close(s.res)
 	}()
 	return true, nil
@@ -188,6 +192,6 @@ type batchRunner struct {
 
 func (br batchRunner) exec(ops []operation) {
 	bOps := br.batch.exec(ops)
-	log.Infof("[BATCH] executing %v operations on persist", len(bOps))
+	log.Infof("[cesium.Batch] executing %v operations on persist", len(bOps))
 	br.persist.Exec(bOps)
 }

@@ -2,6 +2,7 @@ package cesium_test
 
 import (
 	"cesium"
+	"cesium/alamos"
 	"cesium/util/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,10 +15,12 @@ var _ = Describe("Retrieve", func() {
 			db  cesium.DB
 			cpk cesium.PK
 			c   cesium.Channel
+			exp alamos.Experiment
 		)
 		BeforeEach(func() {
+			exp = alamos.New("retrieve_test")
 			var err error
-			db, err = cesium.Open("testdata", cesium.MemBacked())
+			db, err = cesium.Open("testdata", cesium.MemBacked(), cesium.WithExperiment(exp))
 			Expect(err).ToNot(HaveOccurred())
 			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 			Expect(err).ToNot(HaveOccurred())
