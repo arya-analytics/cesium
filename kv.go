@@ -29,7 +29,7 @@ type kvIterator interface {
 
 // |||||| PREFIX ||||||
 
-func generateKey(elems ...interface{}) ([]byte, error) {
+func generateKey(elems ...interface{}) []byte {
 	b := new(bytes.Buffer)
 	cw := errutil.NewCatchWrite(b)
 	for _, e := range elems {
@@ -40,7 +40,10 @@ func generateKey(elems ...interface{}) ([]byte, error) {
 			cw.Write(e)
 		}
 	}
-	return b.Bytes(), cw.Error()
+	if cw.Error() != nil {
+		panic(cw.Error())
+	}
+	return b.Bytes()
 }
 
 // |||||| FLUSH ||||||
@@ -48,11 +51,6 @@ func generateKey(elems ...interface{}) ([]byte, error) {
 type flush[T any] interface {
 	flush(writer io.Writer) error
 	fill(reader io.Reader) (T, error)
-}
-
-type flushAt[T any] interface {
-	flushAt(writer io.WriterAt, off int64) error
-	fillAt(reader io.ReaderAt, off int64) (T, error)
 }
 
 type flushKV[T any] struct {

@@ -35,7 +35,7 @@ func (p *persist) Exec(ops []operation) {
 				op.sendError(err)
 				return
 			}
-			log.Infof("[PERSIST] Executing Operation %s", op)
+			log.Infof("[PERSIST] executing Operation %s", op)
 			op.exec(f)
 			p.kfs.Release(op.filePK())
 		}(i, op)

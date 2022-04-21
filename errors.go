@@ -45,7 +45,3 @@ func newDerivedError(t ErrorType, base error) error {
 func newSimpleError(t ErrorType, msg string) error {
 	return Error{Type: t, Message: msg}
 }
-
-func newUnknownError(base error) error {
-	return newDerivedError(ErrUnknown, base)
-}

@@ -1,180 +1,116 @@
 package cesium_test
 
 import (
-	"cesium/util/binary"
-	"cesium/util/testutil"
+	"cesium"
+	"cesium/util/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	log "github.com/sirupsen/logrus"
-	"io"
-	"math"
 	"sync"
-	"time"
-
-	"cesium"
 )
 
 var _ = Describe("Retrieve", func() {
-	var (
-		db  cesium.DB
-		cpk cesium.PK
-	)
-	BeforeEach(func() {
-		var err error
-		db, err = cesium.Open("testdata")
-		Expect(err).ToNot(HaveOccurred())
-		c, err := db.NewCreateChannel().
-			WithRate(cesium.Hz1).
-			WithType(cesium.Float64).
-			Exec(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		cpk = c.PK
-	})
-	AfterEach(func() {
-		Expect(db.Close()).To(Succeed())
-	})
-	It("Should read the segments correctly", func() {
-		const nSamples = 100000
-		req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		sampleSpan := cesium.TimeSpan(nSamples) * cesium.Second
-		segCount := 50
-		go func() {
-			for i := 0; i < segCount/2; i++ {
-				ts := cesium.TimeStamp(0).Add(
-					cesium.TimeSpan(i) * 2 * sampleSpan,
-				)
-				req <- cesium.CreateRequest{
-					Segments: []cesium.Segment{
-						{
-							Start: ts,
-							Data:  testutil.RandomFloat64Segment(nSamples),
-						},
-						{
-							Start: ts.Add(sampleSpan),
-							Data:  testutil.RandomFloat64Segment(nSamples),
-						},
-					},
-				}
-			}
-			close(req)
-		}()
-		go func() {
-
-		}()
-		for cResV := range res {
-			if cResV.Err == io.EOF {
-				break
-			}
-			Expect(cResV.Err).ToNot(HaveOccurred())
-		}
-
-		t0 := time.Now()
-		rResV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRange{
-			Start: cesium.TimeStamp(0),
-			End:   cesium.TimeStamp(sampleSpan * cesium.TimeSpan(segCount)),
-		}).Stream(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		c := 0
-		for resV := range rResV {
-			if resV.Err == io.EOF {
-				break
-			}
-			c++
-			b := resV.Segments[0].Data
-			Expect(resV.Err).ToNot(HaveOccurred())
-			Expect(math.Float64frombits(binary.Encoding().Uint64(b[len(b)-8:]))).To(Equal(float64(nSamples + 9999)))
-			Expect(len(resV.Segments[0].Data)).To(Equal(nSamples * 8))
-		}
-		//Expect(c).To(Equal(20))
-		log.Infof(`Retrieved 
-	Sample count: %d
-	Time: %s
-	Segment Count: %v,
-	Throughput: %v samples/s`,
-			c*nSamples, time.Since(t0), c, float64(c*nSamples)/time.Since(t0).Seconds())
-		time.Sleep(5 * time.Millisecond)
-	})
-	FIt("Should support multiple concurrent create requests", func() {
-		var channels []cesium.PK
-		const (
-			nSamples     = 500000
-			channelCount = 5
+	Context("Single Channel", func() {
+		var (
+			db  cesium.DB
+			cpk cesium.PK
+			c   cesium.Channel
 		)
-		sampleSpan := cesium.TimeSpan(nSamples) * cesium.Second
-		segCount := 50
-		wg := &sync.WaitGroup{}
-		wg.Add(channelCount)
-		for i := 0; i < channelCount; i++ {
-			c, err := db.NewCreateChannel().
-				WithRate(cesium.Hz1).
-				WithType(cesium.Float64).
-				Exec(ctx)
-			channels = append(channels, c.PK)
+		BeforeEach(func() {
+			var err error
+			db, err = cesium.Open("testdata", cesium.MemBacked())
 			Expect(err).ToNot(HaveOccurred())
-			req, res, err := db.NewCreate().WhereChannels(c.PK).Stream(ctx)
+			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			go func() {
+			cpk = c.PK
+		})
+		AfterEach(func() {
+			Expect(db.Close()).To(Succeed())
+		})
+		It("Should read the segments correctly", func() {
+			req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
+			stc := &seg.StreamCreate{
+				Req:               req,
+				Res:               res,
+				SequentialFactory: seg.NewSequentialFactory(c, seg.RandFloat64, 10*cesium.Second),
+			}
+			Expect(err).ToNot(HaveOccurred())
+			stc.CreateCRequestsOfN(10, 2)
+			Expect(stc.CloseAndWait()).To(Succeed())
+			rResV, err := db.NewRetrieve().
+				WhereChannels(cpk).
+				WhereTimeRange(cesium.TimeRangeMax).
+				Stream(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			segments, err := seg.StreamRetrieve{Res: rResV}.All()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(segments).To(HaveLen(20))
+		})
+		It("It should support multiple concurrent read requests", func() {
+			req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			stc := &seg.StreamCreate{
+				Req:               req,
+				Res:               res,
+				SequentialFactory: seg.NewSequentialFactory(c, seg.RandFloat64, 10*cesium.Second),
+			}
+			stc.CreateCRequestsOfN(10, 2)
+			Expect(stc.CloseAndWait()).To(Succeed())
+			const nRequests = 10
+			wg := sync.WaitGroup{}
+			wg.Add(nRequests)
+			for i := 0; i < nRequests; i++ {
 				go func() {
-					for i := 0; i < segCount/2; i++ {
-						ts := cesium.TimeStamp(0).Add(
-							cesium.TimeSpan(i) * 2 * sampleSpan,
-						)
-						req <- cesium.CreateRequest{
-							Segments: []cesium.Segment{
-								{
-									Start: ts,
-									Data:  testutil.RandomFloat64Segment(nSamples),
-								},
-								{
-									Start: ts.Add(sampleSpan),
-									Data:  testutil.RandomFloat64Segment(nSamples),
-								},
-							},
-						}
-					}
-					close(req)
+					rResV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					segments, err := seg.StreamRetrieve{Res: rResV}.All()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(segments).To(HaveLen(20))
+					wg.Done()
 				}()
-				for cResV := range res {
-					if cResV.Err == io.EOF {
-						break
-					}
-					Expect(cResV.Err).ToNot(HaveOccurred())
-				}
-				wg.Done()
-			}()
-		}
-
-		wg.Wait()
-
-		wg = &sync.WaitGroup{}
-		wg.Add(channelCount)
-		t01 := time.Now()
-		for _, pk := range channels {
-			go func() {
-				t0 := time.Now()
-				rResV, err := db.NewRetrieve().WhereChannels(pk).WhereTimeRange(cesium.TimeRange{
-					Start: cesium.TimeStamp(0),
-					End:   cesium.TimeStamp(sampleSpan * cesium.TimeSpan(segCount)),
-				}).Stream(ctx)
+			}
+			wg.Wait()
+		})
+	})
+	Context("Multi Channel", func() {
+		var (
+			db           cesium.DB
+			channels     []cesium.Channel
+			channelCount = 10
+		)
+		BeforeEach(func() {
+			var err error
+			db, err = cesium.Open("testdata", cesium.MemBacked())
+			Expect(err).ToNot(HaveOccurred())
+			for i := 0; i < channelCount; i++ {
+				c, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				c := 0
-				for resV := range rResV {
-					if resV.Err == io.EOF {
-						break
-					}
-					c++
+				channels = append(channels, c)
+			}
+		})
+		AfterEach(func() {
+			Expect(db.Close()).To(Succeed())
+		})
+		It("Should support reading data from multiple channels", func() {
+			for i := 0; i < channelCount; i++ {
+				req, res, err := db.NewCreate().WhereChannels(channels[i].PK).Stream(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				stc := &seg.StreamCreate{
+					Req:               req,
+					Res:               res,
+					SequentialFactory: seg.NewSequentialFactory(channels[i], seg.RandFloat64, 10*cesium.Second),
 				}
-				log.Infof(`Retrieved 
-							Sample count: %d
-							Time: %s
-							Segment Count: %v,
-							Throughput: %v samples/s`,
-					c*nSamples, time.Since(t0), c, float64(c*nSamples)/time.Since(t0).Seconds())
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-		log.Info("Aggregate Throughput", float64(nSamples*segCount*channelCount)/time.Since(t01).Seconds())
+				stc.CreateCRequestsOfN(10, 2)
+				Expect(stc.CloseAndWait()).To(Succeed())
+			}
+			var cPKs []cesium.PK
+			for _, c := range channels {
+				cPKs = append(cPKs, c.PK)
+			}
+			rResV, err := db.NewRetrieve().WhereChannels(cPKs...).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			segments, err := seg.StreamRetrieve{Res: rResV}.All()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(segments).To(HaveLen(200))
+		})
 	})
 })

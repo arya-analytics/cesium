@@ -17,7 +17,7 @@ type runService interface {
 }
 
 func (r *run) exec(ctx context.Context, q query) error {
-	log.Infof("[RUNNER] Executing query %s", q)
+	log.Infof("[RUNNER] executing query %s", q)
 	for _, svc := range r.services {
 		handled, err := svc.exec(ctx, r.batchQueue, q)
 		if handled {
@@ -29,8 +29,8 @@ func (r *run) exec(ctx context.Context, q query) error {
 
 // |||||| RETRIEVE ||||||
 
-func newRetrieveRunService(skv segmentKV) runService {
-	return &retrieveRunService{parse: retrieveParse{skv: skv}}
+func newRetrieveRunService(skv segmentKV, ckv channelKV) runService {
+	return &retrieveRunService{parse: retrieveParse{skv: skv, ckv: ckv}}
 }
 
 type retrieveRunService struct {
@@ -48,7 +48,7 @@ func (rp *retrieveRunService) exec(ctx context.Context, queue chan<- operation, 
 	}
 	s := getStream[types.Nil, RetrieveResponse](q)
 	go func() {
-		log.Info("[RUNNER] Waiting for retrieve to finish")
+		log.Info("[RUNNER] waiting for get to finish")
 		opWg.wait()
 		s.res <- RetrieveResponse{Err: io.EOF}
 	}()
@@ -77,17 +77,22 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 	if !ok {
 		return false, nil
 	}
-	cpk, err := channelPK(q)
+	cPKs, err := channelPKs(q, true)
 	if err != nil {
 		return true, err
 	}
-	log.Infof("[RUNNER] acquiring write lock on channel %v", cpk)
-	if err := cp.ckv.lock(cpk); err != nil {
+	log.Infof("[RUNNER] acquiring write lock on channels %v", cPKs)
+	if err := cp.ckv.lock(cPKs...); err != nil {
 		return true, err
 	}
-	log.Info("[RUNNER] acquired write lock on channel")
+	log.Info("[RUNNER] acquired write lock on channels")
 	s := getStream[CreateRequest, CreateResponse](q)
-	parse := createParse{skv: cp.skv, fa: cp.fa}
+	parse := createParse{
+		skv:    cp.skv,
+		fa:     cp.fa,
+		cPKs:   cPKs,
+		stream: s,
+	}
 	var opWg operationWaitGroup
 	go func() {
 	o:
@@ -97,7 +102,7 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 				if !ok {
 					break o
 				}
-				opWg, err = parse.parse(ctx, q, req)
+				opWg, err = parse.parse(ctx, req)
 				if err != nil {
 					s.res <- CreateResponse{Err: err}
 					break o
@@ -111,6 +116,9 @@ func (cp *createRunService) exec(ctx context.Context, queue chan<- operation, q 
 		}
 		opWg.wait()
 		s.res <- CreateResponse{Err: io.EOF}
+		if err := cp.ckv.unlock(cPKs...); err != nil {
+			log.Errorf("[RUNNER] failed to unlock channel %v: %v", cPKs, err)
+		}
 		close(s.res)
 	}()
 	return true, nil
@@ -140,7 +148,7 @@ func (cr *createChannelRunService) exec(_ context.Context, _ chan<- operation, q
 	if !ok {
 		return handled, newSimpleError(ErrInvalidQuery, "no density provided to create query")
 	}
-	c := Channel{PK: NewPK(), DataRate: dr, Density: ds}
+	c := Channel{PK: NewPK(), DataRate: dr, DataType: ds}
 	err = cr.ckv.set(c.PK, c)
 	setQueryRecord[Channel](q, c)
 	return handled, err
@@ -171,7 +179,7 @@ func (rc *retrieveChannelRunService) exec(_ context.Context, _ chan<- operation,
 	return handled, err
 }
 
-// |||||| BATCH RUNNER |||||
+// |||||| BATCH RUNNER ||||||
 
 type batchRunner struct {
 	persist Persist
@@ -179,10 +187,7 @@ type batchRunner struct {
 }
 
 func (br batchRunner) exec(ops []operation) {
-	bOps, err := br.batch.exec(ops)
-	if err != nil {
-		panic(err)
-	}
+	bOps := br.batch.exec(ops)
 	log.Infof("[BATCH] executing %v operations on persist", len(bOps))
 	br.persist.Exec(bOps)
 }

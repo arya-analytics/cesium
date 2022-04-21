@@ -2,13 +2,15 @@ package testutil
 
 import (
 	"bytes"
+	"cesium"
 	"cesium/util/binary"
+	"math/rand"
 )
 
 func RandFloat64Slice(n int) []float64 {
 	s := make([]float64, n)
-	for i := range s {
-		s[i] = float64(i + 10000)
+	for i := 0; i < n; i++ {
+		s[i] = rand.Float64()
 	}
 	return s
 }
@@ -27,6 +29,10 @@ func RandomFloat64Bytes(n int) []byte {
 		panic(err)
 	}
 	return buf.Bytes()
+}
+
+func NewFloat64Segment(cpk cesium.PK, factory func(n int)) cesium.Segment {
+	return cesium.Segment{}
 }
 
 func RandomFloat64Segment(n int) []byte {

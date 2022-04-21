@@ -14,6 +14,14 @@ func (ts TimeStamp) String() string {
 	return time.UnixMicro(int64(ts)).String()
 }
 
+func Now() TimeStamp {
+	return NewTimeStamp(time.Now())
+}
+
+func NewTimeStamp(t time.Time) TimeStamp {
+	return TimeStamp(t.UnixMicro())
+}
+
 var (
 	TimeStampMin = TimeStamp(0)
 	TimeStampMax = TimeStamp(^uint64(0) >> 1)
@@ -44,6 +52,10 @@ type TimeRange struct {
 	End   TimeStamp
 }
 
+func NewTimeRange(start, end TimeStamp) TimeRange {
+	return TimeRange{Start: start, End: end}
+}
+
 func (tr TimeRange) Span() TimeSpan {
 	return TimeSpan(tr.End - tr.Start)
 }
@@ -65,12 +77,16 @@ func (ts TimeSpan) Duration() time.Duration {
 	return time.Duration(ts) * time.Microsecond
 }
 
+func (ts TimeSpan) Seconds() float64 {
+	return float64(ts) / float64(Second)
+}
+
 const (
 	Microsecond = TimeSpan(1)
-	Millisecond = TimeSpan(1000 * Microsecond)
-	Second      = TimeSpan(1000 * Millisecond)
-	Minute      = TimeSpan(60 * Second)
-	Hour        = TimeSpan(60 * Minute)
+	Millisecond = 1000 * Microsecond
+	Second      = 1000 * Millisecond
+	Minute      = 60 * Second
+	Hour        = 60 * Minute
 )
 
 // |||||| SIZE ||||||
@@ -89,17 +105,24 @@ func (s Size) String() string {
 
 type DataRate float64
 
-const secondsToMicroseconds = 1000000
-
 func (dr DataRate) Period() TimeSpan {
-	return TimeSpan(1 / float64(dr) * secondsToMicroseconds)
+	return TimeSpan(1 / float64(dr) * float64(Second))
+}
+
+func (dr DataRate) SampleCount(t TimeSpan) int {
+	return int(t.Seconds() * float64(dr))
+}
+
+func (dr DataRate) Span(sampleCount int) TimeSpan {
+	return dr.Period() * TimeSpan(sampleCount)
+}
+
+func (dr DataRate) ByteSpan(byteCount int, dataType DataType) TimeSpan {
+	return dr.Span(byteCount / int(dataType))
 }
 
 const (
-	Hz1   DataRate = 1
-	Hz10  DataRate = 10
-	Hz5   DataRate = 5
-	Hz100 DataRate = 100
+	Hz DataRate = 1
 )
 
 // |||||| DENSITY ||||||

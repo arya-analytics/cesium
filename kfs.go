@@ -2,6 +2,7 @@ package cesium
 
 import (
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"io"
 	"io/fs"
 	"os"
@@ -10,7 +11,7 @@ import (
 	"syscall"
 )
 
-// |||||| KFS |||||||
+// |||||| kfs |||||||
 
 type keyFile interface {
 	PK() PK
@@ -98,20 +99,20 @@ func newEntry(f keyFile) fly {
 }
 
 func (e fly) lock() {
-	log.Debugf("[KFS] acquiring lock on file %s", e.f.PK())
+	log.Debugf("[kfs] acquiring lock on file %s", e.f.PK())
 	<-e.l
-	log.Debugf("[KFS] acquired lock on file %s", e.f.PK())
+	log.Debugf("[kfs] acquired lock on file %s", e.f.PK())
 	e.l = make(chan struct{}, 1)
 }
 
 func (e fly) unlock() {
-	log.Debugf("[KFS] releasing lock on file %s", e.f.PK())
+	log.Debugf("[kfs] releasing lock on file %s", e.f.PK())
 	select {
 	case <-e.l:
 	default:
 		e.l <- struct{}{}
 	}
-	log.Debugf("[KFS] released lock on file %s", e.f.PK())
+	log.Debugf("[kfs] released lock on file %s", e.f.PK())
 }
 
 type baseKeyFile struct {
@@ -146,23 +147,56 @@ func (kfs *OSKFSSource) path(pk PK) string {
 }
 
 func (kfs *OSKFSSource) open(pk PK) (keyFile, error) {
-	log.Infof("[KFS] opening file %s", pk)
+	log.Infof("[kfs] opening file %s", pk)
 	f, err := os.Open(kfs.path(pk))
-	if !kfs.exists(err) {
+	if !fileExists(err) {
 		f, err = kfs.create(pk)
 	}
 	return &osFile{baseKeyFile: baseKeyFile{pk: pk}, File: f}, err
 }
 
-func (kfs *OSKFSSource) exists(err error) bool {
+func fileExists(err error) bool {
 	fsErr, ok := err.(*fs.PathError)
-	return !(ok && fsErr.Err == syscall.ENOENT)
+	if !ok {
+		return true
+	}
+	return fsErr.Err == syscall.ENOENT
 }
 
 func (kfs *OSKFSSource) create(pk PK) (*os.File, error) {
-	f, err := os.Create(kfs.path(pk))
-	if err != nil {
-		return nil, err
+	return os.Create(kfs.path(pk))
+}
+
+// |||||| AFERO FILE SOURCE ||||||
+
+type aferoFile struct {
+	baseKeyFile
+	afero.File
+}
+
+type AferoKFSSource struct {
+	Root string
+	Fs   afero.Fs
+}
+
+func NewAfero(root string) *KFS {
+	af := afero.NewMemMapFs()
+	return NewKFS(&AferoKFSSource{Fs: af})
+}
+
+func (kfs *AferoKFSSource) delete(pk PK) error {
+	return kfs.Fs.Remove(pk.String())
+}
+
+func (kfs *AferoKFSSource) open(pk PK) (keyFile, error) {
+	log.Infof("[kfs] opening file %s", pk)
+	f, err := kfs.Fs.Open(pk.String())
+	if !fileExists(err) {
+		f, err = kfs.create(pk)
 	}
-	return f, nil
+	return &aferoFile{baseKeyFile: baseKeyFile{pk: pk}, File: f}, err
+}
+
+func (kfs *AferoKFSSource) create(pk PK) (afero.File, error) {
+	return kfs.Fs.Create(pk.String())
 }

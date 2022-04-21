@@ -7,7 +7,7 @@ import (
 // |||||| INTERFACE ||||||
 
 type batch interface {
-	exec([]operation) ([]operation, error)
+	exec([]operation) []operation
 }
 
 // |||||| RETRIEVE ||||||
@@ -16,23 +16,21 @@ type retrieveBatch struct{}
 
 func filterOperations[T operation](ops []operation) (conc []T) {
 	for _, op := range ops {
-		_, ok := op.(T)
+		v, ok := op.(T)
 		if ok {
-			conc = append(conc, op.(T))
+			conc = append(conc, v)
 		}
 	}
 	return
 }
 
-func (r retrieveBatch) exec(ops []operation) ([]operation, error) {
+func (r retrieveBatch) exec(ops []operation) (oOps []operation) {
 	cOps := filterOperations[retrieveOperation](ops)
-	fileBatched := batchByFilePK(cOps)
-	var oOps []operation
-	for _, batchedOps := range fileBatched {
-		sortByOffset(batchedOps)
-		oOps = append(oOps, batchOperation[retrieveOperation](batchedOps))
+	for _, batchedOp := range batchByFilePK(cOps) {
+		sortByOffset(batchedOp)
+		oOps = append(oOps, batchOperation[retrieveOperation](batchedOp))
 	}
-	return oOps, nil
+	return oOps
 }
 
 func batchByFilePK[T operation](ops []T) map[PK][]T {
@@ -44,34 +42,31 @@ func batchByFilePK[T operation](ops []T) map[PK][]T {
 }
 
 func sortByOffset(ops []retrieveOperation) {
-	sort.Slice(ops, func(i, j int) bool {
-		return ops[i].offset() < ops[j].offset()
-	})
+	sort.Slice(ops, func(i, j int) bool { return ops[i].offset() < ops[j].offset() })
 }
 
 // |||||| CREATE ||||||
 
-type createBatch struct{}
+type createBatchFileChannel struct{}
 
-func (c createBatch) exec(ops []operation) ([]operation, error) {
+func (c createBatchFileChannel) exec(ops []operation) (oOps []operation) {
 	cOps := filterOperations[createOperation](ops)
-	fileBatched := batchByFilePK(cOps)
-	var oOps []operation
-	for _, batchedOps := range fileBatched {
-		batchedByChannelPK := batchByChannelPK(batchedOps)
-		op := make(batchOperation[createOperation], 0, len(batchedByChannelPK))
-		for _, bOps := range batchedByChannelPK {
+	fb := batchByFilePK(cOps)
+	for _, batchedOps := range fb {
+		bCPK := batchByChannelPK(batchedOps)
+		op := make(batchOperation[createOperation], 0, len(bCPK))
+		for _, bOps := range bCPK {
 			op = append(op, bOps...)
 		}
 		oOps = append(oOps, op)
 	}
-	return oOps, nil
+	return oOps
 }
 
 func batchByChannelPK(ops []createOperation) map[PK][]createOperation {
-	bo := map[PK][]createOperation{}
+	bo := make(map[PK][]createOperation)
 	for _, op := range ops {
-		bo[op.channelPK()] = append(bo[op.channelPK()], op)
+		bo[op.cpk] = append(bo[op.cpk], op)
 	}
 	return bo
 }
@@ -80,14 +75,9 @@ func batchByChannelPK(ops []createOperation) map[PK][]createOperation {
 
 type batchSet []batch
 
-func (bs batchSet) exec(ops []operation) ([]operation, error) {
-	var oOps []operation
+func (bs batchSet) exec(ops []operation) (oOps []operation) {
 	for _, b := range bs {
-		bOps, err := b.exec(ops)
-		if err != nil {
-			panic(err)
-		}
-		oOps = append(oOps, bOps...)
+		oOps = append(oOps, b.exec(ops)...)
 	}
-	return oOps, nil
+	return oOps
 }

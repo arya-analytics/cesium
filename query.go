@@ -20,6 +20,19 @@ const (
 	recordOptKey
 )
 
+// Query is an interface that represents all available query variants cesium supports.
+//
+// Supported Variants:
+//	- Create
+//  - Retrieve
+//  - Delete
+//  - CreateChannel
+//  - RetrieveChannel
+//
+type Query interface {
+	Variant() interface{}
+}
+
 type query struct {
 	exec    queryExec
 	variant interface{}
@@ -30,17 +43,23 @@ type queryExec interface {
 	exec(ctx context.Context, q query) error
 }
 
-func (q query) retrieve(key queryOptKey) (interface{}, bool) {
+// Variant returns the variant of the query, which is one of the variants listed in the Query interface.
+func (q query) Variant() interface{} {
+	return q.variant
+}
+
+// String returns a string representation of the query.
+func (q query) String() string {
+	return fmt.Sprintf("[QUERY] Variant %T | Opts %v", q.variant, q.opts)
+}
+
+func (q query) get(key queryOptKey) (interface{}, bool) {
 	o, ok := q.opts[key]
 	return o, ok
 }
 
 func (q query) set(key queryOptKey, value interface{}) {
 	q.opts[key] = value
-}
-
-func (q query) String() string {
-	return fmt.Sprintf("[QUERY] Variant %T | Opts %v", q.variant, q.opts)
 }
 
 type execFunc func(ctx context.Context, q query) error
@@ -109,24 +128,29 @@ func newDelete(exec queryExec) Delete {
 
 // |||||| TYPE DEFINITIONS ||||||
 
+// CreateChannel creates a new channel in the DB. See DB.NewCreate for more information.
 type CreateChannel struct {
 	query
 }
 
+// RetrieveChannel retrieves a channel from the DB. See DB.NewRetrieve for more information.
 type RetrieveChannel struct {
 	query
 }
 
+// CreateRequest is a request containing a set of segments to write to the DB.
 type CreateRequest struct {
 	Segments []Segment
 }
 
+// CreateResponse contains any errors that occurred during the execution of the Create query.
 type CreateResponse struct {
 	Err error
 }
 
-func (c CreateResponse) Error() error {
-	return c.Err
+// Error implements the StreamResponse interface.
+func (r CreateResponse) Error() error {
+	return r.Err
 }
 
 type Create struct {
@@ -156,18 +180,21 @@ func setChannelPKs(q query, pks ...PK) {
 	q.set(channelPKOptKey, pks)
 }
 
-func channelPKs(q query) []PK {
+func channelPKs(q query, errNotPresent bool) ([]PK, error) {
 	pks, ok := getOpt[[]PK](q, channelPKOptKey)
 	if !ok {
-		return []PK{}
+		if errNotPresent {
+			return []PK{}, newSimpleError(ErrInvalidQuery, "no channel pks provided to query")
+		}
+		return []PK{}, nil
 	}
-	return pks
+	return pks, nil
 }
 
 func channelPK(q query) (PK, error) {
-	pks := channelPKs(q)
-	if len(pks) == 0 {
-		return PK{}, newSimpleError(ErrInvalidQuery, "no channel PKs provided to retrieve query")
+	pks, err := channelPKs(q, true)
+	if err != nil {
+		return PK{}, err
 	}
 	if len(pks) > 1 {
 		return PK{}, newSimpleError(ErrInvalidQuery, "query only supports on channel pk")
@@ -176,26 +203,34 @@ func channelPK(q query) (PK, error) {
 }
 
 func getOpt[T any](q query, k queryOptKey) (T, bool) {
-	opt, ok := q.retrieve(k)
+	opt, ok := q.get(k)
 	ro, ok := opt.(T)
 	return ro, ok
 }
 
+// WherePK returns a query that will only return Channel that match the given primary key.
 func (r RetrieveChannel) WherePK(pk PK) RetrieveChannel {
-	setChannelPKs(r.query, pk)
+	r.set(channelPKOptKey, []PK{pk})
 	return r
 }
 
+// WhereChannels sets the channels to acquire a lock on for creation.
+// The request stream will only accept segments bound to channels with the given primary keys.
+// If no keys are provided, will return an ErrInvalidQuery error.
 func (c Create) WhereChannels(pks ...PK) Create {
 	setChannelPKs(c.query, pks...)
 	return c
 }
 
+// WhereChannels sets the channels to retrieve data for.
+// If no keys are provided, will return an ErrInvalidQuery error.
 func (r Retrieve) WhereChannels(pks ...PK) Retrieve {
 	setChannelPKs(r.query, pks...)
 	return r
 }
 
+// WhereChannels sets the channels to delete data from,
+// If no keys are provided, will return an ErrInvalidQuery error.
 func (d Delete) WhereChannels(pks ...PK) Delete {
 	setChannelPKs(d.query, pks...)
 	return d
@@ -215,11 +250,13 @@ func timeRange(q query) TimeRange {
 	return tr
 }
 
+// WhereTimeRange sets the time range to retrieve data from.
 func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve {
 	setTimeRange(r.query, tr)
 	return r
 }
 
+// WhereTimeRange sets the time range to delete data from.
 func (d Delete) WhereTimeRange(tr TimeRange) Delete {
 	return d
 }
@@ -235,6 +272,7 @@ func queryRecord[T any](q query) (T, bool) {
 	return r, ok
 }
 
+// Exec creates a new channel in the DB given the query parameters.
 func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
 	if err := cc.exec.exec(ctx, cc.query); err != nil {
 		return Channel{}, err
@@ -243,6 +281,19 @@ func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
 	return c, nil
 }
 
+// ExecN creates a set of N channels in the DB with identical parameters, as specified in the query.
+func (cc CreateChannel) ExecN(ctx context.Context, n int) (channels []Channel, err error) {
+	for i := 0; i < n; i++ {
+		if err = cc.exec.exec(ctx, cc.query); err != nil {
+			return nil, err
+		}
+		cs, _ := queryRecord[Channel](cc.query)
+		channels = append(channels, cs)
+	}
+	return channels, nil
+}
+
+// Exec retrieves a channel from the DB given the query parameters.
 func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 	if err := r.exec.exec(ctx, r.query); err != nil {
 		return Channel{}, err
@@ -251,6 +302,7 @@ func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 	return c, nil
 }
 
+// Stream opens a stream
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
 	req := make(chan CreateRequest)
 	res := make(chan CreateResponse)

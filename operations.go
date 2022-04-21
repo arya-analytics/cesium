@@ -38,21 +38,29 @@ func (d operationWaitGroup) wait() {
 // || PARSE ||
 
 type retrieveParse struct {
+	ckv channelKV
 	skv segmentKV
 }
 
 func (rp retrieveParse) parse(ctx context.Context, q query) (opSet operationWaitGroup, err error) {
-	cpk, err := channelPK(q)
+	cPKs, err := channelPKs(q, true)
 	if err != nil {
+		return opSet, err
+	}
+	if _, err := rp.ckv.getMultiple(cPKs...); err != nil {
 		return opSet, err
 	}
 	tr := timeRange(q)
-	segments, err := rp.skv.filter(tr, cpk)
-	if err != nil {
-		return opSet, err
-	}
-	if len(segments) == 0 {
-		return opSet, newSimpleError(ErrNotFound, "no segments found to satisfy query")
+	var segments []Segment
+	for _, cpk := range cPKs {
+		nSegments, err := rp.skv.filter(tr, cpk)
+		if err != nil {
+			return opSet, err
+		}
+		if len(nSegments) == 0 {
+			return opSet, newSimpleError(ErrNotFound, "no segments found to satisfy query")
+		}
+		segments = append(segments, nSegments...)
 	}
 	opSet.done = make(chan struct{}, len(segments))
 	s := getStream[types.Nil, RetrieveResponse](q)
@@ -72,11 +80,7 @@ type retrieveOperation struct {
 }
 
 func (ro retrieveOperation) filePK() PK {
-	return ro.seg.FilePK
-}
-
-func (ro retrieveOperation) channelPK() PK {
-	return ro.seg.ChannelPK
+	return ro.seg.filePk
 }
 
 func (ro retrieveOperation) context() context.Context {
@@ -89,28 +93,28 @@ func (ro retrieveOperation) sendError(err error) {
 
 func (ro retrieveOperation) exec(f keyFile) {
 	c := errutil.NewCatchReadWriteSeek(f)
-	c.Seek(ro.seg.Offset, io.SeekStart)
-	b := make([]byte, ro.seg.Size)
+	c.Seek(ro.seg.offset, io.SeekStart)
+	b := make([]byte, ro.seg.size)
 	c.Read(b)
 	ro.seg.Data = b
 	if c.Error() == io.EOF {
-		panic("retrieve encountered unexpected EOF. this is a bug.")
+		panic("get encountered unexpected EOF. this is a bug.")
 	}
 	ro.stream.res <- RetrieveResponse{Segments: []Segment{ro.seg}, Err: c.Error()}
 	ro.done <- struct{}{}
 }
 
 func (ro retrieveOperation) offset() int64 {
-	return ro.seg.Offset
+	return ro.seg.offset
 }
 
 func (ro retrieveOperation) String() string {
 	return fmt.Sprintf(
-		"[OP] Retrieve - Channel %s | File %s | Offset %d | Size %d",
-		ro.channelPK(),
+		"[OP] Retrieve - Channel %s | File %s | offset %d | size %d",
+		ro.seg.ChannelPK,
 		ro.filePK(),
 		ro.offset(),
-		ro.seg.Size,
+		ro.seg.size,
 	)
 }
 
@@ -120,38 +124,34 @@ func (ro retrieveOperation) String() string {
 
 // || OP ||
 
-const maxFileOffset = 1e8
+const maxFileOffset = 1e9
 
 type createParse struct {
-	fpk PK
-	skv segmentKV
-	fa  *fileAllocate
+	fpk    PK
+	skv    segmentKV
+	fa     *fileAllocate
+	cPKs   []PK
+	stream *stream[CreateRequest, CreateResponse]
 }
 
-func (cp createParse) parse(ctx context.Context, q query, req CreateRequest) (opSet operationWaitGroup, err error) {
-	cPK, err := channelPK(q)
-	if err != nil {
-		return opSet, err
+func (cp createParse) parse(ctx context.Context, req CreateRequest) (opWg operationWaitGroup, err error) {
+	opWg.done = make(chan struct{}, len(req.Segments))
+	for _, seg := range req.Segments {
+		fpk, err := cp.fa.allocate(seg.ChannelPK)
+		if err != nil {
+			return opWg, err
+		}
+		opWg.ops = append(opWg.ops, createOperation{
+			ctx:  ctx,
+			fpk:  fpk,
+			cpk:  seg.ChannelPK,
+			kv:   cp.skv,
+			s:    cp.stream,
+			seg:  req.Segments,
+			done: opWg.done,
+		})
 	}
-	fpk, err := cp.fa.allocate(cPK)
-	if err != nil {
-		return opSet, err
-	}
-	s := getStream[CreateRequest, CreateResponse](q)
-	done := make(chan struct{}, 1)
-	return operationWaitGroup{
-		done: done,
-		ops: []operation{
-			createOperation{
-				ctx:  ctx,
-				fpk:  fpk,
-				cpk:  cPK,
-				kv:   cp.skv,
-				s:    s,
-				seg:  req.Segments,
-				done: done},
-		},
-	}, nil
+	return opWg, nil
 }
 
 type createOperation struct {
@@ -168,21 +168,21 @@ func (cr createOperation) filePK() PK {
 	return cr.fpk
 }
 
-func (cr createOperation) channelPK() PK {
-	return cr.cpk
-}
-
 func (cr createOperation) sendError(err error) {
 	cr.s.res <- CreateResponse{Err: err}
 }
 
 func (cr createOperation) exec(f keyFile) {
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		cr.sendError(err)
+		return
+	}
 	for _, s := range cr.seg {
 		c := errutil.NewCatchReadWriteSeek(f)
-		s.FilePK = f.PK()
+		s.filePk = f.PK()
 		s.ChannelPK = cr.cpk
-		s.Size = s.size()
-		s.Offset = c.Seek(0, io.SeekCurrent)
+		s.size = s.Size()
+		s.offset = c.Seek(0, io.SeekCurrent)
 		c.Exec(func() error { return s.flushData(f) })
 		c.Exec(func() error { return cr.kv.set(s) })
 		if c.Error() != nil {
@@ -200,11 +200,7 @@ func (cr createOperation) context() context.Context {
 }
 
 func (cr createOperation) String() string {
-	return fmt.Sprintf(
-		"[OP] Create - Channel %s | File %s",
-		cr.channelPK(),
-		cr.filePK(),
-	)
+	return fmt.Sprintf("[OP] Create - Channel %s | File %s", cr.cpk, cr.filePK())
 }
 
 // |||||| FILE ALLOCATE  ||||||
@@ -233,9 +229,9 @@ func (fa *fileAllocate) allocate(cpk PK) (PK, error) {
 		Channel: %s
 		Latest Segment File PK: %s
 		Latest Mem File PK: %s
-		`, cpk, latestSeg.FilePK, fpk.pk)
+		`, cpk, latestSeg.filePk, fpk.pk)
 	if IsErrorOfType(err, ErrNotFound) {
-		log.Error("[FALLOC]: Channel has no segments")
+		log.Debug("[FALLOC]: Channel has no segments")
 		fEntry, ok := fa.files[cpk]
 		if ok {
 			return fEntry.pk, nil
@@ -246,12 +242,12 @@ func (fa *fileAllocate) allocate(cpk PK) (PK, error) {
 		panic(err)
 	}
 
-	fa.setFile(cpk, Size(latestSeg.Offset)+latestSeg.Size, latestSeg.FilePK)
-	if latestSeg.Offset > maxFileOffset {
-		log.Debugf("[FALLOC]: File %s filled up. Allocating new file.", latestSeg.FilePK)
+	fa.setFile(cpk, Size(latestSeg.offset)+latestSeg.size, latestSeg.filePk)
+	if latestSeg.offset > maxFileOffset {
+		log.Debugf("[FALLOC]: File %s filled up. Allocating new file.", latestSeg.filePk)
 		return fa.allocateNew(cpk)
 	}
-	return latestSeg.FilePK, nil
+	return latestSeg.filePk, nil
 }
 
 func (fa *fileAllocate) allocateNew(cpk PK) (PK, error) {
