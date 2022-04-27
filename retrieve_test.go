@@ -34,7 +34,7 @@ var _ = Describe("Retrieve", func() {
 			stc := &seg.StreamCreate{
 				Req:               req,
 				Res:               res,
-				SequentialFactory: seg.NewSequentialFactory(c, seg.RandFloat64, 10*cesium.Second),
+				SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, c),
 			}
 			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
@@ -54,7 +54,7 @@ var _ = Describe("Retrieve", func() {
 			stc := &seg.StreamCreate{
 				Req:               req,
 				Res:               res,
-				SequentialFactory: seg.NewSequentialFactory(c, seg.RandFloat64, 10*cesium.Second),
+				SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, c),
 			}
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
@@ -100,7 +100,7 @@ var _ = Describe("Retrieve", func() {
 				stc := &seg.StreamCreate{
 					Req:               req,
 					Res:               res,
-					SequentialFactory: seg.NewSequentialFactory(channels[i], seg.RandFloat64, 10*cesium.Second),
+					SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, channels[i]),
 				}
 				stc.CreateCRequestsOfN(10, 2)
 				Expect(stc.CloseAndWait()).To(Succeed())

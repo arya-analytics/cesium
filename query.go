@@ -304,7 +304,7 @@ func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 
 // Stream opens a stream
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
-	req := make(chan CreateRequest)
+	req := make(chan CreateRequest, 100)
 	res := make(chan CreateResponse)
 	s := &stream[CreateRequest, CreateResponse]{
 		req:     req,

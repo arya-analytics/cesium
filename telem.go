@@ -2,6 +2,7 @@ package cesium
 
 import (
 	"cesium/util/binary"
+	log "github.com/sirupsen/logrus"
 	"strconv"
 	"time"
 )
@@ -78,6 +79,7 @@ func (ts TimeSpan) Duration() time.Duration {
 }
 
 func (ts TimeSpan) Seconds() float64 {
+	log.Info(float64(ts), float64(Second))
 	return float64(ts) / float64(Second)
 }
 
@@ -110,6 +112,7 @@ func (dr DataRate) Period() TimeSpan {
 }
 
 func (dr DataRate) SampleCount(t TimeSpan) int {
+	log.Info(t.Seconds(), dr)
 	return int(t.Seconds() * float64(dr))
 }
 

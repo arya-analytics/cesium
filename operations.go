@@ -9,6 +9,7 @@ import (
 	"go/types"
 	"io"
 	"sync"
+	"time"
 )
 
 type operation interface {
@@ -174,19 +175,33 @@ func (cr createOperation) sendError(err error) {
 }
 
 func (cr createOperation) exec(f keyFile) {
+	tot := time.Now()
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		cr.sendError(err)
 		return
 	}
-	log.Debug(cr.String())
+	seek := time.Since(tot)
+	var (
+		flushTot time.Duration
+		kvTot    time.Duration
+		flushMax time.Duration
+	)
 	for _, s := range cr.seg {
 		c := errutil.NewCatchReadWriteSeek(f)
-		s.filePk = f.PK()
+		s.filePk = f.PKV()
 		s.ChannelPK = cr.cpk
 		s.size = s.Size()
 		s.offset = c.Seek(0, io.SeekCurrent)
+		flushStart := time.Now()
 		c.Exec(func() error { return s.flushData(f) })
+		flushDur := time.Since(flushStart)
+		flushTot += flushDur
+		kvStart := time.Now()
+		if flushDur > flushMax {
+			flushMax = flushDur
+		}
 		c.Exec(func() error { return cr.kv.set(s) })
+		kvTot += time.Since(kvStart)
 		if c.Error() != nil {
 			if c.Error() == io.EOF {
 				panic(io.ErrUnexpectedEOF)
@@ -194,7 +209,17 @@ func (cr createOperation) exec(f keyFile) {
 			cr.s.res <- CreateResponse{Err: c.Error()}
 		}
 	}
+	t0 := time.Now()
 	cr.done <- struct{}{}
+	d := time.Since(t0)
+	log.Infof("Total: %s | Seek %s | Flush %s | KV %s | Done %s | Flush Max %s",
+		time.Since(tot),
+		seek,
+		flushTot,
+		kvTot,
+		d,
+		flushMax,
+	)
 }
 
 func (cr createOperation) context() context.Context {
@@ -216,7 +241,7 @@ type fileAllocate struct {
 	mu        *sync.Mutex
 	files     map[PK]fileAllocateInfo
 	skv       segmentKV
-	allocTime alamos.DurationMeasurement
+	allocTime alamos.Duration
 }
 
 func newFileAllocate(skv segmentKV, exp alamos.Experiment) *fileAllocate {
@@ -224,7 +249,7 @@ func newFileAllocate(skv segmentKV, exp alamos.Experiment) *fileAllocate {
 		files:     make(map[PK]fileAllocateInfo),
 		mu:        &sync.Mutex{},
 		skv:       skv,
-		allocTime: alamos.NewDurationSeries(exp, "cesium.fileAllocate.allocate"),
+		allocTime: alamos.NewSeriesDuration(exp, "cesium.fileAllocate.allocate"),
 	}
 }
 

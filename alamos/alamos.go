@@ -2,8 +2,8 @@ package alamos
 
 type Experiment interface {
 	Sub(string) Experiment
-	AddMeasurement(expMeasurement)
-	Measurements() map[string]expMeasurement
+	AddMeasurement(entry)
+	Measurements() map[string]entry
 }
 
 type ExperimentWriter struct {
@@ -13,7 +13,7 @@ type ExperimentWriter struct {
 type experiment struct {
 	key          string
 	children     map[string]Experiment
-	measurements map[string]expMeasurement
+	measurements map[string]entry
 }
 
 func (e *experiment) Sub(key string) Experiment {
@@ -27,11 +27,11 @@ func (e *experiment) addSub(key string, exp Experiment) Experiment {
 	return exp
 }
 
-func (e *experiment) AddMeasurement(m expMeasurement) {
-	e.measurements[m.Key()] = m
+func (e *experiment) AddMeasurement(m entry) {
+	e.measurements[m.key()] = m
 }
 
-func (e *experiment) Measurements() map[string]expMeasurement {
+func (e *experiment) Measurements() map[string]entry {
 	return e.measurements
 }
 
@@ -39,6 +39,29 @@ func New(name string) Experiment {
 	return &experiment{
 		key:          name,
 		children:     make(map[string]Experiment),
-		measurements: make(map[string]expMeasurement),
+		measurements: make(map[string]entry),
 	}
+}
+
+func SubExperiment(exp Experiment, key string) Experiment {
+	if exp == nil {
+		return nil
+	}
+	return exp.Sub(key)
+}
+
+type entry interface {
+	key() string
+}
+
+func newEntry(key string) entry {
+	return &baseEntry{k: key}
+}
+
+type baseEntry struct {
+	k string
+}
+
+func (b *baseEntry) key() string {
+	return b.k
 }

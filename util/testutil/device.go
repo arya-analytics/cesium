@@ -50,7 +50,7 @@ func (d *Device) Start() error {
 }
 
 func (d *Device) writeSegments(c cesium.Channel) error {
-	req, res, err := d.DB.NewCreate().WhereChannels(c.PK).Stream(d.Ctx)
+	req, res, err := d.DB.NewCreate().WhereChannels(c.PKV).Stream(d.Ctx)
 	if err != nil {
 		return err
 

@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Measurement", func() {
+var _ = Describe("Metric", func() {
 	var (
 		exp alamos.Experiment
 	)
@@ -14,7 +14,7 @@ var _ = Describe("Measurement", func() {
 		exp = alamos.New("test")
 	})
 	Describe("Series", func() {
-		It("Should create a Series measurement", func() {
+		It("Should create a Series entry", func() {
 			Expect(func() {
 				alamos.NewSeries[int8](exp, "test.series")
 			}).ToNot(Panic())
@@ -31,7 +31,7 @@ var _ = Describe("Measurement", func() {
 		})
 	})
 	Describe("Gauge", func() {
-		It("Should create a Gauge measurement", func() {
+		It("Should create a Gauge entry", func() {
 			Expect(func() { alamos.NewGauge[int8](exp, "test.gauge") }).ToNot(Panic())
 		})
 		It("Should set the value on teh gauge", func() {

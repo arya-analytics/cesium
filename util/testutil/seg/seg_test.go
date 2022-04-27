@@ -34,7 +34,7 @@ var _ = Describe("Seg", func() {
 	Describe("Segment Factories", func() {
 		Describe("New", func() {
 			It("Should create a new segment correctly", func() {
-				c := cesium.Channel{PK: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
+				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
 				seg := seg.New(c, seg.SeqFloat64, 0, 10*cesium.Second)
 				Expect(seg.Data).To(HaveLen(80))
 				f64 := seg.ToFloat64()
@@ -45,7 +45,7 @@ var _ = Describe("Seg", func() {
 		})
 		Describe("NewSet", func() {
 			It("Should create a new set of segments correctly", func() {
-				c := cesium.Channel{PK: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
+				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
 				segs := seg.NewSet(c, seg.SeqFloat64, 0, 10*cesium.Second, 10)
 				Expect(segs).To(HaveLen(10))
 				Expect(segs[0].Data).To(HaveLen(80))
@@ -59,7 +59,7 @@ var _ = Describe("Seg", func() {
 		})
 		Describe("SequentialFactory", func() {
 			It("Should create a seg of segments sequentially", func() {
-				c := cesium.Channel{PK: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
+				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
 				sf := &seg.SequentialFactory{
 					FirstTS: cesium.TimeStamp(0),
 					PrevTS:  cesium.TimeStamp(0),

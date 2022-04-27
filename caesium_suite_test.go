@@ -15,7 +15,7 @@ import (
 var ctx = context.Background()
 
 func TestCaesium(t *testing.T) {
-	log.SetLevel(log.WarnLevel)
+	log.SetLevel(log.InfoLevel)
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Caesium Suite")
 }

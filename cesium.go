@@ -8,6 +8,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
 	log "github.com/sirupsen/logrus"
+	"path/filepath"
 	"time"
 )
 
@@ -30,14 +31,14 @@ type DB interface {
 	//
 	//	     // create a new Segment to write. If you don't know what segments are, check out the Segment documentation.
 	//       seg := cesium.Segment{
-	//    		ChannelPK: ch.PK,
+	//    		ChannelPK: ch.Pk,
 	//          Start: cesium.Now(),
 	//          Data: cesium.MarshalFloat64([]{1.0, 2.0, 3.0})
 	//		}
 	//
 	//		// open the query
 	//		// db.Sync is a helper that turns a typically async write into an acknowledged, sync write.
-	//	    err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.PK), []Segment{seg})
+	//	    err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{seg})
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -53,7 +54,7 @@ type DB interface {
 	//
 	//		// Assuming DB is opened, Channel is created, and a Segment is defined. See above example for details.
 	//		// Start the create query. See Create.Stream for details on what each return value does.
-	//		req, res, err := db.NewCreate().WhereChannels(ch.PK).Stream(ctx)
+	//		req, res, err := db.NewCreate().WhereChannels(ch.Pk).Stream(ctx)
 	//
 	//		// Start listening for errors. An EOF error means the Create query completed successfully (i.e. acknowledged all writes).
 	//		wg := sync.WaitGroup{}
@@ -89,7 +90,7 @@ type DB interface {
 	//		// DB.Sync is a helper that turns a typically async read into sync read.
 	//		// If you don't know what a Segment is, check out the Segment documentation.
 	//		var resSeg []Segment
-	//		err := db.Sync(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.PK), &resSeg)
+	//		err := db.Sync(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -287,7 +288,7 @@ func openPebbleKVDB(opts *options) (kvEngine, error) {
 	if opts.memBacked {
 		pOpts.FS = vfs.NewMem()
 	}
-	pdb, err := pebble.Open(opts.dirname, pOpts)
+	pdb, err := pebble.Open(filepath.Join(opts.dirname, "pebble"), pOpts)
 	return pebbleKV{DB: pdb}, err
 }
 
@@ -295,5 +296,6 @@ func openPersist(opts *options) Persist {
 	if opts.memBacked {
 		return newPersist(NewAfero(opts.dirname))
 	}
-	return newPersist(NewOS(opts.dirname))
+	log.Info(opts.dirname)
+	return newPersist(NewOS(filepath.Join(opts.dirname, "cesium")))
 }

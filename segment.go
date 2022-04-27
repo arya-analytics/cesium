@@ -39,6 +39,10 @@ func (sg Segment) header() segmentHeader {
 	}
 }
 
+func (sg Segment) PKV() PK {
+	return sg.ChannelPK
+}
+
 func (sg Segment) Size() Size {
 	if len(sg.Data) == 0 {
 		return sg.size

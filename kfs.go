@@ -14,7 +14,7 @@ import (
 // |||||| kfs |||||||
 
 type keyFile interface {
-	PK() PK
+	PKV() PK
 	io.ReaderAt
 	io.Reader
 	io.Seeker
@@ -99,27 +99,27 @@ func newEntry(f keyFile) fly {
 }
 
 func (e fly) lock() {
-	log.Debugf("[kfs] acquiring lock on file %s", e.f.PK())
+	log.Debugf("[kfs] acquiring lock on file %s", e.f.PKV())
 	<-e.l
-	log.Debugf("[kfs] acquired lock on file %s", e.f.PK())
+	log.Debugf("[kfs] acquired lock on file %s", e.f.PKV())
 	e.l = make(chan struct{}, 1)
 }
 
 func (e fly) unlock() {
-	log.Debugf("[kfs] releasing lock on file %s", e.f.PK())
+	log.Debugf("[kfs] releasing lock on file %s", e.f.PKV())
 	select {
 	case <-e.l:
 	default:
 		e.l <- struct{}{}
 	}
-	log.Debugf("[kfs] released lock on file %s", e.f.PK())
+	log.Debugf("[kfs] released lock on file %s", e.f.PKV())
 }
 
 type baseKeyFile struct {
 	pk PK
 }
 
-func (k baseKeyFile) PK() PK {
+func (k baseKeyFile) PKV() PK {
 	return k.pk
 }
 
@@ -160,7 +160,7 @@ func fileExists(err error) bool {
 	if !ok {
 		return true
 	}
-	return fsErr.Err == syscall.ENOENT
+	return fsErr.Err != syscall.ENOENT
 }
 
 func (kfs *OSKFSSource) create(pk PK) (*os.File, error) {

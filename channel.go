@@ -14,6 +14,10 @@ type Channel struct {
 	Active   bool
 }
 
+func (c Channel) PKV() PK {
+	return c.PK
+}
+
 func (c Channel) flush(w io.Writer) error {
 	return binary.Write(w, c)
 }
@@ -105,7 +109,7 @@ func (ck channelKV) verifyInactive(channels ...Channel) error {
 		if ch.Active {
 			return newSimpleError(
 				ErrChannelLock,
-				fmt.Sprintf("channel with PK %s is locked", ch.PK),
+				fmt.Sprintf("channel with Pk %s is locked", ch.PK),
 			)
 		}
 	}

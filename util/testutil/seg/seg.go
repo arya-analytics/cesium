@@ -64,6 +64,7 @@ func writeBytes(data interface{}) []byte {
 
 func generateSpan(c cesium.Channel, fac DataFactory, span cesium.TimeSpan) []byte {
 	sc := c.DataRate.SampleCount(span)
+	log.Info(sc)
 	return fac(sc)
 }
 
@@ -76,7 +77,25 @@ func DataTypeFactory(dt cesium.DataType) DataFactory {
 
 // |||||| SEQUENTIAL FACTORY ||||||
 
-type SequentialFactory struct {
+type MultiSequentialFactory struct {
+	factories []SequentialFactory
+}
+
+func (m *MultiSequentialFactory) Next() (s []cesium.Segment) {
+	for _, f := range m.factories {
+		s = append(s, f.Next()...)
+	}
+	return s
+}
+
+func (m *MultiSequentialFactory) NextN(n int) (s []cesium.Segment) {
+	for _, f := range m.factories {
+		s = append(s, f.NextN(n)...)
+	}
+	return s
+}
+
+type sequentialFactory struct {
 	FirstTS cesium.TimeStamp
 	PrevTS  cesium.TimeStamp
 	Factory DataFactory
@@ -84,17 +103,43 @@ type SequentialFactory struct {
 	Channel cesium.Channel
 }
 
-func NewSequentialFactory(c cesium.Channel, fac DataFactory, span cesium.TimeSpan) *SequentialFactory {
-	return &SequentialFactory{FirstTS: 0, PrevTS: 0, Factory: fac, Span: span, Channel: c}
+type SequentialFactory interface {
+	Next() []cesium.Segment
+	NextN(n int) []cesium.Segment
 }
 
-func (sf *SequentialFactory) Next() cesium.Segment {
+func NewSequentialFactory(fac DataFactory, span cesium.TimeSpan, c ...cesium.Channel) SequentialFactory {
+	if len(c) == 0 {
+		panic("no channels provided to sequential factory")
+	}
+	if len(c) == 1 {
+		return newSingleSequentialFactory(fac, span, c[0])
+
+	}
+	multi := &MultiSequentialFactory{factories: make([]SequentialFactory, len(c))}
+	for i, ch := range c {
+		multi.factories[i] = newSingleSequentialFactory(fac, span, ch)
+	}
+	return multi
+}
+
+func newSingleSequentialFactory(fac DataFactory, span cesium.TimeSpan, c cesium.Channel) SequentialFactory {
+	return &sequentialFactory{
+		FirstTS: cesium.TimeStampMin,
+		PrevTS:  cesium.TimeStampMin,
+		Factory: fac,
+		Span:    span,
+		Channel: c,
+	}
+}
+
+func (sf *sequentialFactory) Next() []cesium.Segment {
 	s := New(sf.Channel, sf.Factory, sf.PrevTS, sf.Span)
 	sf.PrevTS = sf.PrevTS.Add(sf.Span)
-	return s
+	return []cesium.Segment{s}
 }
 
-func (sf *SequentialFactory) NextN(n int) []cesium.Segment {
+func (sf *sequentialFactory) NextN(n int) []cesium.Segment {
 	s := NewSet(sf.Channel, sf.Factory, sf.PrevTS, sf.Span, n)
 	sf.PrevTS = s[n-1].Start.Add(sf.Span)
 	return s
@@ -103,13 +148,13 @@ func (sf *SequentialFactory) NextN(n int) []cesium.Segment {
 // ||||| STREAM CREATE ||||||
 
 type StreamCreate struct {
-	*SequentialFactory
+	SequentialFactory
 	Req chan<- cesium.CreateRequest
 	Res <-chan cesium.CreateResponse
 }
 
 func (sc *StreamCreate) Create() cesium.CreateRequest {
-	req := cesium.CreateRequest{Segments: []cesium.Segment{sc.Next()}}
+	req := cesium.CreateRequest{Segments: sc.Next()}
 	sc.Req <- req
 	return req
 }
@@ -124,7 +169,6 @@ func (sc *StreamCreate) CreateCRequestsOfN(c, n int) []cesium.CreateRequest {
 	reqs := make([]cesium.CreateRequest, c)
 	for i := 0; i < c; i++ {
 		req := sc.CreateN(n)
-		sc.Req <- req
 		reqs[i] = req
 	}
 	return reqs

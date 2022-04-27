@@ -13,8 +13,8 @@ type tickQueue struct {
 }
 
 const (
-	queueDefaultSize            = 150
-	queueDefaultTick            = DataRate(100)
+	queueDefaultSize            = 2000
+	queueDefaultTick            = DataRate(10)
 	emptyCycleShutdownThreshold = 2
 )
 

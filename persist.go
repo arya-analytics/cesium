@@ -4,6 +4,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/semaphore"
 	"sync"
+	"time"
 )
 
 type Persist interface {
@@ -35,9 +36,10 @@ func (p *persist) Exec(ops []operation) {
 				op.sendError(err)
 				return
 			}
+			t0 := time.Now()
 			log.Infof("[cesium.Persist] executing operation %s", op)
 			op.exec(f)
-			log.Infof("[cesium.Persist] execution complete %s", op)
+			log.Infof("[cesium.Persist] execution complete %s. Time %v", op, time.Since(t0))
 			p.kfs.Release(op.filePK())
 		}(i, op)
 	}
