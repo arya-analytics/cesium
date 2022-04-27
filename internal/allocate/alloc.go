@@ -1,6 +1,7 @@
 package allocate
 
 import (
+	"cesium/alamos"
 	"math"
 	"sync"
 )
@@ -16,7 +17,7 @@ import (
 // Implementation Details
 //
 // The implementation of Allocator provided in this package optimizes for:
-// sequential allocation of items with the same key (i.e. all items with "key" one go to their own file (if possible)).
+// sequential allocation of items with the same key (i.e. all items with the key "hello" go to their own file (if possible)).
 // It uses a simple set of rules:
 //
 // 1. Allocate the item to the descriptor it was allocated to previously.
@@ -24,8 +25,6 @@ import (
 //    then allocate the item to the next AVAILABLE descriptor.
 //
 // AVAILABLE means:
-//   1. The descriptor has not exceeded capacity.
-//   2. Is
 //      a. A completely NEW descriptor if config.MaxDescriptors has not been reached.
 //      OR
 //      b. The descriptor with the lowest size if config.MaxDescriptors has been reached.
@@ -36,11 +35,14 @@ type Allocator[I, D comparable] interface {
 }
 
 func New[I, D comparable](nd NextDescriptor[D], config Config) Allocator[I, D] {
+	mergedCfg := mergeConfig(config)
+	metrics := newMetrics(mergedCfg.Experiment)
 	return &defaultAlloc[I, D]{
-		config:          mergeConfig(config),
+		config:          mergedCfg,
 		descriptorSizes: make(map[D]int),
 		itemDescriptors: make(map[I]D),
-		nextDescriptor:  nd,
+		nextD:           nd,
+		metrics:         metrics,
 	}
 }
 
@@ -70,6 +72,8 @@ type Config struct {
 	// MaxSize is the maximum size of a descriptor in bytes. If this value is 0, the default value of
 	// DefaultMaxSize is used.
 	MaxSize int
+	// Experiment is the experiment that Allocate will use to record its metrics.
+	Experiment alamos.Experiment
 }
 
 // DefaultConfig returns the default configuration for the Allocator.
@@ -91,13 +95,12 @@ func mergeConfig(c Config) Config {
 }
 
 type defaultAlloc[I, D comparable] struct {
-	mu sync.Mutex
-
+	mu              sync.Mutex
 	descriptorSizes map[D]int
 	itemDescriptors map[I]D
-	nextDescriptor  NextDescriptor[D]
-
-	config Config
+	nextD           NextDescriptor[D]
+	config          Config
+	metrics         Metrics
 }
 
 // Allocate implements the Allocator interface.
@@ -112,6 +115,9 @@ func (d *defaultAlloc[I, D]) Allocate(items ...Item[I]) []D {
 }
 
 func (d *defaultAlloc[I, D]) allocate(item Item[I]) D {
+	sw := d.metrics.Allocate.Stopwatch()
+	sw.Start()
+	defer sw.Stop()
 	// By default, allocate to the same descriptor as the previous item.
 	key, ok := d.itemDescriptors[item.Key()]
 	// If we can't find the item, allocated it to a new descriptor.
@@ -145,7 +151,7 @@ func (d *defaultAlloc[I, D]) new(item Item[I]) (key D) {
 }
 
 func (d *defaultAlloc[I, D]) newDescriptor() D {
-	n := d.nextDescriptor.Next()
+	n := d.nextD.Next()
 	d.descriptorSizes[n] = 0
 	return n
 }
