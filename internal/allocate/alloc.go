@@ -1,0 +1,178 @@
+package allocate
+
+import (
+	"math"
+	"sync"
+)
+
+// Allocator is used to allocate items to a set of descriptors. A descriptor can represent a file, buffer (essentially
+// anything assigned with a maximum size).
+//
+// Type Arguments:
+//
+// I - The type of the items key.
+// D - The type of the descriptors key.
+//
+// Implementation Details
+//
+// The implementation of Allocator provided in this package optimizes for:
+// sequential allocation of items with the same key (i.e. all items with "key" one go to their own file (if possible)).
+// It uses a simple set of rules:
+//
+// 1. Allocate the item to the descriptor it was allocated to previously.
+// 2. If the item is not allocated OR the size of the descriptor exceeds the size set in Config.MaxSize,
+//    then allocate the item to the next AVAILABLE descriptor.
+//
+// AVAILABLE means:
+//   1. The descriptor has not exceeded capacity.
+//   2. Is
+//      a. A completely NEW descriptor if config.MaxDescriptors has not been reached.
+//      OR
+//      b. The descriptor with the lowest size if config.MaxDescriptors has been reached.
+//
+type Allocator[I, D comparable] interface {
+	// Allocate allocates itemDescriptors of a given size to descriptors. Returns a slice of descriptor keys.
+	Allocate(items ...Item[I]) []D
+}
+
+func New[I, D comparable](nd NextDescriptor[D], config Config) Allocator[I, D] {
+	return &defaultAlloc[I, D]{
+		config:          mergeConfig(config),
+		descriptorSizes: make(map[D]int),
+		itemDescriptors: make(map[I]D),
+		nextDescriptor:  nd,
+	}
+}
+
+type Item[I comparable] interface {
+	// Key returns the key of the item.
+	Key() I
+	// Size returns the size of the item.
+	Size() int
+}
+
+// NextDescriptor returns a unique descriptor key that represents the next descriptor.
+type NextDescriptor[D comparable] interface {
+	Next() D
+}
+
+const (
+	// DefaultMaxDescriptors is the default maximum number of descriptors.
+	DefaultMaxDescriptors = 50
+	// DefaultMaxSize is the default maximum size of a descriptor in bytes.
+	DefaultMaxSize = 1e8
+)
+
+type Config struct {
+	// MaxDescriptors is the maximum number of concurrent descriptors that can be allocated at once.
+	// If this value is 0, the default value of DefaultMaxDescriptors is used.
+	MaxDescriptors int
+	// MaxSize is the maximum size of a descriptor in bytes. If this value is 0, the default value of
+	// DefaultMaxSize is used.
+	MaxSize int
+}
+
+// DefaultConfig returns the default configuration for the Allocator.
+func DefaultConfig() Config {
+	return Config{
+		MaxDescriptors: DefaultMaxDescriptors,
+		MaxSize:        DefaultMaxSize,
+	}
+}
+
+func mergeConfig(c Config) Config {
+	if c.MaxDescriptors == 0 {
+		c.MaxDescriptors = DefaultMaxDescriptors
+	}
+	if c.MaxSize == 0 {
+		c.MaxSize = DefaultMaxSize
+	}
+	return c
+}
+
+type defaultAlloc[I, D comparable] struct {
+	mu sync.Mutex
+
+	descriptorSizes map[D]int
+	itemDescriptors map[I]D
+	nextDescriptor  NextDescriptor[D]
+
+	config Config
+}
+
+// Allocate implements the Allocator interface.
+func (d *defaultAlloc[I, D]) Allocate(items ...Item[I]) []D {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	dKeys := make([]D, len(items))
+	for i, item := range items {
+		dKeys[i] = d.allocate(item)
+	}
+	return dKeys
+}
+
+func (d *defaultAlloc[I, D]) allocate(item Item[I]) D {
+	// By default, allocate to the same descriptor as the previous item.
+	key, ok := d.itemDescriptors[item.Key()]
+	// If we can't find the item, allocated it to a new descriptor.
+	if !ok {
+		key = d.new(item)
+	}
+	size, ok := d.descriptorSizes[key]
+	if !ok {
+		panic("alloc: descriptor not found")
+	}
+	// If the descriptor is too large, allocate a new descriptor.
+	if (size + item.Size()) > d.config.MaxSize {
+		key = d.new(item)
+	}
+	d.descriptorSizes[key] += item.Size()
+	return key
+}
+
+func (d *defaultAlloc[I, D]) new(item Item[I]) (key D) {
+	// Remove any descriptors that are too large.
+	d.scrubOversized()
+	// If we've reached our limit, allocate to the descriptor with the smallest size.
+	if len(d.descriptorSizes) >= d.config.MaxDescriptors {
+		key = d.smallestDescriptor()
+		// If we haven't reached our limit, allocated to a new descriptor.
+	} else {
+		key = d.newDescriptor()
+	}
+	d.itemDescriptors[item.Key()] = key
+	return key
+}
+
+func (d *defaultAlloc[I, D]) newDescriptor() D {
+	n := d.nextDescriptor.Next()
+	d.descriptorSizes[n] = 0
+	return n
+}
+
+func (d *defaultAlloc[I, D]) scrubOversized() {
+	for key, size := range d.descriptorSizes {
+		if size > d.config.MaxSize {
+			delete(d.descriptorSizes, key)
+		}
+	}
+}
+
+func (d *defaultAlloc[I, D]) smallestDescriptor() (desc D) {
+	min := math.MaxInt
+	for k, size := range d.descriptorSizes {
+		if size < min {
+			desc = k
+		}
+	}
+	return desc
+}
+
+type NextDescriptorInt struct {
+	v int
+}
+
+func (n *NextDescriptorInt) Next() int {
+	n.v++
+	return n.v
+}

@@ -315,9 +315,11 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 	return s.req, res, c.exec.exec(ctx, c.query)
 }
 
+type RetrieveStream = stream[types.Nil, RetrieveResponse]
+
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
-	s := &stream[types.Nil, RetrieveResponse]{res: make(chan RetrieveResponse)}
-	setStream[types.Nil, RetrieveResponse](r.query, s)
+	s := &RetrieveStream{res: make(chan RetrieveResponse)}
+	setStream(r.query, s)
 	return s.res, r.exec.exec(ctx, r.query)
 }
 

@@ -32,7 +32,7 @@ var _ = Describe("Seg", func() {
 		})
 	})
 	Describe("Segment Factories", func() {
-		Describe("New", func() {
+		Describe("new", func() {
 			It("Should create a new segment correctly", func() {
 				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
 				seg := seg.New(c, seg.SeqFloat64, 0, 10*cesium.Second)

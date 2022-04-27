@@ -13,10 +13,10 @@ import (
 
 type File interface {
 	io.ReaderAt
-	io.Seeker
 	io.Reader
 	io.Writer
 	io.Closer
+	io.Seeker
 }
 
 // FS wraps a file system (fs.FS) and exposes it as a simplified key(int):file(File) pair interface. FS is goroutine-safe, and uses a

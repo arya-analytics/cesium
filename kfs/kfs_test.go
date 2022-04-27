@@ -8,7 +8,7 @@ import (
 )
 
 var _ = Describe("KFS", func() {
-	Describe("New", func() {
+	Describe("new", func() {
 		It("Should wrap an existing file system without error", func() {
 			Expect(func() { kfs.New("testdata") }).ToNot(Panic())
 		})

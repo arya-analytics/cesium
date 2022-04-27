@@ -13,7 +13,7 @@ import (
 )
 
 type operation interface {
-	filePK() PK
+	filePK() int
 	exec(f keyFile)
 	sendError(err error)
 	context() context.Context
