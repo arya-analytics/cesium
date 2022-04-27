@@ -1,6 +1,8 @@
 package kfs
 
-import "cesium/alamos"
+import (
+	"cesium/alamos"
+)
 
 type Metrics struct {
 	// Acquire tracks the number of times a File is acquired, and the average time to acquire a File.
@@ -16,6 +18,6 @@ func newMetrics(exp alamos.Experiment) Metrics {
 	return Metrics{
 		Acquire: alamos.NewGaugeDuration(subExp, "Acquire"),
 		Release: alamos.NewGaugeDuration(subExp, "Release"),
-		Delete:  alamos.NewGaugeDuration(subExp, "Delete"),
+		Delete:  alamos.NewGaugeDuration(subExp, "Remove"),
 	}
 }

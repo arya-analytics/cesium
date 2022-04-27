@@ -73,10 +73,6 @@ type empty[T any] struct {
 	entry
 }
 
-func (e *empty[T]) Value() interface{} {
-	return nil
-}
-
 func (e *empty[T]) Values() []T {
 	return nil
 }
@@ -92,7 +88,6 @@ func nilMetric[T any](exp Experiment, key string) Metric[T] {
 		return nil
 	}
 	m := &empty[T]{entry: newEntry(key)}
-	exp.AddMeasurement(m)
 	return m
 }
 

@@ -1,6 +1,8 @@
 package alamos
 
-import "time"
+import (
+	"time"
+)
 
 // |||||| INTERFACE ||||||
 

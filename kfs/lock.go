@@ -16,7 +16,7 @@ func (l lock) acquire() {
 }
 
 func (l lock) release() {
-	// If the lock is already released, we don't need to do anything.
+	//// If the lock is already released, we don't need to do anything.
 	select {
 	case l.signal <- struct{}{}:
 	default:
