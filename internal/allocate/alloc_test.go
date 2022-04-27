@@ -65,4 +65,56 @@ var _ = Describe("Alloc", func() {
 			Expect(nd[0]).To(Equal(d[0]))
 		})
 	})
+	Describe("Exceeding max descriptor size", func() {
+		Context("Max descriptor count not exceeded", func() {
+			It("Should allocate to a new descriptor", func() {
+				a := allocate.New[int, int](&allocate.NextDescriptorInt{}, allocate.Config{
+					MaxSize: 2,
+				})
+
+				i := IntegerItem{key: 1, size: 1}
+				d := a.Allocate(i)
+				Expect(d[0]).To(Equal(1))
+
+				i = IntegerItem{key: 1, size: 1}
+				d = a.Allocate(i)
+				Expect(d[0]).To(Equal(1))
+
+				i = IntegerItem{key: 2, size: 1}
+				d = a.Allocate(i)
+				Expect(d[0]).To(Equal(2))
+
+				i = IntegerItem{key: 1, size: 1}
+				d = a.Allocate(i)
+
+				Expect(d[0]).To(Equal(3))
+			})
+		})
+		Context("Max descriptor count exceeded", func() {
+			It("Should allocate to the next smallest descriptor", func() {
+
+				a := allocate.New[int, int](&allocate.NextDescriptorInt{}, allocate.Config{
+					MaxSize:        2,
+					MaxDescriptors: 2,
+				})
+
+				i := IntegerItem{key: 1, size: 1}
+				d := a.Allocate(i)
+				Expect(d[0]).To(Equal(1))
+
+				i = IntegerItem{key: 1, size: 1}
+				d = a.Allocate(i)
+				Expect(d[0]).To(Equal(1))
+
+				i = IntegerItem{key: 2, size: 1}
+				d = a.Allocate(i)
+				Expect(d[0]).To(Equal(2))
+
+				i = IntegerItem{key: 1, size: 1}
+				d = a.Allocate(i)
+
+				Expect(d[0]).To(Equal(2))
+			})
+		})
+	})
 })
