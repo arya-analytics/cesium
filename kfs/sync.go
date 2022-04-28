@@ -20,13 +20,13 @@ type Sync[T comparable] struct {
 	Interval time.Duration
 	// MaxSyncAge sets the maximum age of a file before it is synced.
 	MaxSyncAge time.Duration
-	// Shutter is used to gracefully shutdown the sync.
+	// Shutter is used to gracefully shut down the sync.
 	Shutter shut.Shutdown
 }
 
 // Start starts a goroutine that periodically calls Sync.
 // Shuts down based on the Sync.Shutter.
-// When sync.Shutter.Shutdown is called, the Sync executes a final sync ON all files and then exits.
+// When sync.Shutter.Shutdown is called, the Sync executes a forced sync ON all files and then exits.
 func (s *Sync[T]) Start() <-chan error {
 	errs := make(chan error)
 	c := errutil.NewCatchSimple(errutil.WithHooks(errutil.NewPipeHook(errs)))

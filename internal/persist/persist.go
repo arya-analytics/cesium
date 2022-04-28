@@ -24,7 +24,7 @@ type Operation[T comparable] interface {
 	Context() context.Context
 	// FileKey returns the key of the file to which the operation applies.
 	FileKey() T
-	// SendError sends an error to the operation. This is only used for operations involving IO failure.
+	// SendError sends an error to the operation. This is only used for IO errors.
 	SendError(error)
 	// Exec is called by Persist to execute the operation. The provided file will have the key returned by FileKey.
 	// The operation has a lock on the file during this time, and is free to make any modifications.
