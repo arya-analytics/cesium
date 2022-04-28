@@ -21,7 +21,7 @@ var _ = Describe("Metric", func() {
 		})
 		It("Should show up in the list of measurements", func() {
 			alamos.NewSeries[int8](exp, "test.series")
-			_, ok := exp.Measurements()["test.series"]
+			_, ok := exp.Metrics()["test.series"]
 			Expect(ok).To(BeTrue())
 		})
 		It("Should record values to the series", func() {

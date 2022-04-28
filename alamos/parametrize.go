@@ -1,5 +1,10 @@
 package alamos
 
+import (
+	log "github.com/sirupsen/logrus"
+	"io"
+)
+
 // |||||| CONFIG ||||||
 
 type ParametrizeConfig[V ParametrizeVars] interface {
@@ -35,4 +40,25 @@ func (p *Parametrize[V]) Construct() {
 		p.template(i, v)
 		i++
 	}
+}
+
+// |||||| LISTFVARS ||||||
+
+type iterVars[T ParametrizeVars] struct {
+	i    int
+	vars []T
+}
+
+func (iv *iterVars[T]) Next() (T, error) {
+	log.Info("iterVars.Next()", "i", iv.i, "vars", iv.vars)
+	if iv.i >= len(iv.vars) {
+		return *new(T), io.EOF
+	}
+	v := iv.vars[iv.i]
+	iv.i++
+	return v, nil
+}
+
+func IterVars[V ParametrizeVars](vars []V) ParametrizeConfig[V] {
+	return &iterVars[V]{vars: vars}
 }

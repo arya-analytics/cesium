@@ -10,17 +10,17 @@ import (
 var _ = Describe("KFS", func() {
 	Describe("new", func() {
 		It("Should wrap an existing file system without error", func() {
-			Expect(func() { kfs.New("testdata") }).ToNot(Panic())
+			Expect(func() { kfs.New[int]("testdata") }).ToNot(Panic())
 		})
 	})
-	Describe("Acquire and Release", func() {
+	Describe("acquire and release", func() {
 		var (
 			baseFS kfs.BaseFS
-			fs     kfs.FS
+			fs     kfs.FS[int]
 		)
 		BeforeEach(func() {
 			baseFS = kfs.NewMem()
-			fs = kfs.New("testdata", kfs.WithSuffix(".test"), kfs.WithFS(baseFS))
+			fs = kfs.New[int]("testdata", kfs.WithSuffix(".test"), kfs.WithFS(baseFS))
 		})
 		AfterEach(func() {
 			Expect(fs.RemoveAll()).To(BeNil())

@@ -59,7 +59,7 @@ o:
 				break o
 			}
 		case <-t.C:
-			panic("[shutter.Shut] graceful shutdown timeout exceeded")
+			panic("[shutter.Shutter] graceful shutdown timeout exceeded")
 		}
 	}
 	for _, err := range errors {

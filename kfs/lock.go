@@ -15,6 +15,17 @@ func (l lock) acquire() {
 	l.signal = make(chan struct{}, 1)
 }
 
+func (l lock) Idle() (idle bool) {
+	select {
+	case <-l.signal:
+		// Reset the lock.
+		l.signal <- struct{}{}
+		idle = true
+	default:
+	}
+	return idle
+}
+
 func (l lock) release() {
 	// If the lock is already released, we don't need to do anything.
 	select {

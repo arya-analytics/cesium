@@ -112,7 +112,6 @@ func (dr DataRate) Period() TimeSpan {
 }
 
 func (dr DataRate) SampleCount(t TimeSpan) int {
-	log.Info(t.Seconds(), dr)
 	return int(t.Seconds() * float64(dr))
 }
 

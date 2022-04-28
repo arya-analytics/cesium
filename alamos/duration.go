@@ -9,8 +9,43 @@ import (
 type Duration interface {
 	Metric[time.Duration]
 	Record(time.Duration)
+	Stopwatch() Stopwatch
+}
+
+// |||||| STOPWATCH ||||||
+
+type Stopwatch interface {
 	Start()
 	Stop() time.Duration
+}
+
+type stopwatch struct {
+	metric Duration
+	start  time.Time
+}
+
+func (s *stopwatch) Start() {
+	if !s.start.IsZero() {
+		panic("duration entry already started. please call Stop() first")
+	}
+	s.start = time.Now()
+}
+
+func (s *stopwatch) Stop() time.Duration {
+	if s.start.IsZero() {
+		panic("duration entry not started. please call Start() first")
+	}
+	t := time.Since(s.start)
+	s.metric.Record(t)
+	return t
+}
+
+type emptyStopwatch struct{}
+
+func (s *emptyStopwatch) Start() {}
+
+func (s *emptyStopwatch) Stop() time.Duration {
+	return 0
 }
 
 // |||||| BASE ||||||
@@ -20,23 +55,8 @@ type duration struct {
 	Metric[time.Duration]
 }
 
-func (b *duration) Start() {
-	if !b.start.IsZero() {
-		panic("duration entry already started. please call Stop() first")
-	}
-	b.start = time.Now()
-}
-
-func (b *duration) Stop() time.Duration {
-	if b.start.IsZero() {
-		panic("duration entry not started. please call Start() first")
-	}
-	defer func() {
-		b.start = time.Time{}
-	}()
-	t := time.Since(b.start)
-	b.Record(t)
-	return t
+func (d *duration) Stopwatch() Stopwatch {
+	return &stopwatch{metric: d}
 }
 
 func NewSeriesDuration(exp Experiment, key string) Duration {
@@ -65,6 +85,10 @@ func (e emptyDurationMeasurement) Start() {}
 
 func (e emptyDurationMeasurement) Stop() time.Duration {
 	return 0
+}
+
+func (e emptyDurationMeasurement) Stopwatch() Stopwatch {
+	return &emptyStopwatch{}
 }
 
 func nilDurationMeasurement(exp Experiment, key string) Duration {

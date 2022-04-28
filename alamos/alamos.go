@@ -2,8 +2,8 @@ package alamos
 
 type Experiment interface {
 	Sub(string) Experiment
-	AddMeasurement(entry)
-	Measurements() map[string]entry
+	AddMetric(entry)
+	Metrics() map[string]entry
 }
 
 type ExperimentWriter struct {
@@ -27,11 +27,16 @@ func (e *experiment) addSub(key string, exp Experiment) Experiment {
 	return exp
 }
 
-func (e *experiment) AddMeasurement(m entry) {
+func (e *experiment) AddMetric(m entry) {
 	e.measurements[m.key()] = m
 }
 
-func (e *experiment) Measurements() map[string]entry {
+func (e *experiment) Metrics() map[string]entry {
+	for _, child := range e.children {
+		for k, v := range child.Metrics() {
+			e.measurements[k] = v
+		}
+	}
 	return e.measurements
 }
 
@@ -64,4 +69,9 @@ type baseEntry struct {
 
 func (b *baseEntry) key() string {
 	return b.k
+}
+
+func ConcreteMetric[T any](exp Experiment, key string) Metric[T] {
+	m := exp.Metrics()[key]
+	return m.(Metric[T])
 }

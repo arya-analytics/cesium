@@ -10,15 +10,15 @@ import (
 var _ = Describe("Metrics", func() {
 	var (
 		baseFS kfs.BaseFS
-		fs     kfs.FS
+		fs     kfs.FS[int]
 		exp    alamos.Experiment
 	)
 	BeforeEach(func() {
 		baseFS = kfs.NewMem()
 		exp = alamos.New("metrics")
-		fs = kfs.New("", kfs.WithSuffix(".metrics"), kfs.WithFS(baseFS), kfs.WithExperiment(exp))
+		fs = kfs.New[int]("", kfs.WithSuffix(".metrics"), kfs.WithFS(baseFS), kfs.WithExperiment(exp))
 	})
-	Describe("Acquire", func() {
+	Describe("acquire", func() {
 		It("Should record the count and average time", func() {
 			_, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())
@@ -28,7 +28,7 @@ var _ = Describe("Metrics", func() {
 			Expect(m.Values()[0]).ToNot(BeZero())
 		})
 	})
-	Describe("Release", func() {
+	Describe("release", func() {
 		It("Should record the count and average time", func() {
 			_, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())

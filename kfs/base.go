@@ -17,12 +17,12 @@ func NewMem() BaseFS {
 
 type osFS struct{}
 
-func (o *osFS) Open(name string) (File, error) {
+func (o *osFS) Open(name string) (BaseFile, error) {
 	return os.OpenFile(name, os.O_RDWR, 0666)
 
 }
 
-func (o *osFS) Create(name string) (File, error) {
+func (o *osFS) Create(name string) (BaseFile, error) {
 	return os.Create(name)
 }
 
@@ -34,11 +34,11 @@ type memFS struct {
 	fs afero.Fs
 }
 
-func (m *memFS) Open(name string) (File, error) {
+func (m *memFS) Open(name string) (BaseFile, error) {
 	return m.fs.OpenFile(name, os.O_RDONLY, 0)
 }
 
-func (m *memFS) Create(name string) (File, error) {
+func (m *memFS) Create(name string) (BaseFile, error) {
 	return m.fs.Create(name)
 }
 

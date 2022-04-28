@@ -1,6 +1,9 @@
 package alamos
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 type Metric[T any] interface {
 	Record(T)
@@ -8,9 +11,12 @@ type Metric[T any] interface {
 	Count() int
 }
 
+// |||||| BASE ||||||
+
 // |||||| GAUGE ||||||
 
 type gauge[T Numeric] struct {
+	mu sync.Mutex
 	entry
 	count int
 	value T
@@ -18,7 +24,7 @@ type gauge[T Numeric] struct {
 
 func NewGauge[T Numeric](exp Experiment, key string) Metric[T] {
 	m := &gauge[T]{entry: newEntry(key)}
-	exp.AddMeasurement(m)
+	exp.AddMetric(m)
 	return m
 }
 
@@ -27,12 +33,15 @@ func (g *gauge[T]) Count() int {
 }
 
 func (g *gauge[T]) Values() []T {
-	return []T{g.value / T(g.count)}
+	if g.count == 0 {
+		return []T{0}
+	}
+	return []T{g.value / T(g.count), g.value}
 }
 
 func (g *gauge[T]) Record(v T) {
 	g.count++
-	g.value = v
+	g.value += v
 }
 
 // |||||| SERIES ||||||
@@ -63,7 +72,7 @@ func NewSeries[T any](exp Experiment, key string) Metric[T] {
 		return m
 	}
 	m := &series[T]{entry: newEntry(key)}
-	exp.AddMeasurement(m)
+	exp.AddMetric(m)
 	return m
 }
 

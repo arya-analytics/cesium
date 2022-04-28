@@ -3,115 +3,169 @@
 package kfs
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
+	"time"
 )
-
-type File interface {
-	io.ReaderAt
-	io.Reader
-	io.Writer
-	io.Closer
-	io.Seeker
-}
 
 // FS wraps a file system (fs.FS) and exposes it as a simplified key(int):file(File) pair interface. FS is goroutine-safe, and uses a
 // system of locks to ensure that concurrent accesses to the same file are serialized.
-type FS interface {
+type FS[T comparable] interface {
 	// Acquire acquires signal on file for reading and writing by its primary key. If the file does not exist,
 	// creates a new file. Blocks until the signal is acquired. Release must be called to Release the signal.
-	Acquire(pk int) (File, error)
+	Acquire(key T) (File, error)
 	// Release releases a file. Release is idempotent, and can be called even if the file was never acquired.
-	Release(pk int)
+	Release(key T)
+	// Close closes a file. Close is idempotent, and can be called even if the file was previously closed.
+	// It's recommended that Close is called at a specified interval to ensure that all files are closed.
+	// See Sync for a convenient way to do this.
+	Close(key T) error
 	// Remove acquires a file and then deletes it.
-	Remove(pk int) error
+	Remove(key T) error
 	// RemoveAll removes all files in the FS.
 	RemoveAll() error
 	// Metrics returns a snapshot of the current metrics for the file system.
 	Metrics() Metrics
+	// Files returns a snapshot of the current files in the FS.
+	Files() map[T]File
+}
+
+// File is a file in the FS. It implements:
+//
+//		io.ReaderAt
+//		io.ReadWriteCloser
+//		io.Seeker
+//
+// It also implements several utilities for acquiring and tracking a file's age (FileSync).
+type File interface {
+	BaseFile
+	FileSync
+	fileLock
+}
+
+type fileLock interface {
+	// Acquire acquires a lock on the file. Blocks until the lock is acquired. Release must be called to Release the lock.
+	acquire()
+	// Release releases a lock on the file. Release is idempotent, and can be called even if the file was never acquired.
+	release()
+	// Idle returns true if the file is unlocked.
+	Idle() bool
+}
+
+type FileSync interface {
+	// LastSync returns how much time has passed since the file was last synced.
+	LastSync() time.Duration
 }
 
 // BaseFS represents a file system that kfs.FS can wrap.
 type BaseFS interface {
 	Remove(name string) error
-	Open(name string) (File, error)
-	Create(name string) (File, error)
+	Open(name string) (BaseFile, error)
+	Create(name string) (BaseFile, error)
 }
 
-func New(root string, opts ...Option) FS {
+type BaseFile interface {
+	io.ReaderAt
+	io.ReadWriteCloser
+	io.Seeker
+	// Sync syncs the file to the FS (os.File.Sync).
+	Sync() error
+}
+
+func New[T comparable](root string, opts ...Option) FS[T] {
 	o := newOptions(opts...)
-	return &defaultFS{
+	return &defaultFS[T]{
 		root:    root,
 		options: *o,
 		metrics: newMetrics(o.experiment),
-		entries: make(map[int]entry),
+		entries: make(map[T]File),
 	}
 }
 
-type defaultFS struct {
+type defaultFS[T comparable] struct {
 	options
 	root    string
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	metrics Metrics
-	entries map[int]entry
+	entries map[T]File
 }
 
 // Acquire implements FS.
-func (fs *defaultFS) Acquire(pk int) (File, error) {
-	fs.metrics.Acquire.Start()
-	defer fs.metrics.Acquire.Stop()
+func (fs *defaultFS[T]) Acquire(key T) (File, error) {
+	sw := fs.metrics.Acquire.Stopwatch()
+	sw.Start()
+	defer sw.Stop()
 	fs.mu.Lock()
-	e, ok := fs.entries[pk]
+	e, ok := fs.entries[key]
 	if ok {
 		// We need to unlock the mutex before we acquire the lock on the file,
 		// so another goroutine can release it.
 		fs.mu.Unlock()
 		e.acquire()
-		return e.file, nil
+		return e, nil
 	}
-	f, err := fs.newEntry(pk)
+	f, err := fs.newEntry(key)
 	fs.mu.Unlock()
 	return f, err
 }
 
 // Release implements FS.
-func (fs *defaultFS) Release(pk int) {
-	fs.metrics.Release.Start()
-	defer fs.metrics.Release.Stop()
+func (fs *defaultFS[T]) Release(key T) {
+	sw := fs.metrics.Release.Stopwatch()
+	sw.Start()
+	defer sw.Stop()
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	if e, ok := fs.entries[pk]; ok {
+	if e, ok := fs.entries[key]; ok {
 		e.release()
 	}
 }
 
 // Remove implements FS.
-func (fs *defaultFS) Remove(pk int) error {
-	fs.metrics.Delete.Start()
-	defer fs.metrics.Delete.Stop()
+func (fs *defaultFS[T]) Remove(key T) error {
+	sw := fs.metrics.Delete.Stopwatch()
+	sw.Start()
+	defer sw.Stop()
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	e, ok := fs.entries[key]
+	if !ok {
+		return nil
+	}
+	// Need to make sure other goroutines are done with the file before deleting it.
+	e.acquire()
+	delete(fs.entries, key)
+	return fs.baseFS.Remove(fs.path(key))
+}
+
+// Close implements FS.
+func (fs *defaultFS[T]) Close(pk T) error {
+	sw := fs.metrics.Close.Stopwatch()
+	sw.Start()
+	defer sw.Stop()
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	e, ok := fs.entries[pk]
 	if !ok {
 		return nil
 	}
-	// Need to make sure other goroutines are done with the file before deleting it.
 	e.acquire()
-	// Close the file
-	if err := e.file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+	if err := e.Close(); err != nil {
 		return err
 	}
 	delete(fs.entries, pk)
-	return fs.baseFS.Remove(fs.path(pk))
+	return nil
 }
 
 // RemoveAll implements FS.
-func (fs *defaultFS) RemoveAll() error {
+func (fs *defaultFS[T]) RemoveAll() error {
 	for pk := range fs.entries {
+		if err := fs.Close(pk); err != nil {
+			return err
+		}
 		if err := fs.Remove(pk); err != nil {
 			return err
 		}
@@ -120,29 +174,35 @@ func (fs *defaultFS) RemoveAll() error {
 }
 
 // Metrics implements FS.
-func (fs *defaultFS) Metrics() Metrics {
+func (fs *defaultFS[T]) Metrics() Metrics {
 	return fs.metrics
 }
 
-func (fs *defaultFS) name(pk int) string {
-	return strconv.Itoa(pk) + fs.suffix
+// Files implements FS. Note: does not return a copy. Do not modify the returned map.
+func (fs *defaultFS[T]) Files() map[T]File {
+	return fs.entries
 }
 
-func (fs *defaultFS) path(pk int) string {
-	return filepath.Join(fs.root, fs.name(pk))
+func (fs *defaultFS[T]) name(key T) string {
+	return fmt.Sprint(key) + fs.suffix
 }
 
-func (fs *defaultFS) newEntry(pk int) (File, error) {
-	f, err := fs.openOrCreate(pk)
+func (fs *defaultFS[T]) path(key T) string {
+	return filepath.Join(fs.root, fs.name(key))
+}
+
+func (fs *defaultFS[T]) newEntry(key T) (File, error) {
+	f, err := fs.openOrCreate(key)
 	if err != nil {
 		return nil, err
 	}
-	fs.entries[pk] = newEntry(f)
-	return f, nil
+	e := newEntry(f)
+	fs.entries[key] = e
+	return e, nil
 }
 
-func (fs *defaultFS) openOrCreate(pk int) (File, error) {
-	p := fs.path(pk)
+func (fs *defaultFS[T]) openOrCreate(key T) (BaseFile, error) {
+	p := fs.path(key)
 	f, err := fs.baseFS.Open(p)
 	if err == nil || !os.IsNotExist(err) {
 		return f, err
