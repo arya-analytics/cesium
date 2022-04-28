@@ -7,18 +7,16 @@ import (
 
 type Signal int
 
-const ShutdownSignal Signal = iota
-
 const DefaultShutdownThreshold = 10 * time.Second
 
-type Shutter interface {
+type Shutdown interface {
 	Go(f func(chan Signal) error, opts ...GoOption)
 	Routines() map[string]int
 	NumRoutines() int
-	Close() error
+	Shutdown() error
 }
 
-func New(opts ...Option) Shutter {
+func New(opts ...Option) Shutdown {
 	opt := newOptions(opts...)
 	return &shutter{
 		signal:   make(chan Signal),
@@ -46,7 +44,7 @@ func (s *shutter) Go(f func(chan Signal) error, opts ...GoOption) {
 	s.addRoutine(goOpt.key)
 }
 
-func (s *shutter) Close() error {
+func (s *shutter) Shutdown() error {
 	close(s.signal)
 	t := time.NewTimer(s.opts.shutdownThreshold)
 	var errors []error
@@ -59,7 +57,7 @@ o:
 				break o
 			}
 		case <-t.C:
-			panic("[shutter.Shutter] graceful shutdown timeout exceeded")
+			panic("[shutter.Shutdown] graceful shutdown timeout exceeded")
 		}
 	}
 	for _, err := range errors {

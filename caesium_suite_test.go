@@ -53,7 +53,7 @@ func ExampleDB_NewCreate_simple() {
 		log.Fatal(err)
 	}
 
-	// Close the database.
+	// Shutdown the database.
 	if err := db.Close(); err != nil {
 		log.Fatal(err)
 	}
@@ -108,11 +108,11 @@ func ExampleDB_NewCreate_multiSegment() {
 		req <- cesium.CreateRequest{Segments: []cesium.Segment{seg}}
 	}
 
-	// Close the query and wait for it to complete.
+	// Shutdown the query and wait for it to complete.
 	close(req)
 	wg.Wait()
 
-	// Close the database
+	// Shutdown the database
 	if err := db.Close(); err != nil {
 		log.Fatal(err)
 	}
@@ -181,11 +181,11 @@ func ExampleDB_NewCreate_multiChannel() {
 		req <- cesium.CreateRequest{Segments: segs}
 	}
 
-	// Close the query and wait for it to complete.
+	// Shutdown the query and wait for it to complete.
 	close(req)
 	wg.Wait()
 
-	// Close the database.
+	// Shutdown the database.
 	if err := db.Close(); err != nil {
 		log.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func ExampleDB_NewRetrieve_simple() {
 	// Output:
 	// 1
 
-	// Close the database.
+	// Shutdown the database.
 	if err := db.Close(); err != nil {
 		log.Fatal(err)
 	}

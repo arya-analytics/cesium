@@ -72,10 +72,24 @@ var _ = Describe("Perf", func() {
 				},
 				experiment: alamos.New("allocate-2"),
 			},
+			{
+				nRoutines:     10,
+				nBatch:        20,
+				allocPerBatch: 100,
+				// Returns a random integer between 1 and 10
+				key: func(i int) int {
+					return 1 + (i % 10)
+				},
+				// Returns a random integer between 1 and 100
+				size: func(k int) int {
+					return 1 + (k % 100)
+				},
+				experiment: alamos.New("allocate-3"),
+			},
 		},
 		))
 		p.Template(func(i int, values perfVars) {
-			FIt(fmt.Sprintf("allocation - nr %d - nb %d  - abp %d",
+			It(fmt.Sprintf("allocation - nr %d - nb %d  - abp %d",
 				values.nRoutines, values.nBatch, values.allocPerBatch), func() {
 				a = allocate.New[int, int](&allocate.NextDescriptorInt{}, allocate.Config{
 					Experiment: values.experiment,

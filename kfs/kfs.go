@@ -27,7 +27,7 @@ type FS[T comparable] interface {
 	Remove(key T) error
 	// RemoveAll removes all files in the FS.
 	RemoveAll() error
-	// Metrics returns a snapshot of the current metrics for the file system.
+	// Metrics returns a snapshot of the current Metrics for the file system.
 	Metrics() Metrics
 	// Files returns a snapshot of the current files in the FS.
 	Files() map[T]File
@@ -39,28 +39,25 @@ type FS[T comparable] interface {
 //		io.ReadWriteCloser
 //		io.Seeker
 //
-// It also implements several utilities for acquiring and tracking a file's age (FileSync).
 type File interface {
 	BaseFile
-	FileSync
+	fileSync
 	fileLock
 }
 
 type fileLock interface {
-	// Acquire acquires a lock on the file. Blocks until the lock is acquired. Release must be called to Release the lock.
 	acquire()
-	// Release releases a lock on the file. Release is idempotent, and can be called even if the file was never acquired.
 	release()
-	// Idle returns true if the file is unlocked.
-	Idle() bool
+	tryAcquire() bool
 }
 
-type FileSync interface {
-	// LastSync returns how much time has passed since the file was last synced.
-	LastSync() time.Duration
+type fileSync interface {
+	// age returns how much time has passed since the file was last sync to storage.
+	Age() time.Duration
 }
 
 // BaseFS represents a file system that kfs.FS can wrap.
+// Methods should behave the same as in the os package.
 type BaseFS interface {
 	Remove(name string) error
 	Open(name string) (BaseFile, error)
@@ -71,7 +68,7 @@ type BaseFile interface {
 	io.ReaderAt
 	io.ReadWriteCloser
 	io.Seeker
-	// Sync syncs the file to the FS (os.File.Sync).
+	// Sync syncs the file to the FS (os.File.sync).
 	Sync() error
 }
 
@@ -129,14 +126,12 @@ func (fs *defaultFS[T]) Remove(key T) error {
 	sw := fs.metrics.Delete.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
+	// Need to make sure other goroutines are done with the file before deleting it.
+	if _, err := fs.Acquire(key); err != nil {
+		return err
+	}
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	e, ok := fs.entries[key]
-	if !ok {
-		return nil
-	}
-	// Need to make sure other goroutines are done with the file before deleting it.
-	e.acquire()
 	delete(fs.entries, key)
 	return fs.baseFS.Remove(fs.path(key))
 }

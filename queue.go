@@ -9,7 +9,7 @@ import (
 type tickQueue struct {
 	ops  chan operation
 	exec func(sets []operation)
-	shut shut.Shutter
+	shut shut.Shutdown
 }
 
 const (
@@ -18,7 +18,7 @@ const (
 	emptyCycleShutdownThreshold = 2
 )
 
-func newQueue(setRunner func([]operation), shut shut.Shutter) *tickQueue {
+func newQueue(setRunner func([]operation), shut shut.Shutdown) *tickQueue {
 	return &tickQueue{
 		ops:  make(chan operation, queueDefaultSize),
 		exec: setRunner,

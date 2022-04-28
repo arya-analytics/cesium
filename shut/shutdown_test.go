@@ -6,9 +6,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Shutter", func() {
+var _ = Describe("Shutdown", func() {
 	var (
-		s shut.Shutter
+		s shut.Shutdown
 	)
 	BeforeEach(func() {
 		s = shut.New()
@@ -22,7 +22,7 @@ var _ = Describe("Shutter", func() {
 			Expect(s.Routines()["routine"]).To(Equal(1))
 		})
 	})
-	Describe("Close", func() {
+	Describe("Shutdown", func() {
 		It("Should close all routines", func() {
 			exited := make([]bool, 2)
 			s.Go(func(sig chan shut.Signal) error {
@@ -35,7 +35,7 @@ var _ = Describe("Shutter", func() {
 				exited[1] = true
 				return nil
 			}, shut.WithKey("routine"))
-			Expect(s.Close()).To(Succeed())
+			Expect(s.Shutdown()).To(Succeed())
 			Expect(exited).To(Equal([]bool{true, true}))
 			Expect(s.NumRoutines()).To(Equal(0))
 		})

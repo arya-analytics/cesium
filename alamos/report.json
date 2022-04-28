@@ -1,0 +1,20 @@
+{
+  "gauge": {
+    "avg": 1,
+    "count": 1,
+    "value": 1
+  },
+  "gauge2": {
+    "avg": 2,
+    "count": 1,
+    "value": 2
+  },
+  "sub": {
+    "gauge3": {
+      "key": "gauge3",
+      "values": [
+        3.2
+      ]
+    }
+  }
+}

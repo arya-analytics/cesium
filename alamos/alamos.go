@@ -1,77 +1,105 @@
 package alamos
 
+// |||||| EXPERIMENT ||||||
+
+// Experiment is alamos' core data type. It represents a hierarchical collection of application metrics.
+// Experiment is a tree-like structure where each node is either a metric or a sub-experiment.
+//
+// Creating Experiments:
+//
+// To create an experiment, use alamos.New().
+//
+// Metrics:
+//
+// To add a metric, use one of the metric constructors. Available metrics are:
+//
+// 		- alamos.NewGauge
+//		- alamos.NewSeries
+//		- alamos.NewGaugeDuration
+//		- alamos.NewSeriesDuration
+//
+// Each metric in an Experiment is uniquely identified by a string key. The experiment-key combination is used to
+// identify the metric in generated reports.
+//
+// Empty Experiments:
+//
+// Alamos is designed to be used alongside production code. This means that it is possible to pass nil Experiments
+// throughout an application. If a Metric is registered with an empty (nil) Experiment, all of its behavior will appear
+// to remain the same, but the Metric will not allocate any memory or record any values. For example:
+//
+// 		var exp alamos.Experiment
+//	    // This gauge will appear to behave normally, but will not allocate memory or record values.
+//		g := exp.NewGauge(exp, "bar")
+// 		g.Record(1)
+//
+// The same principle applies for sub-experiments. If a parent Experiment is empty and Sub is called, the returned
+// sub-experiment will be empty as well.
+//
+// Organizing Experiments:
+//
+// Only one top-level experiment should be created per application. Sub-experiments should be created to separate
+// individual application concerns.
+//
 type Experiment interface {
-	Sub(string) Experiment
-	AddMetric(entry)
-	Metrics() map[string]entry
+	// Key returns the key of the experiment.
+	Key() string
+	// Report returns a report of all the experiment's metrics.
+	Report() Report
+	sub(string) Experiment
+	getMetric(string) baseMetric
+	addMetric(metric baseMetric)
 }
 
-type ExperimentWriter struct {
-	experiment Experiment
+// New creates a new experiment with the given key.
+func New(key string) Experiment {
+	return &experiment{
+		key:          key,
+		children:     make(map[string]Experiment),
+		measurements: make(map[string]baseMetric),
+	}
+}
+
+// Sub creates a new sub-experiment with the given name and adds it to the given experiment.
+// If exp is nil, the new sub-experiment is NOT created, and instead the function returns nil.
+func Sub(exp Experiment, key string) Experiment {
+	if exp == nil {
+		return nil
+	}
+	return exp.sub(key)
+}
+
+func RetrieveMetric[T any](exp Experiment, key string) Metric[T] {
+	if exp == nil {
+		return nil
+	}
+	return exp.getMetric(key).(Metric[T])
 }
 
 type experiment struct {
 	key          string
 	children     map[string]Experiment
-	measurements map[string]entry
+	measurements map[string]baseMetric
 }
 
-func (e *experiment) Sub(key string) Experiment {
+func (e *experiment) Key() string {
+	return e.key
+}
+
+func (e *experiment) sub(key string) Experiment {
 	exp := New(key)
 	e.addSub(key, exp)
 	return exp
 }
 
+func (e *experiment) getMetric(key string) baseMetric {
+	return e.measurements[key]
+}
+
+func (e *experiment) addMetric(m baseMetric) {
+	e.measurements[m.Key()] = m
+}
+
 func (e *experiment) addSub(key string, exp Experiment) Experiment {
 	e.children[key] = exp
 	return exp
-}
-
-func (e *experiment) AddMetric(m entry) {
-	e.measurements[m.key()] = m
-}
-
-func (e *experiment) Metrics() map[string]entry {
-	for _, child := range e.children {
-		for k, v := range child.Metrics() {
-			e.measurements[k] = v
-		}
-	}
-	return e.measurements
-}
-
-func New(name string) Experiment {
-	return &experiment{
-		key:          name,
-		children:     make(map[string]Experiment),
-		measurements: make(map[string]entry),
-	}
-}
-
-func SubExperiment(exp Experiment, key string) Experiment {
-	if exp == nil {
-		return nil
-	}
-	return exp.Sub(key)
-}
-
-type entry interface {
-	key() string
-}
-
-func newEntry(key string) entry {
-	return &baseEntry{k: key}
-}
-
-type baseEntry struct {
-	k string
-}
-
-func (b *baseEntry) key() string {
-	return b.k
-}
-
-func ConcreteMetric[T any](exp Experiment, key string) Metric[T] {
-	m := exp.Metrics()[key]
-	return m.(Metric[T])
 }

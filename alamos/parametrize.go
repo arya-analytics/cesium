@@ -1,7 +1,6 @@
 package alamos
 
 import (
-	log "github.com/sirupsen/logrus"
 	"io"
 )
 
@@ -42,7 +41,7 @@ func (p *Parametrize[V]) Construct() {
 	}
 }
 
-// |||||| LISTFVARS ||||||
+// |||||| ITERVARS ||||||
 
 type iterVars[T ParametrizeVars] struct {
 	i    int
@@ -50,7 +49,6 @@ type iterVars[T ParametrizeVars] struct {
 }
 
 func (iv *iterVars[T]) Next() (T, error) {
-	log.Info("iterVars.Next()", "i", iv.i, "vars", iv.vars)
 	if iv.i >= len(iv.vars) {
 		return *new(T), io.EOF
 	}

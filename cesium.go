@@ -37,8 +37,8 @@ type DB interface {
 	//		}
 	//
 	//		// open the query
-	//		// db.Sync is a helper that turns a typically async write into an acknowledged, sync write.
-	//	    err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{seg})
+	//		// db.sync is a helper that turns a typically async write into an acknowledged, sync write.
+	//	    err := db.sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{seg})
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -90,7 +90,7 @@ type DB interface {
 	//		// DB.Sync is a helper that turns a typically async read into sync read.
 	//		// If you don't know what a Segment is, check out the Segment documentation.
 	//		var resSeg []Segment
-	//		err := db.Sync(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
+	//		err := db.sync(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -191,7 +191,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 type db struct {
 	dirname string
 	opts    *options
-	shutter shut.Shutter
+	shutter shut.Shutdown
 	runner  *run
 	kve     kvEngine
 }
@@ -228,7 +228,7 @@ func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
 
 func (d *db) Close() error {
 	log.Info("[cesium.DB] shutting down gracefully")
-	dbErr := d.shutter.Close()
+	dbErr := d.shutter.Shutdown()
 	kvErr := d.kve.Close()
 	if dbErr != nil {
 		return dbErr
@@ -264,7 +264,7 @@ func MemBacked() Option {
 func WithExperiment(exp alamos.Experiment) Option {
 	return func(o *options) {
 		if exp != nil {
-			o.exp = exp.Sub(fmt.Sprintf("cesium-%s", o.dirname))
+			o.exp = alamos.Sub(exp, fmt.Sprintf("cesium-%s", o.dirname))
 		} else {
 			o.exp = exp
 		}

@@ -14,15 +14,15 @@ var _ = Describe("Metric", func() {
 		exp = alamos.New("test")
 	})
 	Describe("Series", func() {
-		It("Should create a Series entry", func() {
+		It("Should create a Series defaultBaseMetric", func() {
 			Expect(func() {
 				alamos.NewSeries[int8](exp, "test.series")
 			}).ToNot(Panic())
 		})
 		It("Should show up in the list of measurements", func() {
 			alamos.NewSeries[int8](exp, "test.series")
-			_, ok := exp.Metrics()["test.series"]
-			Expect(ok).To(BeTrue())
+			m := alamos.RetrieveMetric[int8](exp, "test.series")
+			Expect(m.Key()).To(Equal("test.series"))
 		})
 		It("Should record values to the series", func() {
 			series := alamos.NewSeries[float64](exp, "test.series")
@@ -31,7 +31,7 @@ var _ = Describe("Metric", func() {
 		})
 	})
 	Describe("Gauge", func() {
-		It("Should create a Gauge entry", func() {
+		It("Should create a Gauge defaultBaseMetric", func() {
 			Expect(func() { alamos.NewGauge[int8](exp, "test.gauge") }).ToNot(Panic())
 		})
 		It("Should set the value on teh gauge", func() {

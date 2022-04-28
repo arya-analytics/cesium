@@ -5,38 +5,90 @@ import (
 	"time"
 )
 
+// Metric is a container for storing measured values.
 type Metric[T any] interface {
+	// Record records a value.
 	Record(T)
+	// Values returns the recorded values as a slice.
 	Values() []T
+	// Count returns the number of times Record was called.
 	Count() int
+
+	baseMetric
 }
 
 // |||||| BASE ||||||
+
+type baseMetric interface {
+	// Key returns the key of the metric.
+	Key() string
+	// Report returns a report of the recorded values.
+	Report() map[string]interface{}
+}
+
+func newBaseMetric(key string) baseMetric {
+	return defaultBaseMetric{k: key}
+}
+
+type defaultBaseMetric struct {
+	k string
+}
+
+func (b defaultBaseMetric) Key() string {
+	return b.k
+}
+
+func (b defaultBaseMetric) Report() map[string]interface{} {
+	return map[string]interface{}{
+		"key": b.k,
+	}
+}
 
 // |||||| GAUGE ||||||
 
 type gauge[T Numeric] struct {
 	mu sync.Mutex
-	entry
+	baseMetric
 	count int
 	value T
 }
 
+// Numeric represents a generic numeric value.
+type Numeric interface {
+	int | float64 | float32 | int64 | int32 | int16 | int8 | uint64 | uint32 | uint16 | uint8 | time.Duration
+}
+
+// NewGauge creates a new gauge metric. A gauge records the sum of all recorded values as well as
+// the number of times Record was called.
 func NewGauge[T Numeric](exp Experiment, key string) Metric[T] {
-	m := &gauge[T]{entry: newEntry(key)}
-	exp.AddMetric(m)
+	if m := emptyMetric[T](exp, key); m != nil {
+		return m
+	}
+	m := &gauge[T]{baseMetric: newBaseMetric(key)}
+	exp.addMetric(m)
 	return m
 }
 
+// Count implements Metric.
 func (g *gauge[T]) Count() int {
 	return g.count
 }
 
+// Values implements Metric.
+//
+// 		The first value returned represents the average value.
+// 		The second value represents the sum of all recorded value
+// 		The third value represents the number of times Record was called.
+//
 func (g *gauge[T]) Values() []T {
+	return []T{g.average(), g.value, T(g.count)}
+}
+
+func (g *gauge[T]) average() T {
 	if g.count == 0 {
-		return []T{0}
+		return 0
 	}
-	return []T{g.value / T(g.count), g.value}
+	return g.value / T(g.count)
 }
 
 func (g *gauge[T]) Record(v T) {
@@ -44,10 +96,18 @@ func (g *gauge[T]) Record(v T) {
 	g.value += v
 }
 
+func (g *gauge[T]) Report() map[string]interface{} {
+	return map[string]interface{}{
+		"count": g.count,
+		"value": g.value,
+		"avg":   g.average(),
+	}
+}
+
 // |||||| SERIES ||||||
 
 type series[T any] struct {
-	entry
+	baseMetric
 	values []T
 }
 
@@ -67,39 +127,49 @@ func (s *series[T]) Count() int {
 	return len(s.values)
 }
 
+func (s *series[T]) Report() map[string]interface{} {
+	return map[string]interface{}{
+		"key":    s.Key(),
+		"values": s.values,
+	}
+}
+
+// NewSeries creates a new series metric. A series stores all recorded values in a slice.
 func NewSeries[T any](exp Experiment, key string) Metric[T] {
-	if m := nilMetric[T](exp, key); m != nil {
+	if m := emptyMetric[T](exp, key); m != nil {
 		return m
 	}
-	m := &series[T]{entry: newEntry(key)}
-	exp.AddMetric(m)
+	m := &series[T]{baseMetric: newBaseMetric(key)}
+	exp.addMetric(m)
 	return m
 }
 
 // |||||| EMPTY ||||||
 
-type empty[T any] struct {
-	entry
-}
+type empty[T any] struct{}
 
-func (e *empty[T]) Values() []T {
+func (e empty[T]) Values() []T {
 	return nil
 }
 
-func (e *empty[T]) Record(T) {}
+func (e empty[T]) Record(T) {}
 
-func (e *empty[T]) Count() int {
+func (e empty[T]) Count() int {
 	return 0
 }
 
-func nilMetric[T any](exp Experiment, key string) Metric[T] {
+func (e empty[T]) Key() string {
+	return ""
+}
+
+func (e empty[T]) Report() map[string]interface{} {
+	return nil
+}
+
+func emptyMetric[T any](exp Experiment, key string) Metric[T] {
 	if exp != nil {
 		return nil
 	}
-	m := &empty[T]{entry: newEntry(key)}
+	m := empty[T]{}
 	return m
-}
-
-type Numeric interface {
-	float64 | float32 | int64 | int32 | int16 | int8 | uint64 | uint32 | uint16 | uint8 | time.Duration
 }

@@ -1,4 +1,4 @@
-package shut_test
+package persist_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestShutter(t *testing.T) {
+func TestPersist(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Shutdown Suite")
+	RunSpecs(t, "Persist Suite")
 }

@@ -8,7 +8,7 @@ type Metrics struct {
 }
 
 func newMetrics(exp alamos.Experiment) Metrics {
-	subExp := alamos.SubExperiment(exp, "allocate.Allocator")
+	subExp := alamos.Sub(exp, "allocate.Allocator")
 	return Metrics{
 		Allocate: alamos.NewGaugeDuration(subExp, "allocate"),
 	}

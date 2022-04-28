@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var _ = Describe("Sync", func() {
+var _ = Describe("sync", func() {
 	It("Should sync the contents of the file to the file system every interval", func() {
 		fs := kfs.New[int]("testdata", kfs.WithSuffix(".test"), kfs.WithFS(kfs.NewMem()))
 		defer Expect(fs.RemoveAll()).To(Succeed())
@@ -22,21 +22,23 @@ var _ = Describe("Sync", func() {
 		fs.Release(2)
 		fs.Release(3)
 		time.Sleep(5 * time.Millisecond)
-		Expect(fs.Files()[1].LastSync() > 5*time.Millisecond).To(BeTrue())
+		Expect(fs.Files()[1].Age() > 5*time.Millisecond).To(BeTrue())
+		s := shut.New()
 		sync := &kfs.Sync[int]{
 			FS:         fs,
-			Interval:   5 * time.Millisecond,
+			Interval:   2 * time.Millisecond,
 			MaxSyncAge: 2 * time.Millisecond,
-			Shutter:    shut.New(),
+			Shutter:    s,
 		}
-		errs := sync.GoTick()
+		errs := sync.Start()
 		go func() {
 			defer GinkgoRecover()
 			Expect(<-errs).ToNot(HaveOccurred())
 		}()
 		time.Sleep(6 * time.Millisecond)
 		fOne := fs.Files()[1]
-		Expect(fOne.LastSync() < 7*time.Millisecond).To(BeTrue())
+		Expect(fOne.Age() < 7*time.Millisecond).To(BeTrue())
+		Expect(s.Shutdown()).To(Succeed())
 	})
 	It("Should sync the contents of all of the files on shutdown", func() {
 		fs := kfs.New[int]("testdata", kfs.WithSuffix(".test"), kfs.WithFS(kfs.NewMem()))
@@ -51,7 +53,7 @@ var _ = Describe("Sync", func() {
 		fs.Release(2)
 		fs.Release(3)
 		time.Sleep(5 * time.Millisecond)
-		Expect(fs.Files()[1].LastSync() > 5*time.Millisecond).To(BeTrue())
+		Expect(fs.Files()[1].Age() > 5*time.Millisecond).To(BeTrue())
 		shutter := shut.New()
 		sync := &kfs.Sync[int]{
 			FS:         fs,
@@ -59,14 +61,14 @@ var _ = Describe("Sync", func() {
 			MaxSyncAge: 2 * time.Millisecond,
 			Shutter:    shutter,
 		}
-		errs := sync.GoTick()
+		errs := sync.Start()
 		go func() {
 			defer GinkgoRecover()
 			Expect(<-errs).ToNot(HaveOccurred())
 		}()
 		time.Sleep(15 * time.Millisecond)
-		Expect(shutter.Close()).To(Succeed())
+		Expect(shutter.Shutdown()).To(Succeed())
 		fOne := fs.Files()[1]
-		Expect(fOne.LastSync() < 3*time.Millisecond).To(BeTrue())
+		Expect(fOne.Age() < 3*time.Millisecond).To(BeTrue())
 	})
 })

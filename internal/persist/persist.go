@@ -2,30 +2,56 @@ package persist
 
 import (
 	"cesium/kfs"
+	"cesium/shut"
 	"context"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/semaphore"
+	"sync"
 )
 
-type Persist struct {
-	sem *semaphore.Weighted
-	kfs kfs.FS
+type Persist[T comparable] struct {
+	wg       *sync.WaitGroup
+	sem      *semaphore.Weighted
+	kfs      kfs.FS[T]
+	shutdown shut.Shutdown
 }
 
-type Operation interface {
+type Operation[T comparable] interface {
 	Context() context.Context
-	FileKey() int
+	FileKey() T
 	SendError(error)
 	Exec(f kfs.File)
 }
 
-func NewPersist(kfs kfs.FS, maxProcs int64) *Persist {
-	return &Persist{sem: semaphore.NewWeighted(maxProcs), kfs: kfs}
+func New[T comparable](kfs kfs.FS[T], maxProcs int64, shutdown shut.Shutdown) *Persist[T] {
+	p := &Persist[T]{
+		sem:      semaphore.NewWeighted(maxProcs),
+		kfs:      kfs,
+		wg:       &sync.WaitGroup{},
+		shutdown: shutdown,
+	}
+	p.listenForShutdown()
+	return p
 }
 
-func (p *Persist) Exec(ops []Operation) {
+func (p *Persist[T]) listenForShutdown() {
+	p.shutdown.Go(func(sig chan shut.Signal) error {
+		<-sig
+		p.wg.Wait()
+		return nil
+	})
+}
+
+func (p *Persist[T]) Exec(ops []Operation[T]) {
 	for _, op := range ops {
-		_ = p.sem.Acquire(op.Context(), 1)
-		go func(op Operation) {
+		if err := p.sem.Acquire(op.Context(), 1); err != nil {
+			log.Warn(err)
+		}
+		p.wg.Add(1)
+		go func(op Operation[T]) {
+			defer func() {
+				p.wg.Done()
+			}()
 			defer p.sem.Release(1)
 			f, err := p.kfs.Acquire(op.FileKey())
 			if err != nil {
