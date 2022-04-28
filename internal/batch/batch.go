@@ -2,6 +2,7 @@ package batch
 
 import (
 	"cesium/internal/persist"
+	"cesium/shut"
 )
 
 type Operation[K comparable] interface {
@@ -9,17 +10,25 @@ type Operation[K comparable] interface {
 }
 
 type Set[K comparable] struct {
-	batches map[chan []Operation[K]]Batch[K, Operation[K]]
+	batches  map[chan []Operation[K]]Batch[K, Operation[K]]
+	shutdown shut.Shutdown
 }
 
 func (s *Set[K]) Start() <-chan []Operation[K] {
 	ch := make(chan []Operation[K])
 	for pipe, batch := range s.batches {
-		go func(pipe chan []Operation[K], batch Batch[K, Operation[K]]) {
-			for ops := range pipe {
-				ch <- batch.Exec(ops)
+		pipe, batch := pipe, batch
+		s.shutdown.Go(func(sig chan shut.Signal) error {
+			for {
+				select {
+				case <-sig:
+					close(ch)
+					return nil
+				case ops := <-pipe:
+					ch <- batch.Exec(ops)
+				}
 			}
-		}(pipe, batch)
+		})
 	}
 	return ch
 }
