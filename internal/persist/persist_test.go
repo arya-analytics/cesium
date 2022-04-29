@@ -20,7 +20,7 @@ func (b BasicOperation) FileKey() int {
 }
 
 func (b BasicOperation) Exec(f kfs.File) {
-	if _, err := f.Write([]byte("hello123")); err != nil {
+	if _, err := f.Write([]byte("hello")); err != nil {
 		panic(err)
 	}
 }
@@ -31,29 +31,50 @@ func (b BasicOperation) SendError(err error) {
 
 var _ = Describe("Persist", func() {
 	var (
-		p  *persist.Persist[int]
+		p  *persist.Persist[int, persist.Operation[int]]
 		sd shut.Shutdown
 		fs kfs.FS[int]
 	)
 	BeforeEach(func() {
 		sd = shut.New()
 		fs = kfs.New[int]("testdata", kfs.WithSuffix(".test"))
-		p = persist.New[int](fs, 50, sd)
+		p = persist.New[int, persist.Operation[int]](fs, 50, sd)
 	})
-	It("Should execute an operation correctly", func() {
-		b := BasicOperation{}
-		p.Exec([]persist.Operation[int]{b})
-		// Read the file.
-		Expect(sd.Shutdown()).To(Succeed())
-		f, err := fs.Acquire(1)
-		Expect(err).ToNot(HaveOccurred())
-		defer fs.Release(1)
-		buf := make([]byte, 5)
-		_, err = f.Seek(0, 0)
-		Expect(err).ToNot(HaveOccurred())
-		if _, err := f.Read(buf); err != nil {
-			panic(err)
-		}
-		Expect(string(buf)).To(Equal("hello"))
+	Describe("Exec", func() {
+		It("Should execute an operation correctly", func() {
+			b := BasicOperation{}
+			p.Exec([]persist.Operation[int]{b})
+			// Read the file.
+			Expect(sd.Shutdown()).To(Succeed())
+			f, err := fs.Acquire(1)
+			Expect(err).ToNot(HaveOccurred())
+			defer fs.Release(1)
+			buf := make([]byte, 5)
+			_, err = f.Seek(0, 0)
+			Expect(err).ToNot(HaveOccurred())
+			if _, err := f.Read(buf); err != nil {
+				panic(err)
+			}
+			Expect(string(buf)).To(Equal("hello"))
+		})
+	})
+	Describe("Pipe", func() {
+		It("Should pipe an operation correctly", func() {
+			b := BasicOperation{}
+			ch := make(chan []persist.Operation[int])
+			p.Pipe(ch)
+			ch <- []persist.Operation[int]{b, b}
+			Expect(sd.Shutdown()).To(Succeed())
+			f, err := fs.Acquire(1)
+			Expect(err).ToNot(HaveOccurred())
+			defer fs.Release(1)
+			buf := make([]byte, 10)
+			_, err = f.Seek(0, 0)
+			Expect(err).ToNot(HaveOccurred())
+			if _, err := f.Read(buf); err != nil {
+				panic(err)
+			}
+			Expect(string(buf)).To(Equal("hellohello"))
+		})
 	})
 })
