@@ -18,7 +18,7 @@ type Shutdown interface {
 
 func New(opts ...Option) Shutdown {
 	opt := newOptions(opts...)
-	return &shutter{
+	return &base{
 		signal:   make(chan Signal),
 		opts:     opt,
 		routines: make(map[string]int),
@@ -26,7 +26,7 @@ func New(opts ...Option) Shutdown {
 	}
 }
 
-type shutter struct {
+type base struct {
 	signal   chan Signal
 	mu       sync.Mutex
 	routines map[string]int
@@ -35,7 +35,7 @@ type shutter struct {
 	opts     *options
 }
 
-func (s *shutter) Go(f func(chan Signal) error, opts ...GoOption) {
+func (s *base) Go(f func(chan Signal) error, opts ...GoOption) {
 	goOpt := newGoOpts(opts...)
 	go func() {
 		err := f(s.signal)
@@ -44,7 +44,7 @@ func (s *shutter) Go(f func(chan Signal) error, opts ...GoOption) {
 	s.addRoutine(goOpt.key)
 }
 
-func (s *shutter) Shutdown() error {
+func (s *base) Shutdown() error {
 	close(s.signal)
 	t := time.NewTimer(s.opts.shutdownThreshold)
 	var errors []error
@@ -57,7 +57,7 @@ o:
 				break o
 			}
 		case <-t.C:
-			panic("[shutter.Shutdown] graceful shutdown timeout exceeded")
+			panic("[base.Shutdown] graceful base timeout exceeded")
 		}
 	}
 	for _, err := range errors {
@@ -68,7 +68,7 @@ o:
 	return nil
 }
 
-func (s *shutter) Routines() map[string]int {
+func (s *base) Routines() map[string]int {
 	nRoutines := make(map[string]int)
 	s.mu.Lock()
 	for k, v := range s.routines {
@@ -77,13 +77,13 @@ func (s *shutter) Routines() map[string]int {
 	return nRoutines
 }
 
-func (s *shutter) NumRoutines() int {
+func (s *base) NumRoutines() int {
 	return s.count
 }
 
 const defaultRoutineKey = "unkeyed"
 
-func (s *shutter) addRoutine(key string) {
+func (s *base) addRoutine(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if key == "" {
@@ -93,7 +93,7 @@ func (s *shutter) addRoutine(key string) {
 	s.routines[key]++
 }
 
-func (s *shutter) closeRoutine(key string, err error) {
+func (s *base) closeRoutine(key string, err error) {
 	if key == "" {
 		key = defaultRoutineKey
 	}

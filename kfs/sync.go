@@ -1,8 +1,8 @@
 package kfs
 
 import (
+	"cesium/internal/errutil"
 	"cesium/shut"
-	"cesium/util/errutil"
 	"time"
 )
 
@@ -10,16 +10,16 @@ import (
 // It synchronizes files on two conditions:
 //
 // 	1. When the file is "idle" i.e. the file is not locked.
-//  2. The files "age" i.e. the time since the file was last synced exceeds Sync.MaxSyncAge.
+//  2. The files "age" i.e. the time since the file was last synced exceeds Sync.MaxAge.
 //
-// All struct fields must be initialized before the Sync is started using Sync.Start().
+// Sequential struct fields must be initialized before the Sync is started using Sync.Start().
 type Sync[T comparable] struct {
 	// FS is the file system to sync.
 	FS FS[T]
 	// Interval is the time between syncs.
 	Interval time.Duration
-	// MaxSyncAge sets the maximum age of a file before it is synced.
-	MaxSyncAge time.Duration
+	// MaxAge sets the maximum age of a file before it is synced.
+	MaxAge time.Duration
 	// Shutter is used to gracefully shut down the sync.
 	Shutter shut.Shutdown
 }
@@ -47,7 +47,7 @@ func (s *Sync[T]) Start() <-chan error {
 func (s *Sync[T]) sync() error {
 	c := errutil.NewCatchSimple(errutil.WithAggregation())
 	for _, v := range s.FS.Files() {
-		if v.Age() > s.MaxSyncAge && v.TryAcquire() {
+		if v.Age() > s.MaxAge && v.TryAcquire() {
 			c.Exec(v.Sync)
 			v.Release()
 		}

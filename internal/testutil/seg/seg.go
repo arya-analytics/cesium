@@ -12,7 +12,7 @@ type DataFactory func(n int) []byte
 
 func New(c cesium.Channel, fac DataFactory, start cesium.TimeStamp, span cesium.TimeSpan) cesium.Segment {
 	return cesium.Segment{
-		ChannelKey: c.Key,
+		ChannelKey: c.LKey,
 		Data:       generateSpan(c, fac, span),
 		Start:      start,
 	}

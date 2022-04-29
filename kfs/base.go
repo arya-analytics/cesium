@@ -5,8 +5,8 @@ import (
 	"os"
 )
 
-// NewOSFS returns a new BaseFS that uses the os package.
-func NewOSFS() BaseFS {
+// NewOS returns a new BaseFS that uses the os package.
+func NewOS() BaseFS {
 	return &osFS{}
 }
 

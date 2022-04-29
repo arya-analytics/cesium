@@ -1,4 +1,4 @@
-// Copyright 2021 the Cesium authors. All rights reserved..
+// Copyright 2021 the Cesium authors. Sequential rights reserved..
 
 package kfs
 
@@ -42,18 +42,18 @@ type FS[T comparable] interface {
 type File[T comparable] interface {
 	Key() T
 	BaseFile
-	fileSync
-	fileLock
+	FileLock
+	FileSync
 }
 
-type fileLock interface {
+type FileLock interface {
 	Acquire()
 	Release()
 	TryAcquire() bool
 }
 
-type fileSync interface {
-	// age returns how much time has passed since the file was last sync to storage.
+type FileSync interface {
+	// Age returns how much time has passed since the file was last sync to storage.
 	Age() time.Duration
 }
 
@@ -73,10 +73,10 @@ type BaseFile interface {
 	Sync() error
 }
 
-func New[T comparable](root string, opts ...Option) FS[T] {
+func New[T comparable](dirname string, opts ...Option) FS[T] {
 	o := newOptions(opts...)
 	return &defaultFS[T]{
-		root:    root,
+		dirname: dirname,
 		options: *o,
 		metrics: newMetrics(o.experiment),
 		entries: make(map[T]File[T]),
@@ -85,7 +85,7 @@ func New[T comparable](root string, opts ...Option) FS[T] {
 
 type defaultFS[T comparable] struct {
 	options
-	root    string
+	dirname string
 	mu      sync.RWMutex
 	metrics Metrics
 	entries map[T]File[T]
@@ -184,7 +184,7 @@ func (fs *defaultFS[T]) name(key T) string {
 }
 
 func (fs *defaultFS[T]) path(key T) string {
-	return filepath.Join(fs.root, fs.name(key))
+	return filepath.Join(fs.dirname, fs.name(key))
 }
 
 func (fs *defaultFS[T]) newEntry(key T) (File[T], error) {

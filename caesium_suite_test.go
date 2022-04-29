@@ -43,13 +43,13 @@ func ExampleDB_NewCreate_simple() {
 
 	// Define a new segment.
 	seg := cesium.Segment{
-		ChannelKey: ch.Key,
+		ChannelKey: ch.LKey,
 		Start:      cesium.Now(),
 		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 	}
 
 	// Write the segment.
-	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &[]cesium.Segment{seg}); err != nil {
+	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.LKey), &[]cesium.Segment{seg}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -59,7 +59,7 @@ func ExampleDB_NewCreate_simple() {
 	}
 }
 
-// A query that writes multiple segments of data through a channel.
+// A query that writes multiple segmentKV of data through a channel.
 func ExampleDB_NewCreate_multiSegment() {
 	ctx := context.Background()
 
@@ -76,7 +76,7 @@ func ExampleDB_NewCreate_multiSegment() {
 		Exec(ctx)
 
 	// Open the query.
-	req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
+	req, res, err := db.NewCreate().WhereChannels(ch.LKey).Stream(ctx)
 
 	// Listen for errors.
 	wg := sync.WaitGroup{}
@@ -84,7 +84,7 @@ func ExampleDB_NewCreate_multiSegment() {
 	go func() {
 		defer wg.Done()
 		for resV := range res {
-			// An eof error indicates the query has persisted all segments t0 disk.
+			// An eof error indicates the query has persisted all segmentKV t0 disk.
 			if resV.Err == io.EOF {
 				return
 			}
@@ -93,14 +93,14 @@ func ExampleDB_NewCreate_multiSegment() {
 		}
 	}()
 
-	// Write 5 segments.
+	// Write 5 segmentKV.
 	const nSegments = 5
 	t0 := cesium.Now()
 	for i := 0; i < nSegments; i++ {
 		// Define the segment.
 		// It'stream important to notice that the start times do not overlap.
 		seg := cesium.Segment{
-			ChannelKey: ch.Key,
+			ChannelKey: ch.LKey,
 			Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
 			Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 		}
@@ -118,7 +118,7 @@ func ExampleDB_NewCreate_multiSegment() {
 	}
 }
 
-// A query that writes segments for multiple channels.
+// A query that writes segmentKV for multiple channels.
 func ExampleDB_NewCreate_multiChannel() {
 	ctx := context.Background()
 
@@ -139,7 +139,7 @@ func ExampleDB_NewCreate_multiChannel() {
 	}
 	var cPKs []cesium.PK
 	for _, ch := range channels {
-		cPKs = append(cPKs, ch.Key)
+		cPKs = append(cPKs, ch.LKey)
 	}
 
 	// Open the query.
@@ -154,7 +154,7 @@ func ExampleDB_NewCreate_multiChannel() {
 	go func() {
 		defer wg.Done()
 		for resV := range res {
-			// An eof error indicates the query has persisted all segments t0 disk.
+			// An eof error indicates the query has persisted all segmentKV t0 disk.
 			if resV.Err == io.EOF {
 				return
 			}
@@ -163,21 +163,21 @@ func ExampleDB_NewCreate_multiChannel() {
 		}
 	}()
 
-	// Write 5 segments for each channel.
+	// Write 5 segmentKV for each channel.
 	const nSegments = 5
 	t0 := cesium.Now()
 	for i := 0; i < nSegments; i++ {
-		// Define the segments.
+		// Define the segmentKV.
 		segs := make([]cesium.Segment, nChannels)
 		for j := 0; j < nChannels; j++ {
 			// It'stream important to notice that the start times do not overlap.
 			segs[j] = cesium.Segment{
-				ChannelKey: channels[j].Key,
+				ChannelKey: channels[j].LKey,
 				Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
 				Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 			}
 		}
-		// Write the segments as a create request.
+		// Write the segmentKV as a create request.
 		req <- cesium.CreateRequest{Segments: segs}
 	}
 
@@ -214,24 +214,24 @@ func ExampleDB_NewRetrieve_simple() {
 
 	// Define a new segment.
 	seg := cesium.Segment{
-		ChannelKey: ch.Key,
+		ChannelKey: ch.LKey,
 		Start:      cesium.Now(),
 		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 	}
 
 	// Write the segment.
-	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &[]cesium.Segment{seg}); err != nil {
+	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.LKey), &[]cesium.Segment{seg}); err != nil {
 		log.Fatal(err)
 	}
 
 	// Open the retrieve query.
 	var resSegs []cesium.Segment
-	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.Key).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
+	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.LKey).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Print the number of segments.
+	// Print the number of segmentKV.
 	fmt.Println(len(resSegs))
 	// Output:
 	// 1

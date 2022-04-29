@@ -79,14 +79,14 @@ func (sg Segment) String() string {
 	return fmt.Sprintf(`
 		ChannelKey: %stream
 		fileKey: %stream
-		offset: %d
+		Offset: %d
 		Start: %stream
 		size: %stream
 		Data: %stream
 	`, sg.ChannelKey, sg.fileKey, sg.offset, sg.Start, sg.size, sg.Data)
 }
 
-const segmentKVPrefix = "seg"
+const segmentKVPrefix = "segments"
 
 func (sg Segment) KVKey() []byte {
 	return kv.DashedCompositeKey(segmentKVPrefix, sg.ChannelKey)
@@ -111,7 +111,7 @@ func (sk segmentKV) latest(cPK ChannelKey) (Segment, error) {
 		}
 	}()
 	if ok := iter.Last(); !ok {
-		return Segment{}, newSimpleError(ErrNotFound, "No segments found")
+		return Segment{}, newSimpleError(ErrNotFound, "No segmentKV found")
 	}
 	s := &Segment{}
 	return *s, kv.LoadBytes(iter.Value(), s)

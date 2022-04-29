@@ -3,7 +3,7 @@ package cesium_test
 import (
 	"cesium"
 	"cesium/alamos"
-	"cesium/util/testutil/seg"
+	"cesium/internal/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sync"
@@ -13,7 +13,7 @@ var _ = Describe("Retrieve", func() {
 	Context("Single Channel", func() {
 		var (
 			db  cesium.DB
-			cpk cesium.PK
+			cpk int16
 			c   cesium.Channel
 			exp alamos.Experiment
 		)
@@ -29,7 +29,7 @@ var _ = Describe("Retrieve", func() {
 		AfterEach(func() {
 			Expect(db.Close()).To(Succeed())
 		})
-		It("Should read the segments correctly", func() {
+		It("Should read the segmentKV correctly", func() {
 			req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
 			stc := &seg.StreamCreate{
 				Req:               req,
@@ -105,7 +105,7 @@ var _ = Describe("Retrieve", func() {
 				stc.CreateCRequestsOfN(10, 2)
 				Expect(stc.CloseAndWait()).To(Succeed())
 			}
-			var cPKs []cesium.PK
+			var cPKs []int16
 			for _, c := range channels {
 				cPKs = append(cPKs, c.Key)
 			}

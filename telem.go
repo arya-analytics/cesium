@@ -1,7 +1,7 @@
 package cesium
 
 import (
-	"cesium/util/binary"
+	"cesium/internal/binary"
 	log "github.com/sirupsen/logrus"
 	"strconv"
 	"time"

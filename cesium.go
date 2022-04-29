@@ -2,13 +2,18 @@ package cesium
 
 import (
 	"cesium/alamos"
+	"cesium/internal/allocate"
+	"cesium/internal/kv"
+	"cesium/internal/kv/pebblekv"
+	"cesium/internal/lock"
+	"cesium/internal/persist"
+	"cesium/internal/queue"
+	"cesium/kfs"
 	"cesium/shut"
 	"context"
 	"fmt"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
-	log "github.com/sirupsen/logrus"
-	"path/filepath"
 	"time"
 )
 
@@ -20,7 +25,7 @@ type DB interface {
 	// looks like the following:
 	//
 	//      // open the DB
-	//  	ctx := context.Background()
+	//  	ctx := Context.Background()
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
 	//      // create a new channel
@@ -29,8 +34,8 @@ type DB interface {
 	// 	    	 log.Fatal(err)
 	//		}
 	//
-	//	     // create a new Segment to write. If you don't know what segments are, check out the Segment documentation.
-	//       seg := cesium.Segment{
+	//	     // create a new Segment to write. If you don't know what segmentKV are, check out the Segment documentation.
+	//       segments := cesium.Segment{
 	//    		ChannelKey: ch.Pk,
 	//          Start: cesium.Now(),
 	//          Data: cesium.MarshalFloat64([]{1.0, 2.0, 3.0})
@@ -38,7 +43,7 @@ type DB interface {
 	//
 	//		// open the query
 	//		// db.sync is a helper that turns a typically async write into an acknowledged, sync write.
-	//	    err := db.sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{seg})
+	//	    err := db.sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{segments})
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -69,7 +74,7 @@ type DB interface {
 	//		}
 	//
 	//		// Write the segment to the Create Request Stream.
-	//      req <- seg
+	//      req <- segments
 	//		// Close the Request Stream.
 	//		close(req)
 	//		// Wait for the Create query to acknowledge all writes.
@@ -99,11 +104,11 @@ type DB interface {
 	// of data by time range by using the WhereTimeRange method and the supplied time range.
 	//
 	// Notes on Segmentation of Data:
-	//		The Retrieve results will be returned as a set of segments (Segment). The Segments are not guaranteed to be
+	//		The Retrieve results will be returned as a set of segmentKV (Segment). The Segments are not guaranteed to be
 	//		in chronological order. This is a performance optimization to allow for more efficient data retrieval.
 	//
 	//	 	The Segments are not guaranteed to be contiguous. Because of the unique Create pattern cesium uses, it'stream possible
-	// 		to leave gaps in between segments (these represent times when that particular sensor was inactive).
+	// 		to leave gaps in between segmentKV (these represent times when that particular sensor was inactive).
 	//
 	//      Retrieve also DOES NOT return partial Segments i.e if a query asks for the time range 0 to 10, and Segment A
 	//		contains the data from time 0 to 6, and Segment B contains the data from 6 to 12, ALL Segment A will be returned
@@ -114,10 +119,10 @@ type DB interface {
 	// Asynchronous Retrieve queries are the default in cesium to allow for network optimization (i.e. send the data across
 	// the network as you read more data from IO). However, they are a bit more complex to write. See the following example:
 	//
-	// 		// Assuming DB is opened and two Segment have been created for a channel with Key channelKey. See NewCreate for details.
+	// 		// Assuming DB is opened and two Segment have been created for a channel with LKey channelKey. See NewCreate for details.
 	//      // Start the retrieve query. See Retrieve.Stream for details on what each return value does.
-	// 		// To cancel a query before it completes, cancel the context provided to Retrieve.Stream.
-	// 		ctx, cancel := context.WithCancel(context.Background())
+	// 		// To cancel a query before it completes, cancel the Context provided to Retrieve.Stream.
+	// 		ctx, cancel := Context.WithCancel(Context.Background())
 	//		res, err := db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(channelKey).Stream(ctx)
 	//
 	//      var resSeg []Segment
@@ -133,8 +138,6 @@ type DB interface {
 	//      // Do what you want with the data, just remember to close the database when done.
 	//
 	NewRetrieve() Retrieve
-	// NewDelete opens a new Delete query.
-	NewDelete() Delete
 	NewCreateChannel() CreateChannel
 	NewRetrieveChannel() RetrieveChannel
 	Sync(ctx context.Context, query Query, seg *[]Segment) error
@@ -143,77 +146,128 @@ type DB interface {
 
 func Open(dirname string, opts ...Option) (DB, error) {
 	o := newOptions(dirname, opts...)
+	sd := shut.New(o.shutdownOpts...)
 
-	shutter := shut.New(o.shutdownOpts...)
+	// |||||| KFS |||||||
 
-	// |||| PERSIST ||||
+	fs := kfs.New[fileKey](o.dirname, o.kfs.opts...)
+	sync := &kfs.Sync[fileKey]{
+		FS:       fs,
+		Interval: o.kfs.sync.interval,
+		MaxAge:   o.kfs.sync.maxAge,
+		Shutter:  sd,
+	}
+	sync.Start()
 
-	kve, err := openPebbleKVDB(o)
+	// |||||| KV |||||||
+
+	pebbleDB, err := pebble.Open(o.dirname, &pebble.Options{FS: o.kvFS})
 	if err != nil {
 		return nil, err
 	}
-	pst := openPersist(o)
+	kve := pebblekv.Wrap(pebbleDB)
+	skv := segmentKV{kv: kve}
+	ckv := channelKV{kv: kve}
 
-	// |||| BATCH QUEUE ||||
+	// |||||| PERSIST ||||||
 
-	batchQueue := newQueue(batchRunner{
-		persist: pst,
-		batch:   batchSet{retrieveBatch{}, createBatchFileChannel{}},
-	}.exec, shutter)
-	go batchQueue.goTick()
+	// || CREATE ||
 
-	// |||| RUNNER ||||
+	createPst := persist.New[fileKey, createOperation](fs, 50, sd)
+	createOpRequests := make(chan []createOperation)
+	createOpResponses := make(chan []createOperation)
+	createQueue := &queue.Debounce[createOperation]{
+		Requests:  createOpRequests,
+		Responses: createOpResponses,
+		Shutdown:  sd,
+		Interval:  1 * time.Second,
+		Threshold: 50,
+	}
+	createQueue.Start()
+	createPst.Pipe(createOpResponses)
 
-	skv := newSegmentKV(kve)
-	ckv := newChannelKV(kve)
-	fa := newFileAllocate(skv, o.exp)
+	// || RETRIEVE ||
 
-	crSvc := newCreateChannelRunService(ckv)
-	rcSvc := newRetrieveChannelRunService(ckv)
+	retrievePst := persist.New[fileKey, retrieveOperation](fs, 50, sd)
+	retrieveOpRequests := make(chan []retrieveOperation)
+	retrieveOpResponses := make(chan []retrieveOperation)
+	retrieveQueue := &queue.Debounce[retrieveOperation]{
+		Requests:  retrieveOpRequests,
+		Responses: retrieveOpResponses,
+		Shutdown:  sd,
+		Interval:  1 * time.Second,
+		Threshold: 50,
+	}
+	retrieveQueue.Start()
+	retrievePst.Pipe(retrieveOpResponses)
 
-	cr := newCreateRunService(fa, skv, ckv)
-	rc := newRetrieveRunService(skv, ckv)
+	// ||||||| CREATE ||||||
 
-	runner := &run{
-		batchQueue: batchQueue.ops,
-		services:   []runService{crSvc, rcSvc, cr, rc},
+	nextFileCounter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
+	if err != nil {
+		return nil, err
+	}
+	nextFile := &fileCounter{PersistedCounter: *nextFileCounter}
+	segAlloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
+		MaxDescriptors: 50,
+		MaxSize:        1e9,
+	})
+	createQExec := &createQueryExecutor{
+		allocator: segAlloc,
+		skv:       skv,
+		ckv:       ckv,
+		queue:     createOpRequests,
+		lock:      lock.NewMap[ChannelKey](),
+		shutdown:  sd,
 	}
 
+	// |||||| RETRIEVE ||||||
+
+	retrieveQExec := &retrieveQueryExecutor{
+		parser:   retrieveParser{skv: skv, ckv: ckv},
+		queue:    retrieveOpRequests,
+		shutdown: sd,
+	}
+
+	// |||||| CHANNEL |||||
+
+	nextChannelCounter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextChannel"))
+	cChannelQExec := &createChannelQueryExecutor{ckv: ckv, counter: nextChannelCounter}
+	rChannelQExec := &retrieveChannelQueryExecutor{ckv: ckv}
+
 	return &db{
-		dirname: dirname,
-		opts:    o,
-		kve:     kve,
-		runner:  runner,
-		shutter: shutter,
+		kv:              kve,
+		shutdown:        shut.NewGroup(sd),
+		create:          createQExec,
+		retrieve:        retrieveQExec,
+		createChannel:   cChannelQExec,
+		retrieveChannel: rChannelQExec,
 	}, nil
 }
 
 type db struct {
-	dirname string
-	opts    *options
-	shutter shut.Shutdown
-	runner  *run
-	kve     kvEngine
+	kv              kv.KV
+	shutdown        *shut.Group
+	create          *createQueryExecutor
+	retrieve        *retrieveQueryExecutor
+	createChannel   *createChannelQueryExecutor
+	retrieveChannel *retrieveChannelQueryExecutor
 }
 
 func (d *db) NewCreate() Create {
-	return newCreate(d.runner)
+	return newCreate(d.create)
 }
 
 func (d *db) NewRetrieve() Retrieve {
-	return newRetrieve(d.runner)
-}
-
-func (d *db) NewDelete() Delete {
-	return newDelete(d.runner)
+	return newRetrieve(d.retrieve)
 }
 
 func (d *db) NewCreateChannel() CreateChannel {
-	return newCreateChannel(d.runner)
+	return newCreateChannel(d.createChannel)
 }
 
 func (d *db) NewRetrieveChannel() RetrieveChannel {
-	return newRetrieveChannel(d.runner)
+	return newRetrieveChannel(d.retrieveChannel)
 }
 
 func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
@@ -227,13 +281,10 @@ func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
 }
 
 func (d *db) Close() error {
-	log.Info("[cesium.DB] shutting down gracefully")
-	dbErr := d.shutter.Shutdown()
-	kvErr := d.kve.Close()
-	if dbErr != nil {
-		return dbErr
+	if err := d.shutdown.Sequential(); err != nil {
+		return err
 	}
-	return kvErr
+	return d.kv.Close()
 }
 
 // |||| OPTIONS ||||
@@ -241,8 +292,15 @@ func (d *db) Close() error {
 type Option func(*options)
 
 type options struct {
-	dirname      string
-	memBacked    bool
+	dirname string
+	kfs     struct {
+		opts []kfs.Option
+		sync struct {
+			interval time.Duration
+			maxAge   time.Duration
+		}
+	}
+	kvFS         vfs.FS
 	exp          alamos.Experiment
 	shutdownOpts []shut.Option
 }
@@ -257,7 +315,9 @@ func newOptions(dirname string, opts ...Option) *options {
 
 func MemBacked() Option {
 	return func(o *options) {
-		o.memBacked = true
+		o.dirname = ""
+		o.kfs.opts = append(o.kfs.opts, kfs.WithFS(kfs.NewMem()))
+		o.kvFS = vfs.NewMem()
 	}
 }
 
@@ -281,21 +341,4 @@ func WithShutdownOpts(opts ...shut.Option) Option {
 	return func(o *options) {
 		o.shutdownOpts = append(o.shutdownOpts, opts...)
 	}
-}
-
-func openPebbleKVDB(opts *options) (kvEngine, error) {
-	pOpts := &pebble.Options{}
-	if opts.memBacked {
-		pOpts.FS = vfs.NewMem()
-	}
-	pdb, err := pebble.Open(filepath.Join(opts.dirname, "pebble"), pOpts)
-	return pebbleKV{DB: pdb}, err
-}
-
-func openPersist(opts *options) Persist {
-	if opts.memBacked {
-		return newPersist(NewAfero(opts.dirname))
-	}
-	log.Info(opts.dirname)
-	return newPersist(NewOS(filepath.Join(opts.dirname, "cesium")))
 }

@@ -20,7 +20,7 @@ func (c *CounterOperation) FileKey() int {
 	return 1
 }
 
-func (c *CounterOperation) Exec(f kfs.File) {
+func (c *CounterOperation) Exec(f kfs.File[int]) {
 	c.count++
 }
 
@@ -34,7 +34,7 @@ var _ = Describe("Batch", func() {
 			op1 := &CounterOperation{}
 			op2 := &CounterOperation{}
 			opSet := batch.OperationSet[int, batch.Operation[int]]{op1, op2}
-			var f kfs.File
+			var f kfs.File[int]
 			opSet.Exec(f)
 			Expect(opSet.FileKey()).To(Equal(1))
 			Expect(opSet.Context()).To(Equal(context.Background()))

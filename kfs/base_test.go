@@ -11,7 +11,7 @@ var _ = Describe("Os", func() {
 		baseFS kfs.BaseFS
 	)
 	BeforeEach(func() {
-		baseFS = kfs.NewOSFS()
+		baseFS = kfs.NewOS()
 	})
 	It("Should open a file for reading and writing", func() {
 		f, err := baseFS.Open("testdata/test.txt")

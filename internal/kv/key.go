@@ -20,7 +20,6 @@ func CompositeKey(sep string, elems ...interface{}) []byte {
 		default:
 			cw.Write(e)
 		}
-
 	}
 	if cw.Error() != nil {
 		panic(cw.Error())

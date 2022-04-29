@@ -7,7 +7,7 @@
 package errutil
 
 import (
-	"cesium/util/binary"
+	"cesium/internal/binary"
 	"context"
 	"io"
 )

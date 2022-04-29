@@ -10,21 +10,17 @@ import (
 type PersistedCounter struct {
 	kve   KV
 	key   []byte
-	value int
+	value int64
 }
 
 func NewPersistedCounter(kv KV, key []byte) (*PersistedCounter, error) {
 	c := &PersistedCounter{kve: kv, key: key}
 	err := Load(kv, c.key, c)
 	if errors.Is(err, pebble.ErrNotFound) {
+		err = nil
 		c.value = 0
 	}
 	return c, err
-}
-
-func (c *PersistedCounter) ByteValue() []byte {
-	bv, _ := binary.Marshal(c.value)
-	return bv
 }
 
 func (c *PersistedCounter) Load(r io.Reader) error {
@@ -39,7 +35,7 @@ func (c *PersistedCounter) flushShelf() error {
 	return Flush(c.kve, c.key, c)
 }
 
-func (c *PersistedCounter) Increment(values ...int) (int, error) {
+func (c *PersistedCounter) Increment(values ...int64) (int64, error) {
 	if len(values) == 0 {
 		c.value++
 	}
@@ -49,7 +45,7 @@ func (c *PersistedCounter) Increment(values ...int) (int, error) {
 	return c.value, c.flushShelf()
 }
 
-func (c *PersistedCounter) Decrement(values ...int) (int, error) {
+func (c *PersistedCounter) Decrement(values ...int64) (int64, error) {
 	if len(values) == 0 {
 		c.value--
 	}
@@ -57,4 +53,8 @@ func (c *PersistedCounter) Decrement(values ...int) (int, error) {
 		c.value -= v
 	}
 	return c.value, c.flushShelf()
+}
+
+func (c *PersistedCounter) Value() int64 {
+	return c.value
 }

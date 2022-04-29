@@ -8,7 +8,7 @@ type Retrieve[K comparable] struct{}
 
 type RetrieveOperation[K comparable] interface {
 	Operation[K]
-	Offset() int
+	Offset() int64
 }
 
 func (r *Retrieve[K]) Exec(ops []RetrieveOperation[K]) (oOps []Operation[K]) {

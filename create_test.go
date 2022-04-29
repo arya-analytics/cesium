@@ -3,7 +3,7 @@ package cesium_test
 import (
 	"cesium"
 	"cesium/alamos"
-	"cesium/util/testutil/seg"
+	"cesium/internal/testutil/seg"
 	"fmt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -123,7 +123,7 @@ var _ = Describe("Create", func() {
 					ExecN(ctx, values.nChannels)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(chs).To(HaveLen(values.nChannels))
-				req, res, err := db.NewCreate().WhereChannels(cesium.PKs(chs)...).Stream(ctx)
+				req, res, err := db.NewCreate().WhereChannels(cesium.ChannelKeys(chs)...).Stream(ctx)
 				stc := &seg.StreamCreate{
 					Req:               req,
 					Res:               res,

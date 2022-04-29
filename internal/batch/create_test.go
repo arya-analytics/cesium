@@ -23,7 +23,7 @@ func (c CreateOperation) FileKey() int {
 	return c.fileKey
 }
 
-func (c CreateOperation) Exec(f kfs.File) {
+func (c CreateOperation) Exec(f kfs.File[int]) {
 	if _, err := f.Write([]byte("hello")); err != nil {
 		panic(err)
 	}

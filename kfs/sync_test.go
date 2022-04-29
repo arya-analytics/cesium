@@ -25,10 +25,10 @@ var _ = Describe("sync", func() {
 		Expect(fs.Files()[1].Age() > 5*time.Millisecond).To(BeTrue())
 		s := shut.New()
 		sync := &kfs.Sync[int]{
-			FS:         fs,
-			Interval:   2 * time.Millisecond,
-			MaxSyncAge: 2 * time.Millisecond,
-			Shutter:    s,
+			FS:       fs,
+			Interval: 2 * time.Millisecond,
+			MaxAge:   2 * time.Millisecond,
+			Shutter:  s,
 		}
 		errs := sync.Start()
 		go func() {
@@ -56,10 +56,10 @@ var _ = Describe("sync", func() {
 		Expect(fs.Files()[1].Age() > 5*time.Millisecond).To(BeTrue())
 		shutter := shut.New()
 		sync := &kfs.Sync[int]{
-			FS:         fs,
-			Interval:   5 * time.Millisecond,
-			MaxSyncAge: 2 * time.Millisecond,
-			Shutter:    shutter,
+			FS:       fs,
+			Interval: 5 * time.Millisecond,
+			MaxAge:   2 * time.Millisecond,
+			Shutter:  shutter,
 		}
 		errs := sync.Start()
 		go func() {

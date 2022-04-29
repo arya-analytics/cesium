@@ -106,7 +106,7 @@ type RetrieveChannel struct {
 	query
 }
 
-// CreateRequest is a request containing a set of segments to write to the DB.
+// CreateRequest is a request containing a set of segmentKV to write to the DB.
 type CreateRequest struct {
 	Segments []Segment
 }
@@ -176,14 +176,14 @@ func getOpt[T any](q query, k queryOptKey) (T, bool) {
 	return ro, ok
 }
 
-// WhereKey returns a query that will only return Channel that match the given primary Key.
+// WhereKey returns a query that will only return Channel that match the given primary LKey.
 func (r RetrieveChannel) WhereKey(key ChannelKey) RetrieveChannel {
 	r.set(channelPKOptKey, []ChannelKey{key})
 	return r
 }
 
 // WhereChannels sets the channels to acquire a lock on for creation.
-// The request stream will only accept segments bound to channels with the given primary keys.
+// The request stream will only accept segmentKV bound to channels with the given primary keys.
 // If no keys are provided, will return an ErrInvalidQuery error.
 func (c Create) WhereChannels(keys ...ChannelKey) Create {
 	setChannelKeys(c.query, keys...)
