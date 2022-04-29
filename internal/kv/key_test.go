@@ -9,14 +9,8 @@ import (
 var _ = Describe("KVKey", func() {
 	Describe("CompositeKey", func() {
 		It("Should generate a composite key from elements", func() {
-			key := kv.CompositeKey("-", "foo", "bar")
-			Expect(key).To(Equal([]byte("foo-bar")))
-		})
-	})
-	Describe("DashedCompositeKey", func() {
-		It("Should generate a composite key from elements", func() {
-			key := kv.DashedCompositeKey("foo", "bar")
-			Expect(key).To(Equal([]byte("foo-bar")))
+			key := kv.CompositeKey("foo", "bar")
+			Expect(key).To(Equal([]byte("foobar")))
 		})
 	})
 })

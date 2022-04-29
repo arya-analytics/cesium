@@ -33,7 +33,7 @@ var _ = Describe("Pebble", func() {
 				for iter.First(); iter.Valid(); iter.Next() {
 					c++
 				}
-				Expect(c).To(Equal(2))
+				Expect(c).To(Equal(3))
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
