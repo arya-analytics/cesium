@@ -16,7 +16,7 @@ var _ = Describe("CreateChannel", func() {
 	AfterEach(func() {
 		Expect(db.Close()).To(Succeed())
 	})
-	It("Should create the channel correctly", func() {
+	FIt("Should create the channel correctly", func() {
 		c, err := db.NewCreateChannel().
 			WithRate(cesium.DataRate(25)).
 			WithType(cesium.DataType(8)).

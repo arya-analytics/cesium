@@ -310,7 +310,20 @@ func newOptions(dirname string, opts ...Option) *options {
 	for _, opt := range opts {
 		opt(o)
 	}
+	mergeDefaultOptions(o)
 	return o
+}
+
+func mergeDefaultOptions(o *options) {
+	if o.kfs.sync.interval == 0 {
+		o.kfs.sync.interval = 1 * time.Second
+	}
+	if o.kfs.sync.maxAge == 0 {
+		o.kfs.sync.maxAge = 1 * time.Hour
+	}
+	if o.shutdownOpts == nil {
+		o.shutdownOpts = []shut.Option{}
+	}
 }
 
 func MemBacked() Option {

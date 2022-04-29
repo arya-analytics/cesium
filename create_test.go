@@ -112,7 +112,7 @@ var _ = Describe("Create", func() {
 		})
 		p.Construct()
 	})
-	FDescribe("Multi", func() {
+	Describe("Multi", func() {
 		config := &createConfig{vars: progressiveCreate}
 		p := alamos.NewParametrize[createVars](config)
 		p.Template(func(i int, values createVars) {

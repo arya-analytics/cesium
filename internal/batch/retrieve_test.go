@@ -12,7 +12,7 @@ import (
 
 type RetrieveOperation struct {
 	fileKey int
-	offset  int
+	offset  int64
 }
 
 func (r RetrieveOperation) Context() context.Context {
@@ -23,7 +23,7 @@ func (r RetrieveOperation) FileKey() int {
 	return r.fileKey
 }
 
-func (r RetrieveOperation) Offset() int {
+func (r RetrieveOperation) Offset() int64 {
 	return r.offset
 }
 
@@ -31,7 +31,7 @@ func (r RetrieveOperation) SendError(err error) {
 	panic(err)
 }
 
-func (r RetrieveOperation) Exec(f kfs.File) {}
+func (r RetrieveOperation) Exec(f kfs.File[int]) {}
 
 var _ = Describe("Retrieve", func() {
 	var (
@@ -105,9 +105,9 @@ var _ = Describe("Retrieve", func() {
 		Expect(len(responses)).To(Equal(1))
 		fr := responses[0].(batch.OperationSet[int, batch.RetrieveOperation[int]])
 		Expect(fr).To(HaveLen(4))
-		Expect(fr[0].(RetrieveOperation).Offset()).To(Equal(2))
-		Expect(fr[1].(RetrieveOperation).Offset()).To(Equal(3))
-		Expect(fr[2].(RetrieveOperation).Offset()).To(Equal(5))
-		Expect(fr[3].(RetrieveOperation).Offset()).To(Equal(22))
+		Expect(fr[0].(RetrieveOperation).Offset()).To(Equal(int64(2)))
+		Expect(fr[1].(RetrieveOperation).Offset()).To(Equal(int64(3)))
+		Expect(fr[2].(RetrieveOperation).Offset()).To(Equal(int64(5)))
+		Expect(fr[3].(RetrieveOperation).Offset()).To(Equal(int64(22)))
 	})
 })

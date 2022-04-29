@@ -5,7 +5,7 @@ type Slice[T any] struct {
 	Done  chan struct{}
 }
 
-func (s Slice) Wait() {
+func (s Slice[T]) Wait() {
 	c := 0
 	for range s.Done {
 		c++

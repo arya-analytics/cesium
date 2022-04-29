@@ -3,7 +3,7 @@ package testutil
 import (
 	"bytes"
 	"cesium"
-	"cesium/util/binary"
+	"cesium/internal/binary"
 	"math/rand"
 )
 
@@ -31,7 +31,7 @@ func RandomFloat64Bytes(n int) []byte {
 	return buf.Bytes()
 }
 
-func NewFloat64Segment(cpk cesium.PK, factory func(n int)) cesium.Segment {
+func NewFloat64Segment(cpk cesium.ChannelKey, factory func(n int)) cesium.Segment {
 	return cesium.Segment{}
 }
 

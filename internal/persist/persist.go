@@ -62,8 +62,8 @@ func (p *Persist[K, T]) Exec(ops []T) {
 				op.SendError(err)
 				return
 			}
-			defer p.kfs.Release(op.FileKey())
 			op.Exec(f)
+			p.kfs.Release(op.FileKey())
 		}(op)
 	}
 }

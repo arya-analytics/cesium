@@ -1,7 +1,7 @@
 package errutil_test
 
 import (
-	"cesium/util/errutil"
+	"cesium/internal/errutil"
 	"context"
 	"errors"
 	"fmt"

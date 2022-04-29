@@ -1,7 +1,7 @@
 package errutil_test
 
 import (
-	"cesium/util/errutil"
+	"cesium/internal/errutil"
 	"errors"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

@@ -106,6 +106,9 @@ var _ = Describe("Alloc", func() {
 				d = a.Allocate(i)
 				Expect(d[0]).To(Equal(1))
 
+				i = IntegerItem{key: 1, size: 1}
+				d = a.Allocate(i)
+
 				i = IntegerItem{key: 2, size: 1}
 				d = a.Allocate(i)
 				Expect(d[0]).To(Equal(2))

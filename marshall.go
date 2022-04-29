@@ -1,6 +1,6 @@
 package cesium
 
-import "cesium/util/binary"
+import "cesium/internal/binary"
 
 func MarshalFloat64(data []float64) []byte {
 	return marshal(data)

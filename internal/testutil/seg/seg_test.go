@@ -2,8 +2,8 @@ package seg_test
 
 import (
 	"cesium"
-	"cesium/util/binary"
-	"cesium/util/testutil/seg"
+	"cesium/internal/binary"
+	"cesium/internal/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -34,7 +34,7 @@ var _ = Describe("Seg", func() {
 	Describe("Segment Factories", func() {
 		Describe("new", func() {
 			It("Should create a new segment correctly", func() {
-				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
+				c := cesium.Channel{Key: 1, DataRate: 1, DataType: cesium.Float64}
 				seg := seg.New(c, seg.SeqFloat64, 0, 10*cesium.Second)
 				Expect(seg.Data).To(HaveLen(80))
 				f64 := seg.ToFloat64()
@@ -45,7 +45,7 @@ var _ = Describe("Seg", func() {
 		})
 		Describe("NewSet", func() {
 			It("Should create a new set of segments correctly", func() {
-				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
+				c := cesium.Channel{Key: 1, DataRate: 1, DataType: cesium.Float64}
 				segs := seg.NewSet(c, seg.SeqFloat64, 0, 10*cesium.Second, 10)
 				Expect(segs).To(HaveLen(10))
 				Expect(segs[0].Data).To(HaveLen(80))
@@ -59,15 +59,9 @@ var _ = Describe("Seg", func() {
 		})
 		Describe("SequentialFactory", func() {
 			It("Should create a seg of segments sequentially", func() {
-				c := cesium.Channel{Pk: cesium.NewPK(), DataRate: 1, DataType: cesium.Float64}
-				sf := &seg.SequentialFactory{
-					FirstTS: cesium.TimeStamp(0),
-					PrevTS:  cesium.TimeStamp(0),
-					Factory: seg.SeqFloat64,
-					Span:    10 * cesium.Second,
-					Channel: c,
-				}
-				Expect(sf.Next().Start).To(Equal(cesium.TimeStamp(0)))
+				c := cesium.Channel{Key: 1, DataRate: 1, DataType: cesium.Float64}
+				sf := seg.NewSequentialFactory(seg.SeqFloat64, 10*cesium.Second, c)
+				Expect(sf.Next()[0].Start).To(Equal(cesium.TimeStamp(0)))
 				segs := sf.NextN(2)
 				Expect(segs).To(HaveLen(2))
 				Expect(segs[1].Start).To(Equal(cesium.TimeStamp(0).Add(20 * cesium.Second)))

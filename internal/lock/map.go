@@ -23,7 +23,7 @@ func (m Map[K]) Acquire(keys ...K) error {
 			m.locks[key] = true
 		}
 		if locked {
-			return errors.New("item already locked")
+			return errors.New("lock already held")
 		}
 	}
 	return nil

@@ -2,7 +2,7 @@ package seg
 
 import (
 	"cesium"
-	"cesium/util/binary"
+	"cesium/internal/binary"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"math/rand"
@@ -12,7 +12,7 @@ type DataFactory func(n int) []byte
 
 func New(c cesium.Channel, fac DataFactory, start cesium.TimeStamp, span cesium.TimeSpan) cesium.Segment {
 	return cesium.Segment{
-		ChannelKey: c.LKey,
+		ChannelKey: c.Key,
 		Data:       generateSpan(c, fac, span),
 		Start:      start,
 	}
@@ -64,7 +64,6 @@ func writeBytes(data interface{}) []byte {
 
 func generateSpan(c cesium.Channel, fac DataFactory, span cesium.TimeSpan) []byte {
 	sc := c.DataRate.SampleCount(span)
-	log.Info(sc)
 	return fac(sc)
 }
 

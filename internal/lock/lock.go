@@ -5,7 +5,10 @@ type Lock struct {
 }
 
 func New() Lock {
-	return Lock{signal: make(chan struct{})}
+	l := Lock{signal: make(chan struct{}, 1)}
+	// lock is initially released.
+	l.signal <- struct{}{}
+	return l
 }
 
 // Acquire blocks until a Lock is acquired.

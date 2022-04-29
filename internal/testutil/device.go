@@ -50,7 +50,7 @@ func (d *Device) Start() error {
 }
 
 func (d *Device) writeSegments(c cesium.Channel) error {
-	req, res, err := d.DB.NewCreate().WhereChannels(c.LKey).Stream(d.Ctx)
+	req, res, err := d.DB.NewCreate().WhereChannels(c.Key).Stream(d.Ctx)
 	if err != nil {
 		return err
 
@@ -59,15 +59,9 @@ func (d *Device) writeSegments(c cesium.Channel) error {
 	ctx, cancel := context.WithCancel(d.Ctx)
 	d.cancelFlush = cancel
 	sc := &seg.StreamCreate{
-		Req: req,
-		Res: res,
-		SequentialFactory: &seg.Seq{
-			FirstTS: 0,
-			PrevTS:  0,
-			Factory: seg.DataTypeFactory(d.DataType),
-			Channel: c,
-			Span:    d.FlushInterval,
-		},
+		Req:               req,
+		Res:               res,
+		SequentialFactory: seg.NewSequentialFactory(seg.DataTypeFactory(d.DataType), d.FlushInterval, c),
 	}
 	go func() {
 		t := time.NewTicker(d.FlushInterval.Duration())

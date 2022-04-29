@@ -8,6 +8,7 @@ import (
 	"context"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"time"
 )
 
 type BasicOperation struct{}
@@ -20,7 +21,7 @@ func (b BasicOperation) FileKey() int {
 	return 1
 }
 
-func (b BasicOperation) Exec(f kfs.File) {
+func (b BasicOperation) Exec(f kfs.File[int]) {
 	if _, err := f.Write([]byte("hello")); err != nil {
 		panic(err)
 	}
@@ -38,7 +39,7 @@ var _ = Describe("Persist", func() {
 	)
 	BeforeEach(func() {
 		sd = shut.New()
-		fs = kfs.New[int]("testdata", kfs.WithSuffix(".test"))
+		fs = kfs.New[int]("", kfs.WithFS(kfs.NewMem()))
 		p = persist.New[int, operation.Operation[int]](fs, 50, sd)
 	})
 	Describe("Exec", func() {
@@ -49,7 +50,7 @@ var _ = Describe("Persist", func() {
 			Expect(sd.Shutdown()).To(Succeed())
 			f, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())
-			defer fs.Release(1)
+			fs.Release(1)
 			buf := make([]byte, 5)
 			_, err = f.Seek(0, 0)
 			Expect(err).ToNot(HaveOccurred())
@@ -65,6 +66,7 @@ var _ = Describe("Persist", func() {
 			ch := make(chan []operation.Operation[int])
 			p.Pipe(ch)
 			ch <- []operation.Operation[int]{b, b}
+			time.Sleep(1 * time.Millisecond)
 			Expect(sd.Shutdown()).To(Succeed())
 			f, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())

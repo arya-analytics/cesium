@@ -5,7 +5,6 @@ import (
 	"cesium/internal/binary"
 	"cesium/internal/errutil"
 	"cesium/internal/kv"
-	"fmt"
 	"io"
 )
 
@@ -73,17 +72,6 @@ func (sg *Segment) Load(r io.Reader) error {
 func (sg Segment) flushData(w io.Writer) error {
 	err := binary.Write(w, sg.Data)
 	return err
-}
-
-func (sg Segment) String() string {
-	return fmt.Sprintf(`
-		ChannelKey: %stream
-		fileKey: %stream
-		Offset: %d
-		Start: %stream
-		size: %stream
-		Data: %stream
-	`, sg.ChannelKey, sg.fileKey, sg.offset, sg.Start, sg.size, sg.Data)
 }
 
 const segmentKVPrefix = "segments"
