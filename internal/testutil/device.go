@@ -2,7 +2,7 @@ package testutil
 
 import (
 	"cesium"
-	"cesium/util/testutil/seg"
+	"cesium/internal/testutil/seg"
 	"context"
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -50,7 +50,7 @@ func (d *Device) Start() error {
 }
 
 func (d *Device) writeSegments(c cesium.Channel) error {
-	req, res, err := d.DB.NewCreate().WhereChannels(c.PKV).Stream(d.Ctx)
+	req, res, err := d.DB.NewCreate().WhereChannels(c.Key).Stream(d.Ctx)
 	if err != nil {
 		return err
 
@@ -61,7 +61,7 @@ func (d *Device) writeSegments(c cesium.Channel) error {
 	sc := &seg.StreamCreate{
 		Req: req,
 		Res: res,
-		SequentialFactory: &seg.SequentialFactory{
+		SequentialFactory: &seg.Seq{
 			FirstTS: 0,
 			PrevTS:  0,
 			Factory: seg.DataTypeFactory(d.DataType),

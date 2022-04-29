@@ -18,7 +18,7 @@ var _ = Describe("Metrics", func() {
 		exp = alamos.New("metrics")
 		fs = kfs.New[int]("", kfs.WithSuffix(".metrics"), kfs.WithFS(baseFS), kfs.WithExperiment(exp))
 	})
-	Describe("acquire", func() {
+	Describe("Acquire", func() {
 		It("Should record the count and average time", func() {
 			_, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())
@@ -28,7 +28,7 @@ var _ = Describe("Metrics", func() {
 			Expect(m.Values()[0]).ToNot(BeZero())
 		})
 	})
-	Describe("release", func() {
+	Describe("Release", func() {
 		It("Should record the count and average time", func() {
 			_, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())

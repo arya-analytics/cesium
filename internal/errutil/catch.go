@@ -109,13 +109,13 @@ func (c *CatchSimple) convert(err error) error {
 // CatchContext extends CatchSimple by receiving a context.Context as an argument
 // and running an action that requires that ctx (CatchActionCtx).
 type CatchContext struct {
-	*CatchSimple
+	CatchSimple
 	ctx context.Context
 }
 
 // NewCatchContext creates a new CatchContext with the provided context and options.
 func NewCatchContext(ctx context.Context, opts ...CatchOpt) *CatchContext {
-	return &CatchContext{CatchSimple: NewCatchSimple(opts...), ctx: ctx}
+	return &CatchContext{CatchSimple: *NewCatchSimple(opts...), ctx: ctx}
 }
 
 type CatchActionCtx func(ctx context.Context) error
@@ -206,12 +206,13 @@ func (c *CatchWrite) Error() error {
 }
 
 type CatchRead struct {
+	CatchSimple
 	w io.Reader
 	e error
 }
 
-func NewCatchRead(r io.Reader) *CatchRead {
-	return &CatchRead{w: r}
+func NewCatchRead(r io.Reader, opts ...CatchOpt) *CatchRead {
+	return &CatchRead{w: r, CatchSimple: *NewCatchSimple(opts...)}
 }
 
 func (c *CatchRead) Read(data interface{}) {
@@ -228,12 +229,13 @@ func (c *CatchRead) Error() error {
 }
 
 type CatchReadWriteSeek struct {
+	CatchSimple
 	w io.ReadWriteSeeker
 	e error
 }
 
-func NewCatchReadWriteSeek(r io.ReadWriteSeeker) *CatchReadWriteSeek {
-	return &CatchReadWriteSeek{w: r}
+func NewCatchReadWriteSeek(r io.ReadWriteSeeker, opts ...CatchOpt) *CatchReadWriteSeek {
+	return &CatchReadWriteSeek{w: r, CatchSimple: *NewCatchSimple(opts...)}
 }
 
 func (c *CatchReadWriteSeek) Read(data interface{}) {

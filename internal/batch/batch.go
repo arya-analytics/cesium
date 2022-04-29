@@ -1,7 +1,7 @@
 package batch
 
 import (
-	"cesium/internal/persist"
+	"cesium/internal/operation"
 	"cesium/kfs"
 	"cesium/shut"
 	"context"
@@ -10,7 +10,7 @@ import (
 // |||||| OPERATION ||||||
 
 type Operation[K comparable] interface {
-	persist.Operation[K]
+	operation.Operation[K]
 }
 
 // |||||| BATCH |||||||
@@ -49,7 +49,7 @@ func (o OperationSet[K, T]) FileKey() K {
 	return o[0].FileKey()
 }
 
-func (o OperationSet[K, T]) Exec(f kfs.File) {
+func (o OperationSet[K, T]) Exec(f kfs.File[K]) {
 	for _, op := range o {
 		op.Exec(f)
 	}

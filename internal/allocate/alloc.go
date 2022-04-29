@@ -11,7 +11,7 @@ import (
 //
 // Type Arguments:
 //
-// I - The type of the items key.
+// K - The type of the items key.
 // D - The type of the descriptors key.
 //
 // Implementation Details
@@ -29,26 +29,26 @@ import (
 //      OR
 //      b. The descriptor with the lowest size if config.MaxDescriptors has been reached.
 //
-type Allocator[I, D comparable] interface {
+type Allocator[K, D comparable, I Item[K]] interface {
 	// Allocate allocates itemDescriptors of a given size to descriptors. Returns a slice of descriptor keys.
-	Allocate(items ...Item[I]) []D
+	Allocate(items ...I) []D
 }
 
-func New[I, D comparable](nd NextDescriptor[D], config Config) Allocator[I, D] {
+func New[K, D comparable, I Item[K]](nd NextDescriptor[D], config Config) Allocator[K, D, I] {
 	mergedCfg := mergeConfig(config)
 	metrics := newMetrics(mergedCfg.Experiment)
-	return &defaultAlloc[I, D]{
+	return &defaultAlloc[K, D, I]{
 		config:          mergedCfg,
 		descriptorSizes: make(map[D]int),
-		itemDescriptors: make(map[I]D),
+		itemDescriptors: make(map[K]D),
 		nextD:           nd,
 		metrics:         metrics,
 	}
 }
 
-type Item[I comparable] interface {
+type Item[K comparable] interface {
 	// Key returns the key of the item.
-	Key() I
+	Key() K
 	// Size returns the size of the item.
 	Size() int
 }
@@ -94,17 +94,17 @@ func mergeConfig(c Config) Config {
 	return c
 }
 
-type defaultAlloc[I, D comparable] struct {
+type defaultAlloc[K, D comparable, I Item[K]] struct {
 	mu              sync.Mutex
 	descriptorSizes map[D]int
-	itemDescriptors map[I]D
+	itemDescriptors map[K]D
 	nextD           NextDescriptor[D]
 	config          Config
 	metrics         Metrics
 }
 
 // Allocate implements the Allocator interface.
-func (d *defaultAlloc[I, D]) Allocate(items ...Item[I]) []D {
+func (d *defaultAlloc[K, D, I]) Allocate(items ...I) []D {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	dKeys := make([]D, len(items))
@@ -114,7 +114,7 @@ func (d *defaultAlloc[I, D]) Allocate(items ...Item[I]) []D {
 	return dKeys
 }
 
-func (d *defaultAlloc[I, D]) allocate(item Item[I]) D {
+func (d *defaultAlloc[K, D, I]) allocate(item I) D {
 	sw := d.metrics.Allocate.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
@@ -136,7 +136,7 @@ func (d *defaultAlloc[I, D]) allocate(item Item[I]) D {
 	return key
 }
 
-func (d *defaultAlloc[I, D]) new(item Item[I]) (key D) {
+func (d *defaultAlloc[K, D, I]) new(item I) (key D) {
 	// Remove any descriptors that are too large.
 	d.scrubOversized()
 	// If we've reached our limit, allocate to the descriptor with the smallest size.
@@ -150,13 +150,13 @@ func (d *defaultAlloc[I, D]) new(item Item[I]) (key D) {
 	return key
 }
 
-func (d *defaultAlloc[I, D]) newDescriptor() D {
+func (d *defaultAlloc[K, D, I]) newDescriptor() D {
 	n := d.nextD.Next()
 	d.descriptorSizes[n] = 0
 	return n
 }
 
-func (d *defaultAlloc[I, D]) scrubOversized() {
+func (d *defaultAlloc[K, D, I]) scrubOversized() {
 	for key, size := range d.descriptorSizes {
 		if size > d.config.MaxSize {
 			delete(d.descriptorSizes, key)
@@ -164,7 +164,7 @@ func (d *defaultAlloc[I, D]) scrubOversized() {
 	}
 }
 
-func (d *defaultAlloc[I, D]) smallestDescriptor() (desc D) {
+func (d *defaultAlloc[K, D, I]) smallestDescriptor() (desc D) {
 	min := math.MaxInt
 	for k, size := range d.descriptorSizes {
 		if size < min {

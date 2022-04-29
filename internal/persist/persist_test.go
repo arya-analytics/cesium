@@ -1,6 +1,7 @@
 package persist_test
 
 import (
+	"cesium/internal/operation"
 	"cesium/internal/persist"
 	"cesium/kfs"
 	"cesium/shut"
@@ -31,19 +32,19 @@ func (b BasicOperation) SendError(err error) {
 
 var _ = Describe("Persist", func() {
 	var (
-		p  *persist.Persist[int, persist.Operation[int]]
+		p  *persist.Persist[int, operation.Operation[int]]
 		sd shut.Shutdown
 		fs kfs.FS[int]
 	)
 	BeforeEach(func() {
 		sd = shut.New()
 		fs = kfs.New[int]("testdata", kfs.WithSuffix(".test"))
-		p = persist.New[int, persist.Operation[int]](fs, 50, sd)
+		p = persist.New[int, operation.Operation[int]](fs, 50, sd)
 	})
 	Describe("Exec", func() {
 		It("Should execute an operation correctly", func() {
 			b := BasicOperation{}
-			p.Exec([]persist.Operation[int]{b})
+			p.Exec([]operation.Operation[int]{b})
 			// Read the file.
 			Expect(sd.Shutdown()).To(Succeed())
 			f, err := fs.Acquire(1)
@@ -61,9 +62,9 @@ var _ = Describe("Persist", func() {
 	Describe("Pipe", func() {
 		It("Should pipe an operation correctly", func() {
 			b := BasicOperation{}
-			ch := make(chan []persist.Operation[int])
+			ch := make(chan []operation.Operation[int])
 			p.Pipe(ch)
-			ch <- []persist.Operation[int]{b, b}
+			ch <- []operation.Operation[int]{b, b}
 			Expect(sd.Shutdown()).To(Succeed())
 			f, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())

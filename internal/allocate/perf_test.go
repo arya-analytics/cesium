@@ -32,7 +32,7 @@ func (a allocateItem) Size() int {
 
 var _ = Describe("Perf", func() {
 	var (
-		a allocate.Allocator[int, int]
+		a allocate.Allocator[int, int, allocate.Item[int]]
 	)
 	Describe("Incrementing Allocation Strains", Serial, func() {
 		p := alamos.NewParametrize(alamos.IterVars([]perfVars{
@@ -91,7 +91,7 @@ var _ = Describe("Perf", func() {
 		p.Template(func(i int, values perfVars) {
 			It(fmt.Sprintf("allocation - nr %d - nb %d  - abp %d",
 				values.nRoutines, values.nBatch, values.allocPerBatch), func() {
-				a = allocate.New[int, int](&allocate.NextDescriptorInt{}, allocate.Config{
+				a = allocate.New[int, int, allocate.Item[int]](&allocate.NextDescriptorInt{}, allocate.Config{
 					Experiment: values.experiment,
 				})
 				wg := sync.WaitGroup{}

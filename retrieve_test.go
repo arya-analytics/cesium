@@ -24,7 +24,7 @@ var _ = Describe("Retrieve", func() {
 			Expect(err).ToNot(HaveOccurred())
 			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			cpk = c.PK
+			cpk = c.Key
 		})
 		AfterEach(func() {
 			Expect(db.Close()).To(Succeed())
@@ -95,7 +95,7 @@ var _ = Describe("Retrieve", func() {
 		})
 		It("Should support reading data from multiple channels", func() {
 			for i := 0; i < channelCount; i++ {
-				req, res, err := db.NewCreate().WhereChannels(channels[i].PK).Stream(ctx)
+				req, res, err := db.NewCreate().WhereChannels(channels[i].Key).Stream(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				stc := &seg.StreamCreate{
 					Req:               req,
@@ -107,7 +107,7 @@ var _ = Describe("Retrieve", func() {
 			}
 			var cPKs []cesium.PK
 			for _, c := range channels {
-				cPKs = append(cPKs, c.PK)
+				cPKs = append(cPKs, c.Key)
 			}
 			rResV, err := db.NewRetrieve().WhereChannels(cPKs...).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
 			Expect(err).ToNot(HaveOccurred())

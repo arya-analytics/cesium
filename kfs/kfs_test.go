@@ -13,7 +13,7 @@ var _ = Describe("KFS", func() {
 			Expect(func() { kfs.New[int]("testdata") }).ToNot(Panic())
 		})
 	})
-	Describe("acquire and release", func() {
+	Describe("Acquire and Release", func() {
 		var (
 			baseFS kfs.BaseFS
 			fs     kfs.FS[int]
@@ -25,7 +25,7 @@ var _ = Describe("KFS", func() {
 		AfterEach(func() {
 			Expect(fs.RemoveAll()).To(BeNil())
 		})
-		It("Should acquire and release a single file", func() {
+		It("Should Acquire and Release a single file", func() {
 			f, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(f).ToNot(BeNil())

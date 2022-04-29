@@ -2,8 +2,9 @@ package cesium
 
 import (
 	"bytes"
-	"cesium/util/binary"
-	"cesium/util/errutil"
+	"cesium/internal/binary"
+	"cesium/internal/errutil"
+	"cesium/internal/kv"
 	"fmt"
 	"io"
 )
@@ -11,19 +12,19 @@ import (
 // |||||| SEGMENT ||||||
 
 type Segment struct {
-	ChannelPK PK
-	Start     TimeStamp
-	Data      []byte
-	filePk    PK
-	offset    int64
-	size      Size
+	ChannelKey ChannelKey
+	Start      TimeStamp
+	Data       []byte
+	fileKey    fileKey
+	offset     int64
+	size       Size
 }
 
 // |||||| HEADER ||||||
 
 type segmentHeader struct {
-	ChannelPK PK
-	FilePK    PK
+	ChannelPK ChannelKey
+	FilePK    fileKey
 	Offset    int64
 	Start     TimeStamp
 	Size      Size
@@ -31,38 +32,42 @@ type segmentHeader struct {
 
 func (sg Segment) header() segmentHeader {
 	return segmentHeader{
-		ChannelPK: sg.ChannelPK,
-		FilePK:    sg.filePk,
+		ChannelPK: sg.ChannelKey,
+		FilePK:    sg.fileKey,
 		Offset:    sg.offset,
 		Start:     sg.Start,
 		Size:      sg.size,
 	}
 }
 
-func (sg Segment) PKV() PK {
-	return sg.ChannelPK
-}
-
-func (sg Segment) Size() Size {
+// Size implements allocate.Item.
+func (sg Segment) Size() int {
 	if len(sg.Data) == 0 {
-		return sg.size
+		return int(sg.size)
 	}
-	return Size(len(sg.Data))
+	return len(sg.Data)
 }
 
-func (sg Segment) flush(w io.Writer) error {
+// Key implements allocate.Item.
+func (sg Segment) Key() ChannelKey {
+	return sg.ChannelKey
+}
+
+// Flush implements kv.Flusher.
+func (sg Segment) Flush(w io.Writer) error {
 	return binary.Write(w, sg.header())
 }
 
-func (sg Segment) fill(r io.Reader) (Segment, error) {
+// Load implements kv.Loader.
+func (sg *Segment) Load(r io.Reader) error {
 	// Unfortunately this is the most efficient way to read the header
 	c := errutil.NewCatchRead(r)
-	c.Read(&sg.ChannelPK)
-	c.Read(&sg.filePk)
+	c.Read(&sg.ChannelKey)
+	c.Read(&sg.fileKey)
 	c.Read(&sg.offset)
 	c.Read(&sg.Start)
 	c.Read(&sg.size)
-	return sg, c.Error()
+	return c.Error()
 }
 
 func (sg Segment) flushData(w io.Writer) error {
@@ -72,39 +77,34 @@ func (sg Segment) flushData(w io.Writer) error {
 
 func (sg Segment) String() string {
 	return fmt.Sprintf(`
-		ChannelPK: %s
-		filePk: %s
+		ChannelKey: %stream
+		fileKey: %stream
 		offset: %d
-		Start: %s
-		size: %s
-		Data: %s
-	`, sg.ChannelPK, sg.filePk, sg.offset, sg.Start, sg.size, sg.Data)
+		Start: %stream
+		size: %stream
+		Data: %stream
+	`, sg.ChannelKey, sg.fileKey, sg.offset, sg.Start, sg.size, sg.Data)
+}
+
+const segmentKVPrefix = "seg"
+
+func (sg Segment) KVKey() []byte {
+	return kv.DashedCompositeKey(segmentKVPrefix, sg.ChannelKey)
 }
 
 // |||||| KV ||||||
 
-const segmentKVPrefix = "seg"
-
 type segmentKV struct {
-	flushKV flushKV[Segment]
-}
-
-func newSegmentKV(kve kvEngine) segmentKV {
-	return segmentKV{flushKV: flushKV[Segment]{kve}}
-}
-
-func generateSegmentKey(s Segment) []byte {
-	return generateKey(segmentKVPrefix, s.ChannelPK, s.Start)
+	kv kv.KV
 }
 
 func (sk segmentKV) set(s Segment) error {
-	key := generateSegmentKey(s)
-	return sk.flushKV.flush(key, s)
+	return kv.Flush(sk.kv, s.KVKey(), s)
 }
 
-func (sk segmentKV) latest(cPK PK) (Segment, error) {
-	key := generateKey(segmentKVPrefix, cPK)
-	iter := sk.flushKV.kvEngine.IterPrefix(key)
+func (sk segmentKV) latest(cPK ChannelKey) (Segment, error) {
+	key := kv.DashedCompositeKey(segmentKVPrefix, cPK)
+	iter := sk.kv.IterPrefix(key)
 	defer func() {
 		if err := iter.Close(); err != nil {
 			panic(err)
@@ -113,15 +113,13 @@ func (sk segmentKV) latest(cPK PK) (Segment, error) {
 	if ok := iter.Last(); !ok {
 		return Segment{}, newSimpleError(ErrNotFound, "No segments found")
 	}
-	b := new(bytes.Buffer)
-	b.Write(iter.Value())
-	s, err := Segment{}.fill(b)
-	return s, err
+	s := &Segment{}
+	return *s, kv.LoadBytes(iter.Value(), s)
 }
 
-func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error) {
+func (sk segmentKV) filter(tr TimeRange, cpk ChannelKey) (segments []Segment, err error) {
 	startKey, endKey := generateRangeKeys(cpk, tr)
-	iter := sk.flushKV.kvEngine.IterRange(startKey, endKey)
+	iter := sk.kv.IterRange(startKey, endKey)
 	defer func() {
 		if err := iter.Close(); err != nil {
 			panic(err)
@@ -130,19 +128,19 @@ func (sk segmentKV) filter(tr TimeRange, cpk PK) (segments []Segment, err error)
 	for iter.First(); iter.Valid(); iter.Next() {
 		b := new(bytes.Buffer)
 		b.Write(iter.Value())
-		s, err := Segment{}.fill(b)
-		if err != nil {
+		s := &Segment{}
+		if err := s.Load(b); err != nil {
 			return nil, err
 		}
-		segments = append(segments, s)
+		segments = append(segments, *s)
 	}
 	return segments, nil
 }
 
-func generateRangeKeys(cpk PK, tr TimeRange) ([]byte, []byte) {
-	startKey := generateKey(segmentKVPrefix, cpk, tr.Start)
-	endKey := generateKey(segmentKVPrefix, cpk, tr.End)
-	return startKey, endKey
+func generateRangeKeys(cpk ChannelKey, tr TimeRange) ([]byte, []byte) {
+	s := kv.CompositeKey(segmentKVPrefix, cpk, tr.Start)
+	e := kv.CompositeKey(segmentKVPrefix, cpk, tr.End)
+	return s, e
 }
 
 // |||||| CONVERTER ||||||

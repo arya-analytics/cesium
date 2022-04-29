@@ -31,7 +31,7 @@ type DB interface {
 	//
 	//	     // create a new Segment to write. If you don't know what segments are, check out the Segment documentation.
 	//       seg := cesium.Segment{
-	//    		ChannelPK: ch.Pk,
+	//    		ChannelKey: ch.Pk,
 	//          Start: cesium.Now(),
 	//          Data: cesium.MarshalFloat64([]{1.0, 2.0, 3.0})
 	//		}
@@ -95,14 +95,14 @@ type DB interface {
 	//			log.Fatal(err)
 	//		}
 	//
-	// The above example retrieves all data from the channel and binds it into resSeg. It's possible to retrieve a subset
+	// The above example retrieves all data from the channel and binds it into resSeg. It'stream possible to retrieve a subset
 	// of data by time range by using the WhereTimeRange method and the supplied time range.
 	//
 	// Notes on Segmentation of Data:
 	//		The Retrieve results will be returned as a set of segments (Segment). The Segments are not guaranteed to be
 	//		in chronological order. This is a performance optimization to allow for more efficient data retrieval.
 	//
-	//	 	The Segments are not guaranteed to be contiguous. Because of the unique Create pattern cesium uses, it's possible
+	//	 	The Segments are not guaranteed to be contiguous. Because of the unique Create pattern cesium uses, it'stream possible
 	// 		to leave gaps in between segments (these represent times when that particular sensor was inactive).
 	//
 	//      Retrieve also DOES NOT return partial Segments i.e if a query asks for the time range 0 to 10, and Segment A
@@ -114,11 +114,11 @@ type DB interface {
 	// Asynchronous Retrieve queries are the default in cesium to allow for network optimization (i.e. send the data across
 	// the network as you read more data from IO). However, they are a bit more complex to write. See the following example:
 	//
-	// 		// Assuming DB is opened and two Segment have been created for a channel with PK cpk. See NewCreate for details.
+	// 		// Assuming DB is opened and two Segment have been created for a channel with Key channelKey. See NewCreate for details.
 	//      // Start the retrieve query. See Retrieve.Stream for details on what each return value does.
 	// 		// To cancel a query before it completes, cancel the context provided to Retrieve.Stream.
 	// 		ctx, cancel := context.WithCancel(context.Background())
-	//		res, err := db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(cpk).Stream(ctx)
+	//		res, err := db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(channelKey).Stream(ctx)
 	//
 	//      var resSeg []Segment
 	// 		for _, resV := range res {
@@ -264,7 +264,7 @@ func MemBacked() Option {
 func WithExperiment(exp alamos.Experiment) Option {
 	return func(o *options) {
 		if exp != nil {
-			o.exp = alamos.Sub(exp, fmt.Sprintf("cesium-%s", o.dirname))
+			o.exp = alamos.Sub(exp, fmt.Sprintf("cesium-%stream", o.dirname))
 		} else {
 			o.exp = exp
 		}

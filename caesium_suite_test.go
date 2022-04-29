@@ -43,13 +43,13 @@ func ExampleDB_NewCreate_simple() {
 
 	// Define a new segment.
 	seg := cesium.Segment{
-		ChannelPK: ch.PK,
-		Start:     cesium.Now(),
-		Data:      cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
+		ChannelKey: ch.Key,
+		Start:      cesium.Now(),
+		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 	}
 
 	// Write the segment.
-	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.PK), &[]cesium.Segment{seg}); err != nil {
+	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &[]cesium.Segment{seg}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func ExampleDB_NewCreate_multiSegment() {
 		Exec(ctx)
 
 	// Open the query.
-	req, res, err := db.NewCreate().WhereChannels(ch.PK).Stream(ctx)
+	req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
 
 	// Listen for errors.
 	wg := sync.WaitGroup{}
@@ -98,11 +98,11 @@ func ExampleDB_NewCreate_multiSegment() {
 	t0 := cesium.Now()
 	for i := 0; i < nSegments; i++ {
 		// Define the segment.
-		// It's important to notice that the start times do not overlap.
+		// It'stream important to notice that the start times do not overlap.
 		seg := cesium.Segment{
-			ChannelPK: ch.PK,
-			Start:     t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
-			Data:      cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
+			ChannelKey: ch.Key,
+			Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
+			Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 		}
 		// Write the segment as a create request.
 		req <- cesium.CreateRequest{Segments: []cesium.Segment{seg}}
@@ -139,7 +139,7 @@ func ExampleDB_NewCreate_multiChannel() {
 	}
 	var cPKs []cesium.PK
 	for _, ch := range channels {
-		cPKs = append(cPKs, ch.PK)
+		cPKs = append(cPKs, ch.Key)
 	}
 
 	// Open the query.
@@ -170,11 +170,11 @@ func ExampleDB_NewCreate_multiChannel() {
 		// Define the segments.
 		segs := make([]cesium.Segment, nChannels)
 		for j := 0; j < nChannels; j++ {
-			// It's important to notice that the start times do not overlap.
+			// It'stream important to notice that the start times do not overlap.
 			segs[j] = cesium.Segment{
-				ChannelPK: channels[j].PK,
-				Start:     t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
-				Data:      cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
+				ChannelKey: channels[j].Key,
+				Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
+				Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 			}
 		}
 		// Write the segments as a create request.
@@ -214,19 +214,19 @@ func ExampleDB_NewRetrieve_simple() {
 
 	// Define a new segment.
 	seg := cesium.Segment{
-		ChannelPK: ch.PK,
-		Start:     cesium.Now(),
-		Data:      cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
+		ChannelKey: ch.Key,
+		Start:      cesium.Now(),
+		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 	}
 
 	// Write the segment.
-	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.PK), &[]cesium.Segment{seg}); err != nil {
+	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &[]cesium.Segment{seg}); err != nil {
 		log.Fatal(err)
 	}
 
 	// Open the retrieve query.
 	var resSegs []cesium.Segment
-	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.PK).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
+	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.Key).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
 	if err != nil {
 		log.Fatal(err)
 	}

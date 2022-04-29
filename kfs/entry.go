@@ -1,28 +1,35 @@
 package kfs
 
 import (
+	"cesium/internal/lock"
 	"time"
 )
 
-type entry struct {
+type entry[T comparable] struct {
 	BaseFile
-	lock
-	ls time.Time
+	lock.Lock
+	ls  time.Time
+	key T
 }
 
-func (e *entry) Age() time.Duration {
+func (e *entry[T]) Age() time.Duration {
 	return time.Since(e.ls)
 }
 
-func (e *entry) Sync() error {
+func (e *entry[T]) Sync() error {
 	e.ls = time.Now()
 	return e.BaseFile.Sync()
 }
 
-func newEntry(f BaseFile) File {
-	return &entry{
-		lock:     newLock(),
+func (e *entry[T]) Key() T {
+	return e.key
+}
+
+func newEntry[T comparable](key T, f BaseFile) File[T] {
+	return &entry[T]{
+		Lock:     lock.New(),
 		BaseFile: f,
 		ls:       time.Now(),
+		key:      key,
 	}
 }

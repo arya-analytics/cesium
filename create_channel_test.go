@@ -33,7 +33,7 @@ var _ = Describe("CreateChannel", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(c.DataRate).To(Equal(cesium.DataRate(25)))
 		Expect(c.DataType).To(Equal(cesium.DataType(8)))
-		resC, err := db.NewRetrieveChannel().WherePK(c.PK).Exec(ctx)
+		resC, err := db.NewRetrieveChannel().WhereKey(c.Key).Exec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resC.DataRate).To(Equal(cesium.DataRate(25)))
 		Expect(resC.DataType).To(Equal(cesium.DataType(8)))

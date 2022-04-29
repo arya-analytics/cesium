@@ -16,7 +16,7 @@ import (
 type FS[T comparable] interface {
 	// Acquire acquires signal on file for reading and writing by its primary key. If the file does not exist,
 	// creates a new file. Blocks until the signal is acquired. Release must be called to Release the signal.
-	Acquire(key T) (File, error)
+	Acquire(key T) (File[T], error)
 	// Release releases a file. Release is idempotent, and can be called even if the file was never acquired.
 	Release(key T)
 	// Close closes a file. Close is idempotent, and can be called even if the file was previously closed.
@@ -30,7 +30,7 @@ type FS[T comparable] interface {
 	// Metrics returns a snapshot of the current Metrics for the file system.
 	Metrics() Metrics
 	// Files returns a snapshot of the current files in the FS.
-	Files() map[T]File
+	Files() map[T]File[T]
 }
 
 // File is a file in the FS. It implements:
@@ -39,16 +39,17 @@ type FS[T comparable] interface {
 //		io.ReadWriteCloser
 //		io.Seeker
 //
-type File interface {
+type File[T comparable] interface {
+	Key() T
 	BaseFile
 	fileSync
 	fileLock
 }
 
 type fileLock interface {
-	acquire()
-	release()
-	tryAcquire() bool
+	Acquire()
+	Release()
+	TryAcquire() bool
 }
 
 type fileSync interface {
@@ -78,7 +79,7 @@ func New[T comparable](root string, opts ...Option) FS[T] {
 		root:    root,
 		options: *o,
 		metrics: newMetrics(o.experiment),
-		entries: make(map[T]File),
+		entries: make(map[T]File[T]),
 	}
 }
 
@@ -87,21 +88,21 @@ type defaultFS[T comparable] struct {
 	root    string
 	mu      sync.RWMutex
 	metrics Metrics
-	entries map[T]File
+	entries map[T]File[T]
 }
 
 // Acquire implements FS.
-func (fs *defaultFS[T]) Acquire(key T) (File, error) {
+func (fs *defaultFS[T]) Acquire(key T) (File[T], error) {
 	sw := fs.metrics.Acquire.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
 	fs.mu.Lock()
 	e, ok := fs.entries[key]
 	if ok {
-		// We need to unlock the mutex before we acquire the lock on the file,
-		// so another goroutine can release it.
+		// We need to unlock the mutex before we Acquire the Lock on the file,
+		// so another goroutine can Release it.
 		fs.mu.Unlock()
-		e.acquire()
+		e.Acquire()
 		return e, nil
 	}
 	f, err := fs.newEntry(key)
@@ -117,7 +118,7 @@ func (fs *defaultFS[T]) Release(key T) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if e, ok := fs.entries[key]; ok {
-		e.release()
+		e.Release()
 	}
 }
 
@@ -147,7 +148,7 @@ func (fs *defaultFS[T]) Close(pk T) error {
 	if !ok {
 		return nil
 	}
-	e.acquire()
+	e.Acquire()
 	if err := e.Close(); err != nil {
 		return err
 	}
@@ -174,7 +175,7 @@ func (fs *defaultFS[T]) Metrics() Metrics {
 }
 
 // Files implements FS. Note: does not return a copy. Do not modify the returned map.
-func (fs *defaultFS[T]) Files() map[T]File {
+func (fs *defaultFS[T]) Files() map[T]File[T] {
 	return fs.entries
 }
 
@@ -186,12 +187,12 @@ func (fs *defaultFS[T]) path(key T) string {
 	return filepath.Join(fs.root, fs.name(key))
 }
 
-func (fs *defaultFS[T]) newEntry(key T) (File, error) {
+func (fs *defaultFS[T]) newEntry(key T) (File[T], error) {
 	f, err := fs.openOrCreate(key)
 	if err != nil {
 		return nil, err
 	}
-	e := newEntry(f)
+	e := newEntry(key, f)
 	fs.entries[key] = e
 	return e, nil
 }

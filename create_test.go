@@ -95,7 +95,7 @@ var _ = Describe("Create", func() {
 				for _, ch := range chs {
 					go func(ch cesium.Channel) {
 						defer GinkgoRecover()
-						req, res, err := db.NewCreate().WhereChannels(ch.PK).Stream(ctx)
+						req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
 						Expect(err).ToNot(HaveOccurred())
 						stc := &seg.StreamCreate{
 							Req:               req,
