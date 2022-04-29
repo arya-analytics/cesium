@@ -3,6 +3,7 @@ package cesium
 import (
 	"cesium/alamos"
 	"cesium/internal/allocate"
+	"cesium/internal/batch"
 	"cesium/internal/kv"
 	"cesium/internal/kv/pebblekv"
 	"cesium/internal/lock"
@@ -14,6 +15,8 @@ import (
 	"fmt"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
+	"go.uber.org/zap"
+	"path/filepath"
 	"time"
 )
 
@@ -161,7 +164,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| KV |||||||
 
-	pebbleDB, err := pebble.Open(o.dirname, &pebble.Options{FS: o.kvFS})
+	pebbleDB, err := pebble.Open(filepath.Join(o.dirname, "pebble"), &pebble.Options{FS: o.kvFS})
 	if err != nil {
 		return nil, err
 	}
@@ -173,33 +176,37 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// || CREATE ||
 
-	createPst := persist.New[fileKey, createOperation](fs, 50, sd)
+	createPst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, o.logger)
 	createOpRequests := make(chan []createOperation)
 	createOpResponses := make(chan []createOperation)
 	createQueue := &queue.Debounce[createOperation]{
 		Requests:  createOpRequests,
 		Responses: createOpResponses,
 		Shutdown:  sd,
-		Interval:  1 * time.Second,
+		Interval:  100 * time.Millisecond,
 		Threshold: 50,
+		Logger:    o.logger,
 	}
 	createQueue.Start()
-	createPst.Pipe(createOpResponses)
+	createBatchPipe := batch.Pipe[fileKey, createOperation](createOpResponses, sd, &batch.Create[fileKey, ChannelKey, createOperation]{})
+	createPst.Pipe(createBatchPipe)
 
 	// || RETRIEVE ||
 
-	retrievePst := persist.New[fileKey, retrieveOperation](fs, 50, sd)
+	retrievePst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, o.logger)
 	retrieveOpRequests := make(chan []retrieveOperation)
 	retrieveOpResponses := make(chan []retrieveOperation)
 	retrieveQueue := &queue.Debounce[retrieveOperation]{
 		Requests:  retrieveOpRequests,
 		Responses: retrieveOpResponses,
 		Shutdown:  sd,
-		Interval:  1 * time.Second,
+		Interval:  100 * time.Millisecond,
 		Threshold: 50,
+		Logger:    o.logger,
 	}
 	retrieveQueue.Start()
-	retrievePst.Pipe(retrieveOpResponses)
+	retrieveBatchPipe := batch.Pipe[fileKey, retrieveOperation](retrieveOpResponses, sd, &batch.Retrieve[fileKey, retrieveOperation]{})
+	retrievePst.Pipe(retrieveBatchPipe)
 
 	// ||||||| CREATE ||||||
 
@@ -219,14 +226,16 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		queue:     createOpRequests,
 		lock:      lock.NewMap[ChannelKey](),
 		shutdown:  sd,
+		logger:    o.logger,
 	}
 
 	// |||||| RETRIEVE ||||||
 
 	retrieveQExec := &retrieveQueryExecutor{
-		parser:   retrieveParser{skv: skv, ckv: ckv},
+		parser:   retrieveParser{skv: skv, ckv: ckv, logger: o.logger},
 		queue:    retrieveOpRequests,
 		shutdown: sd,
+		logger:   o.logger,
 	}
 
 	// |||||| CHANNEL |||||
@@ -303,6 +312,7 @@ type options struct {
 	kvFS         vfs.FS
 	exp          alamos.Experiment
 	shutdownOpts []shut.Option
+	logger       *zap.Logger
 }
 
 func newOptions(dirname string, opts ...Option) *options {
@@ -324,6 +334,12 @@ func mergeDefaultOptions(o *options) {
 	if o.shutdownOpts == nil {
 		o.shutdownOpts = []shut.Option{}
 	}
+
+	// || LOGGER ||
+	if o.logger == nil {
+		o.logger = zap.NewNop()
+	}
+	o.kfs.opts = append(o.kfs.opts, kfs.WithLogger(o.logger))
 }
 
 func MemBacked() Option {
@@ -331,6 +347,12 @@ func MemBacked() Option {
 		o.dirname = ""
 		o.kfs.opts = append(o.kfs.opts, kfs.WithFS(kfs.NewMem()))
 		o.kvFS = vfs.NewMem()
+	}
+}
+
+func WithLogger(logger *zap.Logger) Option {
+	return func(o *options) {
+		o.logger = logger
 	}
 }
 

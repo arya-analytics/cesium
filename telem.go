@@ -14,6 +14,10 @@ func (ts TimeStamp) String() string {
 	return time.UnixMicro(int64(ts)).String()
 }
 
+func (ts TimeStamp) Time() time.Time {
+	return time.UnixMicro(int64(ts))
+}
+
 func Now() TimeStamp {
 	return NewTimeStamp(time.Now())
 }

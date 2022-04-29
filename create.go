@@ -3,10 +3,12 @@ package cesium
 import (
 	"cesium/internal/allocate"
 	"cesium/internal/errutil"
+	"cesium/internal/kv"
 	"cesium/internal/lock"
 	"cesium/internal/wg"
 	"cesium/shut"
 	"context"
+	"go.uber.org/zap"
 	"io"
 )
 
@@ -26,6 +28,7 @@ type createOperation struct {
 	stream     *createStream
 	ctx        context.Context
 	done       chan struct{}
+	logger     *zap.Logger
 }
 
 // Context implements persist.Operation.
@@ -56,6 +59,16 @@ func (cr createOperation) Exec(f file) {
 		c.Exec(func() error { return cr.segmentKV.set(s) })
 	}
 	cr.done <- struct{}{}
+	last := cr.segments[len(cr.segments)-1]
+	cr.logger.Debug("completed create operation",
+		zap.Any("file", f.Key()),
+		zap.Int("segments", len(cr.segments)),
+		zap.Time("start", cr.segments[0].Start.Time()),
+		zap.Time("end", last.Start.Time()),
+		zap.Binary("start-key", cr.segments[0].KVKey()),
+		zap.Binary("end-key", last.KVKey()),
+		zap.Binary("prefix", kv.CompositeKey(segmentKVPrefix, cr.channelKey)),
+	)
 }
 
 // ChannelKey implements batch.CreateOperation.
@@ -69,9 +82,11 @@ type createParser struct {
 	skv       segmentKV
 	allocator segmentAllocator
 	stream    *createStream
+	logger    *zap.Logger
 }
 
 func (cp createParser) parse(ctx context.Context, req CreateRequest) (cwg createWaitGroup) {
+	cp.logger.Debug("parsing create requests", zap.Int("nSegments", len(req.Segments)))
 	cwg.Done = make(chan struct{}, len(req.Segments))
 	fileKeys := cp.allocator.Allocate(req.Segments...)
 	for i, seg := range req.Segments {
@@ -83,8 +98,10 @@ func (cp createParser) parse(ctx context.Context, req CreateRequest) (cwg create
 			stream:     cp.stream,
 			ctx:        ctx,
 			done:       cwg.Done,
+			logger:     cp.logger,
 		})
 	}
+	cp.logger.Debug("generated create operations", zap.Int("nOperations", len(cwg.Items)))
 	return cwg
 }
 
@@ -97,6 +114,7 @@ type createQueryExecutor struct {
 	queue     chan<- []createOperation
 	lock      lock.Map[ChannelKey]
 	shutdown  shut.Shutdown
+	logger    *zap.Logger
 }
 
 // exec implements queryExecutor.
@@ -109,7 +127,7 @@ func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
 		return err
 	}
 	s := getStream[CreateRequest, CreateResponse](q)
-	parse := createParser{skv: cp.skv, allocator: cp.allocator, stream: s}
+	parse := createParser{skv: cp.skv, allocator: cp.allocator, stream: s, logger: cp.logger}
 	var w createWaitGroup
 	cp.shutdown.Go(func(sig chan shut.Signal) error {
 	o:
@@ -127,7 +145,9 @@ func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
 				cp.queue <- w.Items
 			}
 		}
+		cp.logger.Debug("waiting for create operations to complete", zap.Int("nOperations", len(w.Items)))
 		w.Wait()
+		cp.logger.Debug("create operations completed", zap.Int("nOperations", len(w.Items)))
 		cp.lock.Release(keys...)
 		close(s.res)
 		return nil

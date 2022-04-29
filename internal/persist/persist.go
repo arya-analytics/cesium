@@ -5,6 +5,7 @@ import (
 	"cesium/kfs"
 	"cesium/shut"
 	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 	"sync"
 )
@@ -17,28 +18,31 @@ type Persist[K comparable, T operation.Operation[K]] struct {
 	sem      *semaphore.Weighted
 	kfs      kfs.FS[K]
 	shutdown shut.Shutdown
+	logger   *zap.Logger
 }
 
 // New creates a new Persist that wraps the provided kfs.KFS.
 // maxProcs represents the maximum number of goroutines that will be used to execute operations concurrently.
 // This value must be at least 1.
 // shutdown is a shutdown.Shutdown that signals Persist to stop executing operations and exit gracefully.
-func New[K comparable, T operation.Operation[K]](kfs kfs.FS[K], maxProcs int64, shutdown shut.Shutdown) *Persist[K, T] {
+func New[K comparable, T operation.Operation[K]](kfs kfs.FS[K], maxProcs int64, shutdown shut.Shutdown, logger *zap.Logger) *Persist[K, T] {
 	p := &Persist[K, T]{
 		sem:      semaphore.NewWeighted(maxProcs),
 		kfs:      kfs,
 		wg:       &sync.WaitGroup{},
 		shutdown: shutdown,
+		logger:   logger,
 	}
 	p.listenForShutdown()
 	return p
 }
 
-func (p *Persist[K, T]) Pipe(opC chan []T) {
+func (p *Persist[K, T]) Pipe(opC <-chan []T) {
 	p.shutdown.Go(func(sig chan shut.Signal) error {
 		for {
 			select {
 			case <-sig:
+				p.logger.Info("persist stopped accepting operations")
 				return nil
 			case ops := <-opC:
 				p.Exec(ops)
@@ -49,6 +53,7 @@ func (p *Persist[K, T]) Pipe(opC chan []T) {
 
 // Exec queues a set of operations for execution. Operations are NOT guaranteed to execute in the order they are queued.
 func (p *Persist[K, T]) Exec(ops []T) {
+	p.logger.Debug("executing operations", zap.Int("count", len(ops)))
 	for _, op := range ops {
 		if err := p.sem.Acquire(op.Context(), 1); err != nil {
 			log.Warn(err)
@@ -71,7 +76,9 @@ func (p *Persist[K, T]) Exec(ops []T) {
 func (p *Persist[K, T]) listenForShutdown() {
 	p.shutdown.Go(func(sig chan shut.Signal) error {
 		<-sig
+		p.logger.Info("persist shutting down. waiting for operations to complete.")
 		p.wg.Wait()
+		p.logger.Info("persist shutdown complete.")
 		return nil
 	})
 }

@@ -24,6 +24,8 @@ type Stopwatch interface {
 	// Stop stops the stopwatch, binds the duration to the parent metric (Duration), and returns the duration.
 	// Stop should not be called more than once, and will panic if called before start.
 	Stop() time.Duration
+	// Elapsed returns the time elapsed since Start was called.
+	Elapsed() time.Duration
 }
 
 type stopwatch struct {
@@ -41,12 +43,18 @@ func (s *stopwatch) Start() {
 
 // Stop implement Stopwatch.
 func (s *stopwatch) Stop() time.Duration {
+	t := s.Elapsed()
+	s.start = time.Time{}
+	s.metric.Record(t)
+	return t
+}
+
+// Elapsed implement Stopwatch.
+func (s *stopwatch) Elapsed() time.Duration {
 	if s.start.IsZero() {
 		panic("duration defaultBaseMetric not started. please call Start() first")
 	}
-	t := time.Since(s.start)
-	s.metric.Record(t)
-	return t
+	return time.Since(s.start)
 }
 
 type emptyStopwatch struct{}
@@ -56,6 +64,11 @@ func (s emptyStopwatch) Start() {}
 
 // Stop implement Stopwatch.
 func (s emptyStopwatch) Stop() time.Duration {
+	return 0
+}
+
+// Elapsed implement Stopwatch.
+func (s emptyStopwatch) Elapsed() time.Duration {
 	return 0
 }
 

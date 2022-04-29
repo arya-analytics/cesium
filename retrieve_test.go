@@ -16,11 +16,13 @@ var _ = Describe("Retrieve", func() {
 			cpk int16
 			c   cesium.Channel
 			exp alamos.Experiment
+			//log *zap.Logger
 		)
 		BeforeEach(func() {
 			exp = alamos.New("retrieve_test")
 			var err error
-			db, err = cesium.Open("testdata", cesium.MemBacked(), cesium.WithExperiment(exp))
+			//log, _ = zap.NewDevelopment()
+			db, err = cesium.Open("testdata", cesium.WithExperiment(exp))
 			Expect(err).ToNot(HaveOccurred())
 			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 			Expect(err).ToNot(HaveOccurred())

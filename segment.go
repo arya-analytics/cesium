@@ -77,7 +77,7 @@ func (sg Segment) flushData(w io.Writer) error {
 const segmentKVPrefix = "segments"
 
 func (sg Segment) KVKey() []byte {
-	return kv.DashedCompositeKey(segmentKVPrefix, sg.ChannelKey)
+	return kv.CompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
 }
 
 // |||||| KV ||||||
@@ -91,7 +91,7 @@ func (sk segmentKV) set(s Segment) error {
 }
 
 func (sk segmentKV) latest(cPK ChannelKey) (Segment, error) {
-	key := kv.DashedCompositeKey(segmentKVPrefix, cPK)
+	key := kv.CompositeKey(segmentKVPrefix, cPK)
 	iter := sk.kv.IterPrefix(key)
 	defer func() {
 		if err := iter.Close(); err != nil {

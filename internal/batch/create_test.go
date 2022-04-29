@@ -46,7 +46,7 @@ var _ = Describe("Create", func() {
 	BeforeEach(func() {
 		req = make(chan []batch.CreateOperation[int, int])
 		s = shut.New()
-		res = batch.Pipe[int, batch.CreateOperation[int, int]](req, s, &batch.Create[int, int]{})
+		res = batch.Pipe[int, batch.CreateOperation[int, int]](req, s, &batch.Create[int, int, batch.CreateOperation[int, int]]{})
 	})
 	It("Should batch simple operations into one", func() {
 		req <- []batch.CreateOperation[int, int]{

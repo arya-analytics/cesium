@@ -2,9 +2,11 @@ package cesium
 
 import (
 	"cesium/internal/errutil"
+	"cesium/internal/kv"
 	"cesium/internal/wg"
 	"cesium/shut"
 	"context"
+	"go.uber.org/zap"
 	"go/types"
 	"io"
 )
@@ -60,27 +62,39 @@ func (ro retrieveOperation) Offset() int64 {
 // |||||| PARSER ||||||
 
 type retrieveParser struct {
-	ckv channelKV
-	skv segmentKV
+	ckv    channelKV
+	skv    segmentKV
+	logger *zap.Logger
 }
 
 func (rp retrieveParser) parse(ctx context.Context, q query) (w retrieveWaitGroup, err error) {
 	keys, err := channelKeys(q, true)
 	if err != nil {
+		rp.logger.Error("failed to parse query", zap.Error(err))
 		return w, err
 	}
 	// Check if the channels exist.
 	if _, err := rp.ckv.getMultiple(keys...); err != nil {
+		rp.logger.Error("failed to get channels", zap.Error(err))
 		return w, err
 	}
 	tr := timeRange(q)
+	from, to := generateRangeKeys(keys[0], tr)
+	rp.logger.Debug("retrieving segments",
+		zap.Int("count", len(keys)),
+		zap.Time("from", tr.Start.Time()),
+		zap.Time("to", tr.End.Time()),
+		zap.Binary("from-key", from),
+		zap.Binary("to-key", to),
+		zap.Binary("prefix", kv.CompositeKey(segmentKVPrefix, keys[0])),
+	)
 	var segments []Segment
 	for _, key := range keys {
 		nSegments, err := rp.skv.filter(tr, key)
 		if err != nil {
 			return w, err
 		}
-		if len(segments) == 0 {
+		if len(nSegments) == 0 {
 			return w, newSimpleError(ErrNotFound, "no data found to satisfy query")
 		}
 		segments = append(segments, nSegments...)
@@ -99,6 +113,7 @@ type retrieveQueryExecutor struct {
 	parser   retrieveParser
 	queue    chan<- []retrieveOperation
 	shutdown shut.Shutdown
+	logger   *zap.Logger
 }
 
 // exec implements queryExecutor.

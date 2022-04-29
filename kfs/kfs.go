@@ -4,6 +4,7 @@ package kfs
 
 import (
 	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"os"
 	"path/filepath"
@@ -93,6 +94,7 @@ type defaultFS[T comparable] struct {
 
 // Acquire implements FS.
 func (fs *defaultFS[T]) Acquire(key T) (File[T], error) {
+	fs.logger.Debug("kfs acquiring file", zap.Any("key", key))
 	sw := fs.metrics.Acquire.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
@@ -103,27 +105,44 @@ func (fs *defaultFS[T]) Acquire(key T) (File[T], error) {
 		// so another goroutine can Release it.
 		fs.mu.Unlock()
 		e.Acquire()
+		fs.logger.Debug("kfs acquired file",
+			zap.Any("key", key),
+			zap.Duration("duration", sw.Elapsed()),
+		)
 		return e, nil
 	}
 	f, err := fs.newEntry(key)
 	fs.mu.Unlock()
+	if err != nil {
+		fs.logger.Error("kfs failed to acquire file", zap.Any("key", key), zap.Error(err))
+	} else {
+		fs.logger.Debug("kfs opened and acquired file",
+			zap.Any("key", key),
+			zap.Duration("duration", sw.Elapsed()),
+		)
+	}
 	return f, err
 }
 
 // Release implements FS.
 func (fs *defaultFS[T]) Release(key T) {
+	fs.logger.Debug("kfs releasing file", zap.Any("key", key))
 	sw := fs.metrics.Release.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if e, ok := fs.entries[key]; ok {
+		fs.logger.Debug("kfs released file", zap.Any("key", key))
 		e.Release()
+	} else {
+		fs.logger.Warn("kfs releasing file that does not exist", zap.Any("key", key))
 	}
 }
 
 // Remove implements FS.
 func (fs *defaultFS[T]) Remove(key T) error {
+	fs.logger.Debug("kfs removing file", zap.Any("key", key))
 	sw := fs.metrics.Delete.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
@@ -134,11 +153,16 @@ func (fs *defaultFS[T]) Remove(key T) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	delete(fs.entries, key)
-	return fs.baseFS.Remove(fs.path(key))
+	err := fs.baseFS.Remove(fs.path(key))
+	if err != nil {
+		fs.logger.Error("kfs failed to remove file", zap.Any("key", key), zap.Error(err))
+	}
+	return err
 }
 
 // Close implements FS.
 func (fs *defaultFS[T]) Close(pk T) error {
+	fs.logger.Debug("kfs closing file", zap.Any("key", pk))
 	sw := fs.metrics.Close.Stopwatch()
 	sw.Start()
 	defer sw.Stop()
@@ -150,6 +174,7 @@ func (fs *defaultFS[T]) Close(pk T) error {
 	}
 	e.Acquire()
 	if err := e.Close(); err != nil {
+		fs.logger.Error("kfs failed to close file", zap.Any("key", pk), zap.Error(err))
 		return err
 	}
 	delete(fs.entries, pk)
@@ -158,6 +183,7 @@ func (fs *defaultFS[T]) Close(pk T) error {
 
 // RemoveAll implements FS.
 func (fs *defaultFS[T]) RemoveAll() error {
+	fs.logger.Debug("kfs removing all files")
 	for pk := range fs.entries {
 		if err := fs.Close(pk); err != nil {
 			return err

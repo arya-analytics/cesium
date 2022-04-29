@@ -1,14 +1,18 @@
 package batch
 
-type Create[F, C comparable] struct{}
+type Create[F, C comparable, T CreateOperation[F, C]] struct{}
 
 type CreateOperation[F, C comparable] interface {
 	Operation[F]
 	ChannelKey() C
 }
 
-func (b *Create[F, C]) Exec(ops []CreateOperation[F, C]) (oOps []Operation[F]) {
-	for _, bo := range batchByFileKey[F, CreateOperation[F, C]](ops) {
+func (b *Create[F, C, T]) Exec(ops []T) (oOps []Operation[F]) {
+	bops := make(map[F]OperationSet[F, CreateOperation[F, C]])
+	for _, op := range ops {
+		bops[op.FileKey()] = append(bops[op.FileKey()], op)
+	}
+	for _, bo := range bops {
 		for _, boC := range batchByChannelKey(bo) {
 			oOps = append(oOps, boC)
 		}

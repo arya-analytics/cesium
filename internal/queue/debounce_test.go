@@ -5,6 +5,7 @@ import (
 	"cesium/shut"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 	"time"
 )
 
@@ -19,7 +20,7 @@ var _ = Describe("Debounce", func() {
 		req = make(chan []int)
 		res = make(chan []int, 100)
 		s = shut.New()
-		d = &queue.Debounce[int]{req, res, s, 30 * time.Millisecond, 15}
+		d = &queue.Debounce[int]{req, res, s, 30 * time.Millisecond, 15, zap.NewNop()}
 		d.Start()
 	})
 	It("Should flush the queue at a specified interval", func() {

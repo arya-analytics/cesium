@@ -2,6 +2,7 @@ package kfs
 
 import (
 	"cesium/alamos"
+	"go.uber.org/zap"
 	"time"
 )
 
@@ -10,6 +11,7 @@ type options struct {
 	suffix          string
 	experiment      alamos.Experiment
 	maxSyncInterval time.Duration
+	logger          *zap.Logger
 }
 
 type Option func(o *options)
@@ -19,18 +21,21 @@ func newOptions(opts ...Option) *options {
 	for _, opt := range opts {
 		opt(o)
 	}
-	mergeDefaults(o)
+	mergeDefaultOptions(o)
 	return o
 }
 
 const defaultSuffix = ".kfs"
 
-func mergeDefaults(o *options) {
+func mergeDefaultOptions(o *options) {
 	if o.suffix == "" {
 		o.suffix = defaultSuffix
 	}
 	if o.baseFS == nil {
 		o.baseFS = &osFS{}
+	}
+	if o.logger == nil {
+		o.logger = zap.NewNop()
 	}
 }
 
@@ -52,5 +57,11 @@ func WithExperiment(e alamos.Experiment) Option {
 func WithSuffix(s string) Option {
 	return func(o *options) {
 		o.suffix = s
+	}
+}
+
+func WithLogger(logger *zap.Logger) Option {
+	return func(o *options) {
+		o.logger = logger
 	}
 }

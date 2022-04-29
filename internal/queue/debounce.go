@@ -2,6 +2,7 @@ package queue
 
 import (
 	"cesium/shut"
+	"go.uber.org/zap"
 	"time"
 )
 
@@ -19,6 +20,8 @@ type Debounce[T any] struct {
 	// Threshold is the maximum number of values to store in Debounce.
 	// Debounce will flush when this threshold is reached, regardless of the Interval.
 	Threshold int
+	// Logger is the logger to use for logging.
+	Logger *zap.Logger
 }
 
 const (
@@ -37,21 +40,25 @@ func (d *Debounce[T]) Start() {
 		for {
 			select {
 			case <-sig:
+				d.Logger.Info("shutting down debounce queue")
 				sd = true
 			default:
 			}
 			values := d.fill(t)
+			d.Logger.Debug("flushing debounce queue", zap.Int("count", len(values)))
 			if len(values) == 0 {
 				if sd {
 					numEmpty++
 					if numEmpty > emptyCycleShutdownCount {
 						close(d.Responses)
+						d.Logger.Info("debounce queue shut down")
 						return nil
 					}
 				}
 				continue
 			}
 			d.Responses <- values
+			d.Logger.Debug("flushed debounce queue")
 		}
 	})
 }

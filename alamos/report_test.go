@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 )
 
@@ -16,7 +15,6 @@ var _ = Describe("Report", func() {
 		g.Record(1)
 		g2 := alamos.NewGauge[int](exp, "gauge2")
 		g2.Record(2)
-		log.Info(exp)
 		sub := alamos.Sub(exp, "sub")
 		g3 := alamos.NewSeries[float64](sub, "gauge3")
 		g3.Record(3.2)

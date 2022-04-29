@@ -8,6 +8,7 @@ import (
 	"context"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 	"time"
 )
 
@@ -40,7 +41,7 @@ var _ = Describe("Persist", func() {
 	BeforeEach(func() {
 		sd = shut.New()
 		fs = kfs.New[int]("", kfs.WithFS(kfs.NewMem()))
-		p = persist.New[int, operation.Operation[int]](fs, 50, sd)
+		p = persist.New[int, operation.Operation[int]](fs, 50, sd, zap.NewNop())
 	})
 	Describe("Exec", func() {
 		It("Should execute an operation correctly", func() {

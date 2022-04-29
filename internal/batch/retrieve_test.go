@@ -42,7 +42,7 @@ var _ = Describe("Retrieve", func() {
 	BeforeEach(func() {
 		req = make(chan []batch.RetrieveOperation[int])
 		s = shut.New()
-		res = batch.Pipe[int, batch.RetrieveOperation[int]](req, s, &batch.Retrieve[int]{})
+		res = batch.Pipe[int, batch.RetrieveOperation[int]](req, s, &batch.Retrieve[int, batch.RetrieveOperation[int]]{})
 	})
 	It("Should batch simple operations into one", func() {
 		req <- []batch.RetrieveOperation[int]{

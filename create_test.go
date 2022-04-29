@@ -70,9 +70,13 @@ var progressiveCreate = []createVars{
 }
 
 var _ = Describe("Create", func() {
-	var db cesium.DB
+	var (
+		db cesium.DB
+		//log *zap.Logger
+	)
 	BeforeEach(func() {
 		var err error
+		//log, _ = zap.NewProduction()
 		db, err = cesium.Open("./testdata")
 		Expect(err).ToNot(HaveOccurred())
 	})

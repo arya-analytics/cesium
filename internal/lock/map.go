@@ -6,12 +6,12 @@ import (
 )
 
 type Map[K comparable] struct {
-	mu    sync.Mutex
+	mu    *sync.Mutex
 	locks map[K]bool
 }
 
 func NewMap[K comparable]() Map[K] {
-	return Map[K]{locks: make(map[K]bool)}
+	return Map[K]{locks: make(map[K]bool), mu: &sync.Mutex{}}
 }
 
 func (m Map[K]) Acquire(keys ...K) error {

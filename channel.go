@@ -33,13 +33,13 @@ func (c Channel) Flush(w io.Writer) error {
 
 // Load implements kv.Loader.
 func (c *Channel) Load(r io.Reader) error {
-	return binary.Read(r, &c)
+	return binary.Read(r, c)
 }
 
 const channelKVPrefix = "chan"
 
 func (c Channel) KVKey() []byte {
-	return kv.DashedCompositeKey(channelKVPrefix, c.Key)
+	return kv.CompositeKey(channelKVPrefix, c.Key)
 }
 
 // LKey implements lock.MapItem.
