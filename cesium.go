@@ -155,22 +155,22 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	createQExec, err := startCreatePipeline(fs, kve, _opts, sd)
+	create, err := startCreatePipeline(fs, kve, _opts, sd)
 	if err != nil {
 		return nil, err
 	}
-	retrieveQExec := startRetrievePipeline(fs, kve, _opts, sd)
-	createChannelQExec, retrieveChannelQExec, err := startChannelPipeline(kve)
+	retrieve := startRetrievePipeline(fs, kve, _opts, sd)
+	createChannel, retrieveChannel, err := startChannelPipeline(kve)
 	if err != nil {
 		return nil, err
 	}
 	return &db{
 		kv:              kve,
 		shutdown:        shut.NewGroup(sd),
-		create:          createQExec,
-		retrieve:        retrieveQExec,
-		createChannel:   createChannelQExec,
-		retrieveChannel: retrieveChannelQExec,
+		create:          create,
+		retrieve:        retrieve,
+		createChannel:   createChannel,
+		retrieveChannel: retrieveChannel,
 	}, nil
 }
 
