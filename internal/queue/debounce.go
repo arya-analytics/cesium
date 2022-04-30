@@ -8,11 +8,11 @@ import (
 
 // Debounce is a simple, goroutine safe queue that flushes data to a channel on a timer or queue size threshold.
 type Debounce[T any] struct {
-	// Requests is the channel to send values to add to the queue.
-	Requests chan []T
-	// Responses is the channel to receive values from the queue.
-	// Responses will be closed when the queue is closed.
-	Responses chan []T
+	// In is the channel to send values to add to the queue.
+	In chan []T
+	// Out is the channel to receive values from the queue.
+	// Out will be closed when the queue is closed.
+	Out chan []T
 	// Shutdown is used to gracefully shut down the queue.
 	Shutdown shut.Shutdown
 	// Interval is the time between flushes.
@@ -50,14 +50,14 @@ func (d *Debounce[T]) Start() {
 				if sd {
 					numEmpty++
 					if numEmpty > emptyCycleShutdownCount {
-						close(d.Responses)
+						close(d.Out)
 						d.Logger.Info("debounce queue shut down")
 						return nil
 					}
 				}
 				continue
 			}
-			d.Responses <- values
+			d.Out <- values
 			d.Logger.Debug("flushed debounce queue")
 		}
 	})
@@ -67,7 +67,7 @@ func (d *Debounce[T]) fill(t *time.Ticker) []T {
 	ops := make([]T, 0, d.Threshold)
 	for {
 		select {
-		case requests := <-d.Requests:
+		case requests := <-d.In:
 			ops = append(ops, requests...)
 			if len(ops) >= d.Threshold {
 				return ops

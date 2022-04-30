@@ -52,16 +52,16 @@ var progressiveCreate = []createVars{
 	//	dataRate:  30 * cesium.Hz,
 	//	dataType:  cesium.Float64,
 	//},
-	//{
-	//	nChannels: 5,
-	//	dataRate:  40 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
 	{
-		nChannels: 500,
-		dataRate:  1 * cesium.Hz,
+		nChannels: 5,
+		dataRate:  10000 * cesium.Hz,
 		dataType:  cesium.Float64,
 	},
+	//{
+	//	nChannels: 500,
+	//	dataRate:  1 * cesium.Hz,
+	//	dataType:  cesium.Float64,
+	//},
 	//{
 	//	nChannels: 100,
 	//	dataRate:  20 * cesium.Hz,
@@ -77,7 +77,7 @@ var _ = Describe("Create", func() {
 	BeforeEach(func() {
 		var err error
 		//log, _ = zap.NewProduction()
-		db, err = cesium.Open("./testdata")
+		db, err = cesium.Open("./testdata", cesium.MemBacked())
 		Expect(err).ToNot(HaveOccurred())
 	})
 	AfterEach(func() {
@@ -104,7 +104,7 @@ var _ = Describe("Create", func() {
 						stc := &seg.StreamCreate{
 							Req:               req,
 							Res:               res,
-							SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 1*cesium.Second, ch),
+							SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, ch),
 						}
 						stc.CreateCRequestsOfN(1, 1)
 						Expect(stc.CloseAndWait()).To(Succeed())

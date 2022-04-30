@@ -6,8 +6,9 @@ import (
 )
 
 type (
-	fileKey int16
-	file    = kfs.File[fileKey]
+	fileKey    int16
+	fileSystem = kfs.FS[fileKey]
+	file       = kfs.File[fileKey]
 )
 
 type fileCounter struct {

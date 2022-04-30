@@ -128,6 +128,14 @@ func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
 	}
 	s := getStream[CreateRequest, CreateResponse](q)
 	parse := createParser{skv: cp.skv, allocator: cp.allocator, stream: s, logger: cp.logger}
+	//// Fetch the latest segment for each channel
+	//latest, err := cp.skv.latest(keys...)
+	//if err != nil {
+	//	return err
+	//}
+	//for _, seg := range latest {
+	//	cp.allocator.SetItemDescriptor(seg, seg.fileKey)
+	//}
 	var w createWaitGroup
 	cp.shutdown.Go(func(sig chan shut.Signal) error {
 	o:

@@ -90,19 +90,25 @@ func (sk segmentKV) set(s Segment) error {
 	return kv.Flush(sk.kv, s.KVKey(), s)
 }
 
-func (sk segmentKV) latest(cPK ChannelKey) (Segment, error) {
-	key := kv.CompositeKey(segmentKVPrefix, cPK)
-	iter := sk.kv.IterPrefix(key)
-	defer func() {
-		if err := iter.Close(); err != nil {
-			panic(err)
+func (sk segmentKV) latest(keys ...ChannelKey) (segments []Segment, err error) {
+	for _, key := range keys {
+		prefix := kv.CompositeKey(segmentKVPrefix, key)
+		iter := sk.kv.IterPrefix(prefix)
+		defer func() {
+			if err := iter.Close(); err != nil {
+				panic(err)
+			}
+		}()
+		if ok := iter.Last(); !ok {
+			return nil, newSimpleError(ErrNotFound, "No segmentKV found")
 		}
-	}()
-	if ok := iter.Last(); !ok {
-		return Segment{}, newSimpleError(ErrNotFound, "No segmentKV found")
+		s := &Segment{}
+		if err := kv.LoadBytes(iter.Value(), s); err != nil {
+			return nil, err
+		}
+		segments = append(segments, *s)
 	}
-	s := &Segment{}
-	return *s, kv.LoadBytes(iter.Value(), s)
+	return segments, nil
 }
 
 func (sk segmentKV) filter(tr TimeRange, cpk ChannelKey) (segments []Segment, err error) {

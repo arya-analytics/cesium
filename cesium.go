@@ -148,119 +148,39 @@ type DB interface {
 }
 
 func Open(dirname string, opts ...Option) (DB, error) {
-	o := newOptions(dirname, opts...)
-	sd := shut.New(o.shutdownOpts...)
-
-	// |||||| KFS |||||||
-
-	fs := kfs.New[fileKey](o.dirname, o.kfs.opts...)
-	sync := &kfs.Sync[fileKey]{
-		FS:       fs,
-		Interval: o.kfs.sync.interval,
-		MaxAge:   o.kfs.sync.maxAge,
-		Shutter:  sd,
-	}
-	sync.Start()
-
-	// |||||| KV |||||||
-
-	pebbleDB, err := pebble.Open(filepath.Join(o.dirname, "pebble"), &pebble.Options{FS: o.kvFS})
+	_opts := newOptions(dirname, opts...)
+	sd := shut.New(_opts.shutdownOpts...)
+	fs := startFS(_opts, sd)
+	kve, err := startKV(_opts)
 	if err != nil {
 		return nil, err
 	}
-	kve := pebblekv.Wrap(pebbleDB)
-	skv := segmentKV{kv: kve}
-	ckv := channelKV{kv: kve}
-
-	// |||||| PERSIST ||||||
-
-	// || CREATE ||
-
-	createPst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, o.logger)
-	createOpRequests := make(chan []createOperation)
-	createOpResponses := make(chan []createOperation)
-	createQueue := &queue.Debounce[createOperation]{
-		Requests:  createOpRequests,
-		Responses: createOpResponses,
-		Shutdown:  sd,
-		Interval:  100 * time.Millisecond,
-		Threshold: 50,
-		Logger:    o.logger,
-	}
-	createQueue.Start()
-	createBatchPipe := batch.Pipe[fileKey, createOperation](createOpResponses, sd, &batch.Create[fileKey, ChannelKey, createOperation]{})
-	createPst.Pipe(createBatchPipe)
-
-	// || RETRIEVE ||
-
-	retrievePst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, o.logger)
-	retrieveOpRequests := make(chan []retrieveOperation)
-	retrieveOpResponses := make(chan []retrieveOperation)
-	retrieveQueue := &queue.Debounce[retrieveOperation]{
-		Requests:  retrieveOpRequests,
-		Responses: retrieveOpResponses,
-		Shutdown:  sd,
-		Interval:  100 * time.Millisecond,
-		Threshold: 50,
-		Logger:    o.logger,
-	}
-	retrieveQueue.Start()
-	retrieveBatchPipe := batch.Pipe[fileKey, retrieveOperation](retrieveOpResponses, sd, &batch.Retrieve[fileKey, retrieveOperation]{})
-	retrievePst.Pipe(retrieveBatchPipe)
-
-	// ||||||| CREATE ||||||
-
-	nextFileCounter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
+	createQExec, err := startCreatePipeline(fs, kve, _opts, sd)
 	if err != nil {
 		return nil, err
 	}
-	nextFile := &fileCounter{PersistedCounter: *nextFileCounter}
-	segAlloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
-		MaxDescriptors: 50,
-		MaxSize:        1e9,
-	})
-	createQExec := &createQueryExecutor{
-		allocator: segAlloc,
-		skv:       skv,
-		ckv:       ckv,
-		queue:     createOpRequests,
-		lock:      lock.NewMap[ChannelKey](),
-		shutdown:  sd,
-		logger:    o.logger,
+	retrieveQExec := startRetrievePipeline(fs, kve, _opts, sd)
+	createChannelQExec, retrieveChannelQExec, err := startChannelPipeline(kve)
+	if err != nil {
+		return nil, err
 	}
-
-	// |||||| RETRIEVE ||||||
-
-	retrieveQExec := &retrieveQueryExecutor{
-		parser:   retrieveParser{skv: skv, ckv: ckv, logger: o.logger},
-		queue:    retrieveOpRequests,
-		shutdown: sd,
-		logger:   o.logger,
-	}
-
-	// |||||| CHANNEL |||||
-
-	nextChannelCounter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextChannel"))
-	cChannelQExec := &createChannelQueryExecutor{ckv: ckv, counter: nextChannelCounter}
-	rChannelQExec := &retrieveChannelQueryExecutor{ckv: ckv}
-
 	return &db{
 		kv:              kve,
 		shutdown:        shut.NewGroup(sd),
 		create:          createQExec,
 		retrieve:        retrieveQExec,
-		createChannel:   cChannelQExec,
-		retrieveChannel: rChannelQExec,
+		createChannel:   createChannelQExec,
+		retrieveChannel: retrieveChannelQExec,
 	}, nil
 }
 
 type db struct {
 	kv              kv.KV
 	shutdown        *shut.Group
-	create          *createQueryExecutor
-	retrieve        *retrieveQueryExecutor
-	createChannel   *createChannelQueryExecutor
-	retrieveChannel *retrieveChannelQueryExecutor
+	create          queryExecutor
+	retrieve        queryExecutor
+	createChannel   queryExecutor
+	retrieveChannel queryExecutor
 }
 
 func (d *db) NewCreate() Create {
@@ -336,6 +256,7 @@ func mergeDefaultOptions(o *options) {
 	}
 
 	// || LOGGER ||
+
 	if o.logger == nil {
 		o.logger = zap.NewNop()
 	}
@@ -376,4 +297,93 @@ func WithShutdownOpts(opts ...shut.Option) Option {
 	return func(o *options) {
 		o.shutdownOpts = append(o.shutdownOpts, opts...)
 	}
+}
+
+// |||||| START UP ||||||
+
+func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (queryExecutor, error) {
+	pst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, opts.logger)
+	q := &queue.Debounce[createOperation]{
+		In:        make(chan []createOperation),
+		Out:       make(chan []createOperation),
+		Shutdown:  sd,
+		Interval:  100 * time.Millisecond,
+		Threshold: 50,
+		Logger:    opts.logger,
+	}
+	q.Start()
+	pst.Pipe(batch.Pipe[fileKey, createOperation](
+		q.Out,
+		sd,
+		&batch.Create[fileKey, ChannelKey, createOperation]{}),
+	)
+
+	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
+	if err != nil {
+		return nil, err
+	}
+	nextFile := &fileCounter{PersistedCounter: *counter}
+
+	alloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
+		MaxDescriptors: 10,
+		MaxSize:        1e9,
+	})
+
+	return &createQueryExecutor{
+		allocator: alloc,
+		skv:       segmentKV{kv: kve},
+		ckv:       channelKV{kv: kve},
+		queue:     q.In,
+		lock:      lock.NewMap[ChannelKey](),
+		shutdown:  sd,
+		logger:    opts.logger,
+	}, nil
+}
+
+func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) queryExecutor {
+	pst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, opts.logger)
+	q := &queue.Debounce[retrieveOperation]{
+		In:        make(chan []retrieveOperation),
+		Out:       make(chan []retrieveOperation),
+		Shutdown:  sd,
+		Interval:  100 * time.Millisecond,
+		Threshold: 50,
+		Logger:    opts.logger,
+	}
+	q.Start()
+	pst.Pipe(batch.Pipe[fileKey, retrieveOperation](
+		q.Out,
+		sd,
+		&batch.Retrieve[fileKey, retrieveOperation]{}),
+	)
+	return &retrieveQueryExecutor{
+		parser:   retrieveParser{skv: segmentKV{kv: kve}, ckv: channelKV{kv: kve}, logger: opts.logger},
+		queue:    q.In,
+		shutdown: sd,
+		logger:   opts.logger,
+	}
+}
+
+func startFS(opts *options, sd shut.Shutdown) fileSystem {
+	fs := kfs.New[fileKey](opts.dirname, opts.kfs.opts...)
+	sync := &kfs.Sync[fileKey]{
+		FS:       fs,
+		Interval: opts.kfs.sync.interval,
+		MaxAge:   opts.kfs.sync.maxAge,
+		Shutter:  sd,
+	}
+	sync.Start()
+	return fs
+}
+
+func startKV(opts *options) (kv.KV, error) {
+	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, "pebble"), &pebble.Options{FS: opts.kvFS})
+	return pebblekv.Wrap(pebbleDB), err
+}
+
+func startChannelPipeline(kve kv.KV) (queryExecutor, queryExecutor, error) {
+	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextChannel"))
+	ckv := channelKV{kv: kve}
+	return &createChannelQueryExecutor{ckv: ckv, counter: counter},
+		&retrieveChannelQueryExecutor{ckv: ckv}, err
 }
