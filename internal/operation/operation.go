@@ -1,8 +1,8 @@
 package operation
 
 import (
-	"cesium/kfs"
 	"context"
+	"github.com/arya-analytics/cesium/kfs"
 )
 
 type Operation[F comparable] interface {

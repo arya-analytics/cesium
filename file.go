@@ -1,8 +1,8 @@
 package cesium
 
 import (
-	"cesium/internal/kv"
-	"cesium/kfs"
+	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/kfs"
 )
 
 type (

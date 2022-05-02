@@ -1,9 +1,9 @@
 package cesium_test
 
 import (
-	"cesium"
 	"context"
 	"fmt"
+	"github.com/arya-analytics/cesium"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"

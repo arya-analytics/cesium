@@ -1,7 +1,7 @@
 package kfs_test
 
 import (
-	"cesium/kfs"
+	"github.com/arya-analytics/cesium/kfs"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

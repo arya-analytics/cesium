@@ -7,8 +7,8 @@
 package errutil
 
 import (
-	"cesium/internal/binary"
 	"context"
+	"github.com/arya-analytics/cesium/internal/binary"
 	"io"
 )
 

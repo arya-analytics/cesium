@@ -1,7 +1,7 @@
 package lock_test
 
 import (
-	"cesium/internal/lock"
+	"github.com/arya-analytics/cesium/internal/lock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

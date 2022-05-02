@@ -1,7 +1,7 @@
 package allocate_test
 
 import (
-	"cesium/internal/allocate"
+	"github.com/arya-analytics/cesium/internal/allocate"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

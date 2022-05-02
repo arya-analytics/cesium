@@ -1,7 +1,7 @@
 package alamos_test
 
 import (
-	"cesium/alamos"
+	"github.com/arya-analytics/cesium/alamos"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

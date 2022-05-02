@@ -6,3 +6,9 @@
 </p>
 
 # Cesium
+
+## Installation
+
+```bash
+go get github.com/arya-analytics/cesium
+```

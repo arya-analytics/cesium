@@ -1,12 +1,12 @@
 package cesium
 
 import (
-	"cesium/internal/errutil"
-	"cesium/internal/kv"
-	"cesium/internal/operation"
-	"cesium/internal/wg"
-	"cesium/shut"
 	"context"
+	"github.com/arya-analytics/cesium/internal/errutil"
+	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/cesium/internal/wg"
+	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
 	"go/types"
 	"io"

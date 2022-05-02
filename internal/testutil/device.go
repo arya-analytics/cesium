@@ -1,9 +1,9 @@
 package testutil
 
 import (
-	"cesium"
-	"cesium/internal/testutil/seg"
 	"context"
+	"github.com/arya-analytics/cesium"
+	"github.com/arya-analytics/cesium/internal/testutil/seg"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"time"

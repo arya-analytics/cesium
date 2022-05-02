@@ -1,8 +1,8 @@
 package kfs_test
 
 import (
-	"cesium/kfs"
-	"cesium/shut"
+	"github.com/arya-analytics/cesium/kfs"
+	"github.com/arya-analytics/cesium/shut"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"time"

@@ -1,9 +1,9 @@
 package persist
 
 import (
-	"cesium/internal/operation"
-	"cesium/kfs"
-	"cesium/shut"
+	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/cesium/kfs"
+	"github.com/arya-analytics/cesium/shut"
 	log "github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"

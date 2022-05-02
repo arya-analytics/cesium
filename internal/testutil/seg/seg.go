@@ -1,8 +1,8 @@
 package seg
 
 import (
-	"cesium"
-	"cesium/internal/binary"
+	"github.com/arya-analytics/cesium"
+	"github.com/arya-analytics/cesium/internal/binary"
 	"io"
 	"math/rand"
 )

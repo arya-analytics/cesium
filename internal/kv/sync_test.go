@@ -1,9 +1,9 @@
 package kv_test
 
 import (
-	"cesium/internal/binary"
-	"cesium/internal/kv"
-	"cesium/internal/kv/pebblekv"
+	"github.com/arya-analytics/cesium/internal/binary"
+	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/kv/pebblekv"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
 	. "github.com/onsi/ginkgo/v2"

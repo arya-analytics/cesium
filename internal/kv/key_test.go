@@ -1,7 +1,7 @@
 package kv_test
 
 import (
-	"cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/kv"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

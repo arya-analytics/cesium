@@ -1,7 +1,7 @@
 package pebblekv
 
 import (
-	kvc "cesium/internal/kv"
+	kvc "github.com/arya-analytics/cesium/internal/kv"
 	"github.com/cockroachdb/pebble"
 )
 

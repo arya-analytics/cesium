@@ -2,7 +2,7 @@ package kv
 
 import (
 	"bytes"
-	"cesium/internal/errutil"
+	"github.com/arya-analytics/cesium/internal/errutil"
 )
 
 // ||||||| GENERATE |||||||

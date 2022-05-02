@@ -1,7 +1,7 @@
 package cesium
 
 import (
-	"cesium/internal/binary"
+	"github.com/arya-analytics/cesium/internal/binary"
 	"strconv"
 	"time"
 )

@@ -1,8 +1,8 @@
 package queue_test
 
 import (
-	"cesium/internal/queue"
-	"cesium/shut"
+	"github.com/arya-analytics/cesium/internal/queue"
+	"github.com/arya-analytics/cesium/shut"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"

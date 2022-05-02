@@ -1,7 +1,7 @@
 package queue
 
 import (
-	"cesium/shut"
+	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
 	"time"
 )

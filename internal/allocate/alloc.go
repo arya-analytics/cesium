@@ -1,7 +1,7 @@
 package allocate
 
 import (
-	"cesium/alamos"
+	"github.com/arya-analytics/cesium/alamos"
 	"math"
 	"sync"
 )

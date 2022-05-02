@@ -1,8 +1,8 @@
 package kfs
 
 import (
-	"cesium/internal/errutil"
-	"cesium/shut"
+	"github.com/arya-analytics/cesium/internal/errutil"
+	"github.com/arya-analytics/cesium/shut"
 	"time"
 )
 

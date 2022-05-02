@@ -1,6 +1,6 @@
 package operation
 
-import "cesium/shut"
+import "github.com/arya-analytics/cesium/shut"
 
 type Transform[K comparable, I Operation[K], O Operation[K]] interface {
 	Exec([]I) []O

@@ -1,15 +1,15 @@
 package cesium
 
 import (
-	"cesium/alamos"
-	"cesium/internal/kv"
-	"cesium/internal/kv/pebblekv"
-	"cesium/internal/operation"
-	"cesium/internal/persist"
-	"cesium/internal/queue"
-	"cesium/kfs"
-	"cesium/shut"
 	"context"
+	"github.com/arya-analytics/cesium/alamos"
+	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/kv/pebblekv"
+	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/cesium/internal/persist"
+	"github.com/arya-analytics/cesium/internal/queue"
+	"github.com/arya-analytics/cesium/kfs"
+	"github.com/arya-analytics/cesium/shut"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
 	"go.uber.org/zap"

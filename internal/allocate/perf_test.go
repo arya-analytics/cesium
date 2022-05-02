@@ -1,9 +1,9 @@
 package allocate_test
 
 import (
-	"cesium/alamos"
-	"cesium/internal/allocate"
 	"fmt"
+	"github.com/arya-analytics/cesium/alamos"
+	"github.com/arya-analytics/cesium/internal/allocate"
 	. "github.com/onsi/ginkgo/v2"
 	"sync"
 )

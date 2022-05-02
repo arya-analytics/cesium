@@ -2,8 +2,8 @@ package testutil
 
 import (
 	"bytes"
-	"cesium"
-	"cesium/internal/binary"
+	"github.com/arya-analytics/cesium"
+	"github.com/arya-analytics/cesium/internal/binary"
 	"math/rand"
 )
 

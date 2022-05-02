@@ -1,11 +1,11 @@
 package persist_test
 
 import (
-	"cesium/internal/operation"
-	"cesium/internal/persist"
-	"cesium/kfs"
-	"cesium/shut"
 	"context"
+	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/cesium/internal/persist"
+	"github.com/arya-analytics/cesium/kfs"
+	"github.com/arya-analytics/cesium/shut"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"

@@ -1,9 +1,9 @@
 package cesium
 
 import (
-	"cesium/internal/binary"
-	"cesium/internal/kv"
 	"context"
+	"github.com/arya-analytics/cesium/internal/binary"
+	"github.com/arya-analytics/cesium/internal/kv"
 	"io"
 )
 
