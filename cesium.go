@@ -2,22 +2,9 @@ package cesium
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/alamos"
 	"github.com/arya-analytics/cesium/internal/kv"
-	"github.com/arya-analytics/cesium/internal/kv/pebblekv"
-	"github.com/arya-analytics/cesium/internal/operation"
-	"github.com/arya-analytics/cesium/internal/persist"
-	"github.com/arya-analytics/cesium/internal/queue"
-	"github.com/arya-analytics/cesium/kfs"
 	"github.com/arya-analytics/cesium/shut"
-	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/vfs"
-	"go.uber.org/zap"
-	"path/filepath"
-	"time"
 )
-
-// |||| DB ||||
 
 type DB interface {
 
@@ -133,7 +120,6 @@ type DB interface {
 	//		}
 	//
 	//      // do what you want with the data, just remember to close the database when done.
-	//
 	NewRetrieve() Retrieve
 
 	// NewCreateChannel opens a new CreateChannel query that is used for creating a new channel in the DB.
@@ -172,7 +158,6 @@ type DB interface {
 	//		fmt.Println(ch.Key)
 	//		// output:
 	//		//  1
-	//
 	NewRetrieveChannel() RetrieveChannel
 
 	// Sync is a utility that executes a query synchronously. It is useful for operations that require all data to be
@@ -189,52 +174,6 @@ type DB interface {
 	// Close will block until all queries are finished, so make sure to stop any running queries
 	// before calling.
 	Close() error
-}
-
-// Open opens a new DB whose files are stored in the given directory.
-// DB can be opened with a variety of options:
-//
-//	// Open a DB in memory.
-//  cesium.MemBacked()
-//
-//  // Open a DB with the provided logger.
-//	cesium.WithLogger(zap.NewNop())
-//
-//	// Bind an alamos.Experiment to register DB metrics.
-//	cesium.WithExperiment(alamos.New("myExperiment"))
-//
-// 	// Override the default shutdown threshold.
-//  cesium.WithShutdownThreshold(time.Second)
-//
-//  // Set custom shutdown options.
-//	cesium.WithShutdownOptions()
-//
-// See each options documentation for more.
-func Open(dirname string, opts ...Option) (DB, error) {
-	_opts := newOptions(dirname, opts...)
-	sd := shut.New(_opts.shutdownOpts...)
-	fs := startFS(_opts, sd)
-	kve, err := startKV(_opts)
-	if err != nil {
-		return nil, err
-	}
-	create, err := startCreatePipeline(fs, kve, _opts, sd)
-	if err != nil {
-		return nil, err
-	}
-	retrieve := startRetrievePipeline(fs, kve, _opts, sd)
-	createChannel, retrieveChannel, err := startChannelPipeline(kve)
-	if err != nil {
-		return nil, err
-	}
-	return &db{
-		kv:              kve,
-		shutdown:        shut.NewGroup(sd),
-		create:          create,
-		retrieve:        retrieve,
-		createChannel:   createChannel,
-		retrieveChannel: retrieveChannel,
-	}, nil
 }
 
 type db struct {
@@ -277,140 +216,4 @@ func (d *db) Close() error {
 		return err
 	}
 	return d.kv.Close()
-}
-
-// |||| OPTIONS ||||
-
-type Option func(*options)
-
-type options struct {
-	dirname string
-	kfs     struct {
-		opts []kfs.Option
-		sync struct {
-			interval time.Duration
-			maxAge   time.Duration
-		}
-	}
-	kvFS         vfs.FS
-	exp          alamos.Experiment
-	shutdownOpts []shut.Option
-	logger       *zap.Logger
-}
-
-func newOptions(dirname string, opts ...Option) *options {
-	o := &options{dirname: dirname}
-	for _, opt := range opts {
-		opt(o)
-	}
-	mergeDefaultOptions(o)
-	return o
-}
-
-func mergeDefaultOptions(o *options) {
-	if o.kfs.sync.interval == 0 {
-		o.kfs.sync.interval = 1 * time.Second
-	}
-	if o.kfs.sync.maxAge == 0 {
-		o.kfs.sync.maxAge = 1 * time.Hour
-	}
-	if o.shutdownOpts == nil {
-		o.shutdownOpts = []shut.Option{}
-	}
-
-	// || LOGGER ||
-
-	if o.logger == nil {
-		o.logger = zap.NewNop()
-	}
-	o.kfs.opts = append(o.kfs.opts, kfs.WithLogger(o.logger))
-	o.kfs.opts = append(o.kfs.opts, kfs.WithExperiment(o.exp))
-	o.kfs.opts = append(o.kfs.opts, kfs.WithSuffix(".cseg"))
-}
-
-func MemBacked() Option {
-	return func(o *options) {
-		o.dirname = ""
-		o.kfs.opts = append(o.kfs.opts, kfs.WithFS(kfs.NewMem()))
-		o.kvFS = vfs.NewMem()
-	}
-}
-
-func WithLogger(logger *zap.Logger) Option {
-	return func(o *options) {
-		o.logger = logger
-	}
-}
-
-func WithExperiment(exp alamos.Experiment) Option {
-	return func(o *options) {
-		if exp != nil {
-			o.exp = alamos.Sub(exp, "cesium")
-		} else {
-			o.exp = exp
-		}
-	}
-}
-
-func WithShutdownThreshold(threshold time.Duration) Option {
-	return func(o *options) {
-		o.shutdownOpts = append(o.shutdownOpts, shut.WithThreshold(threshold))
-	}
-}
-
-func WithShutdownOptions(opts ...shut.Option) Option {
-	return func(o *options) {
-		o.shutdownOpts = append(o.shutdownOpts, opts...)
-	}
-}
-
-// |||||| START UP ||||||
-
-func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) queryExecutor {
-	pst := persist.New[fileKey, retrieveOperationSet](fs, 50, sd, opts.logger)
-	q := &queue.Debounce[retrieveOperation]{
-		In:        make(chan []retrieveOperation),
-		Out:       make(chan []retrieveOperation),
-		Shutdown:  sd,
-		Interval:  100 * time.Millisecond,
-		Threshold: 50,
-		Logger:    opts.logger,
-	}
-	q.Start()
-	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](
-		q.Out,
-		sd,
-		&retrieveBatch{},
-	)
-	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, sd)
-	return &retrieveQueryExecutor{
-		parser:   retrieveParser{skv: segmentKV{kv: kve}, ckv: channelKV{kv: kve}, logger: opts.logger},
-		queue:    q.In,
-		shutdown: sd,
-		logger:   opts.logger,
-	}
-}
-
-func startFS(opts *options, sd shut.Shutdown) fileSystem {
-	fs := kfs.New[fileKey](opts.dirname, opts.kfs.opts...)
-	sync := &kfs.Sync[fileKey]{
-		FS:       fs,
-		Interval: opts.kfs.sync.interval,
-		MaxAge:   opts.kfs.sync.maxAge,
-		Shutter:  sd,
-	}
-	sync.Start()
-	return fs
-}
-
-func startKV(opts *options) (kv.KV, error) {
-	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, "pebble"), &pebble.Options{FS: opts.kvFS})
-	return pebblekv.Wrap(pebbleDB), err
-}
-
-func startChannelPipeline(kve kv.KV) (queryExecutor, queryExecutor, error) {
-	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextChannel"))
-	ckv := channelKV{kv: kve}
-	return &createChannelQueryExecutor{ckv: ckv, counter: counter},
-		&retrieveChannelQueryExecutor{ckv: ckv}, err
 }

@@ -5,12 +5,15 @@ import (
 	"github.com/arya-analytics/cesium/internal/errutil"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/cesium/internal/persist"
+	"github.com/arya-analytics/cesium/internal/queue"
 	"github.com/arya-analytics/cesium/internal/wg"
 	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
 	"go/types"
 	"io"
 	"sort"
+	"time"
 )
 
 type (
@@ -153,4 +156,29 @@ func (r *retrieveBatch) Exec(ops []retrieveOperation) []retrieveOperationSet {
 		sets = append(sets, ops)
 	}
 	return sets
+}
+
+func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) queryExecutor {
+	pst := persist.New[fileKey, retrieveOperationSet](fs, 50, sd, opts.logger)
+	q := &queue.Debounce[retrieveOperation]{
+		In:        make(chan []retrieveOperation),
+		Out:       make(chan []retrieveOperation),
+		Shutdown:  sd,
+		Interval:  100 * time.Millisecond,
+		Threshold: 50,
+		Logger:    opts.logger,
+	}
+	q.Start()
+	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](
+		q.Out,
+		sd,
+		&retrieveBatch{},
+	)
+	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, sd)
+	return &retrieveQueryExecutor{
+		parser:   retrieveParser{skv: segmentKV{kv: kve}, ckv: channelKV{kv: kve}, logger: opts.logger},
+		queue:    q.In,
+		shutdown: sd,
+		logger:   opts.logger,
+	}
 }
