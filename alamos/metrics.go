@@ -47,10 +47,12 @@ func (b defaultBaseMetric) Report() map[string]interface{} {
 // |||||| GAUGE ||||||
 
 type gauge[T Numeric] struct {
-	mu sync.Mutex
 	baseMetric
+	mu    sync.Mutex
 	count int
 	value T
+	min   T
+	max   T
 }
 
 // Numeric represents a generic numeric value.
@@ -92,15 +94,32 @@ func (g *gauge[T]) average() T {
 }
 
 func (g *gauge[T]) Record(v T) {
-	g.count++
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	// Check for min/max
+	if g.count == 0 {
+		g.min = v
+		g.max = v
+	} else {
+		if v < g.min {
+			g.min = v
+		}
+		if v > g.max {
+			g.max = v
+		}
+	}
 	g.value += v
+	g.count++
 }
 
 func (g *gauge[T]) Report() map[string]interface{} {
 	return map[string]interface{}{
+		"key":   g.Key(),
 		"count": g.count,
 		"value": g.value,
 		"avg":   g.average(),
+		"min":   g.min,
+		"max":   g.max,
 	}
 }
 

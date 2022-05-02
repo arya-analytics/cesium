@@ -1,21 +1,27 @@
 package cesium
 
 import (
+	"cesium/alamos"
 	"cesium/internal/allocate"
 	"cesium/internal/errutil"
 	"cesium/internal/kv"
 	"cesium/internal/lock"
+	"cesium/internal/operation"
+	"cesium/internal/persist"
+	"cesium/internal/queue"
 	"cesium/internal/wg"
 	"cesium/shut"
 	"context"
 	"go.uber.org/zap"
 	"io"
+	"time"
 )
 
 type (
-	createStream     = stream[CreateRequest, CreateResponse]
-	createWaitGroup  = wg.Slice[createOperation]
-	segmentAllocator = allocate.Allocator[ChannelKey, fileKey, Segment]
+	createStream       = stream[CreateRequest, CreateResponse]
+	createWaitGroup    = wg.Slice[createOperation]
+	segmentAllocator   = allocate.Allocator[ChannelKey, fileKey, Segment]
+	createOperationSet = operation.Set[fileKey, createOperation]
 )
 
 // |||||| OPERATION ||||||
@@ -29,6 +35,7 @@ type createOperation struct {
 	ctx        context.Context
 	done       chan struct{}
 	logger     *zap.Logger
+	metrics    createMetrics
 }
 
 // Context implements persist.Operation.
@@ -48,6 +55,8 @@ func (cr createOperation) SendError(err error) {
 
 // Exec implements persist.Operation.
 func (cr createOperation) Exec(f file) {
+	tft := cr.metrics.totalFlush.Stopwatch()
+	tft.Start()
 	c := errutil.NewCatchReadWriteSeek(f, errutil.WithHooks(cr.SendError))
 	c.Seek(0, io.SeekEnd)
 	for _, s := range cr.segments {
@@ -55,19 +64,30 @@ func (cr createOperation) Exec(f file) {
 		s.ChannelKey = cr.channelKey
 		s.size = Size(s.Size())
 		s.offset = c.Seek(0, io.SeekCurrent)
-		c.Exec(func() error { return s.flushData(f) })
-		c.Exec(func() error { return cr.segmentKV.set(s) })
+		c.Exec(func() error {
+			fs := cr.metrics.dataFlush.Stopwatch()
+			fs.Start()
+			err := s.flushData(f)
+			fs.Stop()
+			return err
+		})
+		c.Exec(func() error {
+			ks := cr.metrics.kvFlush.Stopwatch()
+			ks.Start()
+			err := cr.segmentKV.set(s)
+			ks.Stop()
+			return err
+		})
 	}
 	cr.done <- struct{}{}
+	d := tft.Stop()
 	last := cr.segments[len(cr.segments)-1]
-	cr.logger.Debug("completed create operation",
+	cr.logger.Debug(
+		"completed create operation",
 		zap.Any("file", f.Key()),
-		zap.Int("segments", len(cr.segments)),
 		zap.Time("start", cr.segments[0].Start.Time()),
 		zap.Time("end", last.Start.Time()),
-		zap.Binary("start-key", cr.segments[0].KVKey()),
-		zap.Binary("end-key", last.KVKey()),
-		zap.Binary("prefix", kv.CompositeKey(segmentKVPrefix, cr.channelKey)),
+		zap.Duration("duration", d),
 	)
 }
 
@@ -83,13 +103,15 @@ type createParser struct {
 	allocator segmentAllocator
 	stream    *createStream
 	logger    *zap.Logger
+	metrics   createMetrics
 }
 
-func (cp createParser) parse(ctx context.Context, req CreateRequest) (cwg createWaitGroup) {
+func (cp *createParser) parse(ctx context.Context, req CreateRequest) (cwg createWaitGroup) {
 	cp.logger.Debug("parsing create requests", zap.Int("nSegments", len(req.Segments)))
 	cwg.Done = make(chan struct{}, len(req.Segments))
 	fileKeys := cp.allocator.Allocate(req.Segments...)
 	for i, seg := range req.Segments {
+		cp.metrics.dataSize.Record(seg.Size())
 		cwg.Items = append(cwg.Items, createOperation{
 			fileKey:    fileKeys[i],
 			channelKey: seg.ChannelKey,
@@ -99,6 +121,7 @@ func (cp createParser) parse(ctx context.Context, req CreateRequest) (cwg create
 			ctx:        ctx,
 			done:       cwg.Done,
 			logger:     cp.logger,
+			metrics:    cp.metrics,
 		})
 	}
 	cp.logger.Debug("generated create operations", zap.Int("nOperations", len(cwg.Items)))
@@ -115,27 +138,31 @@ type createQueryExecutor struct {
 	lock      lock.Map[ChannelKey]
 	shutdown  shut.Shutdown
 	logger    *zap.Logger
+	metrics   createMetrics
 }
 
 // exec implements queryExecutor.
 func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
+	rt := cp.metrics.request.Stopwatch()
+	rt.Start()
 	keys, err := channelKeys(q, true)
 	if err != nil {
 		return err
 	}
+	lat := cp.metrics.lockAcquire.Stopwatch()
+	lat.Start()
 	if err := cp.lock.Acquire(keys...); err != nil {
 		return err
 	}
+	lat.Stop()
 	s := getStream[CreateRequest, CreateResponse](q)
-	parse := createParser{skv: cp.skv, allocator: cp.allocator, stream: s, logger: cp.logger}
-	//// Fetch the latest segment for each channel
-	//latest, err := cp.skv.latest(keys...)
-	//if err != nil {
-	//	return err
-	//}
-	//for _, seg := range latest {
-	//	cp.allocator.SetItemDescriptor(seg, seg.fileKey)
-	//}
+	parse := &createParser{
+		skv:       cp.skv,
+		allocator: cp.allocator,
+		stream:    s,
+		logger:    cp.logger,
+		metrics:   cp.metrics,
+	}
 	var w createWaitGroup
 	cp.shutdown.Go(func(sig chan shut.Signal) error {
 	o:
@@ -156,9 +183,94 @@ func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
 		cp.logger.Debug("waiting for create operations to complete", zap.Int("nOperations", len(w.Items)))
 		w.Wait()
 		cp.logger.Debug("create operations completed", zap.Int("nOperations", len(w.Items)))
+		lrt := cp.metrics.lockRelease.Stopwatch()
+		lrt.Start()
 		cp.lock.Release(keys...)
+		lrt.Stop()
+		rt.Stop()
 		close(s.res)
 		return nil
 	})
 	return nil
+}
+
+// |||||| BATCH ||||||
+
+type createBatch struct{}
+
+func (b *createBatch) Exec(ops []createOperation) []createOperationSet {
+	files := make(map[fileKey][]createOperation)
+	for _, op := range ops {
+		files[op.fileKey] = append(files[op.fileKey], op)
+	}
+	channels := make(map[ChannelKey]createOperationSet)
+	for _, op := range ops {
+		channels[op.ChannelKey()] = append(channels[op.ChannelKey()], op)
+	}
+	sets := make([]createOperationSet, 0, len(channels))
+	for _, opSet := range channels {
+		sets = append(sets, opSet)
+	}
+	return sets
+}
+
+// |||||| METRICS ||||||
+
+type createMetrics struct {
+	dataFlush   alamos.Duration
+	kvFlush     alamos.Duration
+	totalFlush  alamos.Duration
+	lockAcquire alamos.Duration
+	lockRelease alamos.Duration
+	dataSize    alamos.Metric[int]
+	request     alamos.Duration
+}
+
+// |||||| START UP |||||||
+
+func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (queryExecutor, error) {
+
+	pst := persist.New[fileKey, createOperationSet](fs, 50, sd, opts.logger)
+	q := &queue.Debounce[createOperation]{
+		In:        make(chan []createOperation),
+		Out:       make(chan []createOperation),
+		Shutdown:  sd,
+		Interval:  100 * time.Millisecond,
+		Threshold: 50,
+		Logger:    opts.logger,
+	}
+	q.Start()
+	batchPipe := operation.PipeTransform[fileKey, createOperation, createOperationSet](q.Out, sd, &createBatch{})
+	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, sd)
+
+	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
+	if err != nil {
+		return nil, err
+	}
+	nextFile := &fileCounter{PersistedCounter: *counter}
+
+	alloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
+		MaxDescriptors: 10,
+		MaxSize:        1e9,
+	})
+
+	exp := alamos.Sub(opts.exp, "create")
+	return &createQueryExecutor{
+		allocator: alloc,
+		skv:       segmentKV{kv: kve},
+		ckv:       channelKV{kv: kve},
+		queue:     q.In,
+		lock:      lock.NewMap[ChannelKey](),
+		shutdown:  sd,
+		logger:    opts.logger,
+		metrics: createMetrics{
+			dataSize:    alamos.NewGauge[int](exp, "dataSize"),
+			lockAcquire: alamos.NewGaugeDuration(exp, "lockAcquireTime"),
+			lockRelease: alamos.NewGaugeDuration(exp, "lockReleaseTime"),
+			dataFlush:   alamos.NewGaugeDuration(exp, "dataFlushTime"),
+			kvFlush:     alamos.NewGaugeDuration(exp, "kvFlushTime"),
+			totalFlush:  alamos.NewGaugeDuration(exp, "totalFlushTime"),
+			request:     alamos.NewGaugeDuration(exp, "requestTime"),
+		},
+	}, nil
 }

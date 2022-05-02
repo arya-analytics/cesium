@@ -16,3 +16,25 @@ type Operation[F comparable] interface {
 	// The operation has a lock on the file during this time, and is free to make any modifications.
 	Exec(f kfs.File[F])
 }
+
+type Set[F comparable, O Operation[F]] []O
+
+func (s Set[F, T]) Context() context.Context {
+	return s[0].Context()
+}
+
+func (s Set[F, T]) FileKey() F {
+	return s[0].FileKey()
+}
+
+func (s Set[F, T]) Exec(f kfs.File[F]) {
+	for _, op := range s {
+		op.Exec(f)
+	}
+}
+
+func (s Set[F, T]) SendError(err error) {
+	for _, op := range s {
+		op.SendError(err)
+	}
+}

@@ -2,17 +2,14 @@ package cesium
 
 import (
 	"cesium/alamos"
-	"cesium/internal/allocate"
-	"cesium/internal/batch"
 	"cesium/internal/kv"
 	"cesium/internal/kv/pebblekv"
-	"cesium/internal/lock"
+	"cesium/internal/operation"
 	"cesium/internal/persist"
 	"cesium/internal/queue"
 	"cesium/kfs"
 	"cesium/shut"
 	"context"
-	"fmt"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
 	"go.uber.org/zap"
@@ -27,24 +24,24 @@ type DB interface {
 	// NewCreate opens a new Create query that is used for writing data to the DB. A simple synchronous create query
 	// looks like the following:
 	//
-	//      // open the DB
-	//  	ctx := Context.Background()
+	//      // Open the DB
+	//  	ctx := context.Background()
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
-	//      // create a new channel
+	//      // Create a new channel
 	//      ch, err := cesium.NewCreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).Exec(ctx)
 	//		if err != nil {
 	// 	    	 log.Fatal(err)
 	//		}
 	//
-	//	     // create a new Segment to write. If you don't know what segmentKV are, check out the Segment documentation.
-	//       segments := cesium.Segment{
+	//	    // Create a new Segment to write. If you don't know what segments are, check out the Segment documentation.
+	//      segments := cesium.Segment{
 	//    		ChannelKey: ch.Pk,
 	//          Start: cesium.Now(),
 	//          Data: cesium.MarshalFloat64([]{1.0, 2.0, 3.0})
 	//		}
 	//
-	//		// open the query
+	//		// Open the query
 	//		// db.sync is a helper that turns a typically async write into an acknowledged, sync write.
 	//	    err := db.sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{segments})
 	//		if err != nil {
@@ -64,38 +61,33 @@ type DB interface {
 	//		// Start the create query. See Create.Stream for details on what each return value does.
 	//		req, res, err := db.NewCreate().WhereChannels(ch.Pk).Stream(ctx)
 	//
-	//		// Start listening for errors. An EOF error means the Create query completed successfully (i.e. acknowledged all writes).
-	//		wg := sync.WaitGroup{}
-	//		go func() {
-	// 			defer wg.Done()
-	//			for resV := range res{
-	//				if resV.Err == io.EOF {
-	//					return
-	//				}
-	//				log.Fatal(resV.Err)
+	//		// Write the segment to the Create Request Stream.
+	//      req <- segments
+	//
+	//		// Close the Request Stream.
+	//		close(req)
+	//
+	//		// Wait for the Create query to acknowledge all writes.
+	// 		// The Create query will close the channel when all written segments are durable.
+	// 		for resV := range res {
+	//			if resV.err != nil {
+	//				log.Fatal(resV.err)
 	//			}
 	//		}
 	//
-	//		// Write the segment to the Create Request Stream.
-	//      req <- segments
-	//		// Close the Request Stream.
-	//		close(req)
-	//		// Wait for the Create query to acknowledge all writes.
-	//		wg.Wait()
-	//
 	//		// Do what you want, but remember to close the database when done.
 	//
-	//  Adding and waiting for a sync.WaitGroup is a common pattern for Create queries, but is not required.
-	//  cesium will ensure all writes are acknowledged upon DB.Close.
+	// Although waiting for the response channel to close is a common pattern for Create queries, it is not required.
+	// cesium will ensure all writes are acknowledged upon DB.Close.
 	NewCreate() Create
 
-	// NewRetrieve opens a new Retrieve query that is used for retrieving data from the DB. A simple synchronous retrieve query
-	// looks like the following:
+	// NewRetrieve opens a new Retrieve query that is used for retrieving data from the DB. A simple, synchronous
+	// retrieve query looks like the following:
 	//
-	// 	 	// open the DB create a channel, and write some data to it. See NewCreate for details.
+	// 	 	// Open the DB, create a channel, and write some data to it. See NewCreate for details.
 	//
-	//		// open the Retrieve query, and write the results into resSeg.
-	//		// DB.Sync is a helper that turns a typically async read into sync read.
+	//		// Open the Retrieve query, and write the results into resSeg.
+	//		// DB.Sync is a helper that turns a async read into sync read.
 	//		// If you don't know what a Segment is, check out the Segment documentation.
 	//		var resSeg []Segment
 	//		err := db.sync(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
@@ -103,24 +95,27 @@ type DB interface {
 	//			log.Fatal(err)
 	//		}
 	//
-	// The above example retrieves all data from the channel and binds it into resSeg. It'stream possible to retrieve a subset
-	// of data by time range by using the WhereTimeRange method and the supplied time range.
+	// The above example retrieves all data from the channel and binds it into resSeg. It's possible to retrieve a subset
+	// of data by time range by using the Retrieve.WhereTimeRange method.
 	//
 	// Notes on Segmentation of Data:
-	//		The Retrieve results will be returned as a set of segmentKV (Segment). The Segments are not guaranteed to be
+	//
+	//		Retrieve results returned as segments (Segment). The segments are not guaranteed to be
 	//		in chronological order. This is a performance optimization to allow for more efficient data retrieval.
 	//
-	//	 	The Segments are not guaranteed to be contiguous. Because of the unique Create pattern cesium uses, it'stream possible
-	// 		to leave gaps in between segmentKV (these represent times when that particular sensor was inactive).
+	//	 	Segments are also not guaranteed to be contiguous. Because Create pattern cesium uses, it's possible
+	// 		to leave gaps between segments (these represent times when that particular sensor was inactive).
 	//
-	//      Retrieve also DOES NOT return partial Segments i.e if a query asks for the time range 0 to 10, and Segment A
+	//      Retrieve also DOES NOT return partial Segments ie if a query asks for time range 0 to 10, and Segment A
 	//		contains the data from time 0 to 6, and Segment B contains the data from 6 to 12, ALL Segment A will be returned
-	// 		and ALL Segment B will be returned. Changes are in progress to allow for partial Segment returns.
+	// 		and ALL Segment B will be returned (meaning the time range is 0 to 12).
+	//		Changes are in progress to allow for partial Segment returns.
 	//
-	// If no Segments are found, the Retrieve query will return an ErrNotFound error
+	// Retrieve will return cesium.ErrNotFound if the query returns no data.
 	//
-	// Asynchronous Retrieve queries are the default in cesium to allow for network optimization (i.e. send the data across
-	// the network as you read more data from IO). However, they are a bit more complex to write. See the following example:
+	// Asynchronous Retrieve queries are the default in cesium. This allows for network optimization (i.e. send the data
+	// across the network as you read more data from IO). However, they are a more complex to write.
+	// See the following example:
 	//
 	// 		// Assuming DB is opened and two Segment have been created for a channel with LKey channelKey. See NewCreate for details.
 	//      // Start the retrieve query. See Retrieve.Stream for details on what each return value does.
@@ -129,24 +124,92 @@ type DB interface {
 	//		res, err := db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(channelKey).Stream(ctx)
 	//
 	//      var resSeg []Segment
+	//		// Retrieve will close the channel when done.
 	// 		for _, resV := range res {
-	//			if resV.Err == io.EOF {
-	//				break
-	//			} else if resV.Err != nil {
+	//			if resV.Err != nil {
 	//				log.Fatal(resV.Err)
 	//			}
 	//			resSeg = append(resSeg, resV.Segments...)
 	//		}
 	//
-	//      // Do what you want with the data, just remember to close the database when done.
+	//      // do what you want with the data, just remember to close the database when done.
 	//
 	NewRetrieve() Retrieve
+
+	// NewCreateChannel opens a new CreateChannel query that is used for creating a new channel in the DB.
+	// Creating a channel is simple:
+	//
+	//		// Open the DB
+	//		ctx := context.Background()
+	//		db := cesium.Open("", cesium.MemBacked())
+	//
+	//		// Create a channel
+	//		ch, err := cesium.NewCreateChannel().
+	//				WithType(cesium.Float64).
+	//				WithRate(5 * cesium.Hz).
+	//				Exec(ctx)
+	//		if err != nil {
+	//			log.Fatal(err)
+	//		}
+	//		fmt.Println(ch.Key)
+	//		// output:
+	//		//  1
+	//
+	// See the Channel documentation for details on what a Channel is, and the CreateChannel documentation
+	// for available options for creating a channel.
 	NewCreateChannel() CreateChannel
+
+	// NewRetrieveChannel opens a new RetrieveChannel query that is used for retrieving information about a Channel
+	// from the DB. Retrieving a channel is simple:
+	//
+	// 		// Assuming DB is opened and a channel with Key 1 has been created. See NewCreateChannel for details.
+	//
+	//		// Retrieve the channel.
+	//		ch, err := cesium.NewRetrieveChannel().WhereKey(1).Exec(ctx)
+	//		if err != nil {
+	//			log.Fatal(err)
+	//		}
+	//		fmt.Println(ch.Key)
+	//		// output:
+	//		//  1
+	//
 	NewRetrieveChannel() RetrieveChannel
-	Sync(ctx context.Context, query Query, seg *[]Segment) error
+
+	// Sync is a utility that executes a query synchronously. It is useful for operations that require all data to be
+	// returned	before continuing.
+	//
+	// Sync only supports Create and Retrieve queries, as CreateChannel and RetrieveChannel are already synchronous.
+	// In the case of a Create query, the 'segments' arg represents the data to write to the DB. A Retrieve query
+	// will do the reverse, binding returned data to the 'segments' arg.
+	//
+	// For examples on how to use Sync, see the documentation for NewCreate and NewRetrieve.
+	Sync(ctx context.Context, query Query, segments *[]Segment) error
+
+	// Close closes the DB. Close ensures that all queries are complete and all data is flushed to disk.
+	// Close will block until all queries are finished, so make sure to stop any running queries
+	// before calling.
 	Close() error
 }
 
+// Open opens a new DB whose files are stored in the given directory.
+// DB can be opened with a variety of options:
+//
+//	// Open a DB in memory.
+//  cesium.MemBacked()
+//
+//  // Open a DB with the provided logger.
+//	cesium.WithLogger(zap.NewNop())
+//
+//	// Bind an alamos.Experiment to register DB metrics.
+//	cesium.WithExperiment(alamos.New("myExperiment"))
+//
+// 	// Override the default shutdown threshold.
+//  cesium.WithShutdownThreshold(time.Second)
+//
+//  // Set custom shutdown options.
+//	cesium.WithShutdownOptions()
+//
+// See each options documentation for more.
 func Open(dirname string, opts ...Option) (DB, error) {
 	_opts := newOptions(dirname, opts...)
 	sd := shut.New(_opts.shutdownOpts...)
@@ -183,32 +246,32 @@ type db struct {
 	retrieveChannel queryExecutor
 }
 
+// NewCreate implements DB.
 func (d *db) NewCreate() Create {
 	return newCreate(d.create)
 }
 
+// NewRetrieve implements DB.
 func (d *db) NewRetrieve() Retrieve {
 	return newRetrieve(d.retrieve)
 }
 
+// NewCreateChannel implements DB.
 func (d *db) NewCreateChannel() CreateChannel {
 	return newCreateChannel(d.createChannel)
 }
 
+// NewRetrieveChannel implements DB.
 func (d *db) NewRetrieveChannel() RetrieveChannel {
 	return newRetrieveChannel(d.retrieveChannel)
 }
 
+// Sync implements DB.
 func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
-	switch q := query.Variant().(type) {
-	case Create:
-		return createSync(ctx, q, seg)
-	case Retrieve:
-		return retrieveSync(ctx, q, seg)
-	}
-	panic("only create and retrieve queries can be run synchronously")
+	return sync(ctx, query, seg)
 }
 
+// Close implements DB.
 func (d *db) Close() error {
 	if err := d.shutdown.Sequential(); err != nil {
 		return err
@@ -261,6 +324,8 @@ func mergeDefaultOptions(o *options) {
 		o.logger = zap.NewNop()
 	}
 	o.kfs.opts = append(o.kfs.opts, kfs.WithLogger(o.logger))
+	o.kfs.opts = append(o.kfs.opts, kfs.WithExperiment(o.exp))
+	o.kfs.opts = append(o.kfs.opts, kfs.WithSuffix(".cseg"))
 }
 
 func MemBacked() Option {
@@ -280,7 +345,7 @@ func WithLogger(logger *zap.Logger) Option {
 func WithExperiment(exp alamos.Experiment) Option {
 	return func(o *options) {
 		if exp != nil {
-			o.exp = alamos.Sub(exp, fmt.Sprintf("cesium-%stream", o.dirname))
+			o.exp = alamos.Sub(exp, "cesium")
 		} else {
 			o.exp = exp
 		}
@@ -293,7 +358,7 @@ func WithShutdownThreshold(threshold time.Duration) Option {
 	}
 }
 
-func WithShutdownOpts(opts ...shut.Option) Option {
+func WithShutdownOptions(opts ...shut.Option) Option {
 	return func(o *options) {
 		o.shutdownOpts = append(o.shutdownOpts, opts...)
 	}
@@ -301,47 +366,8 @@ func WithShutdownOpts(opts ...shut.Option) Option {
 
 // |||||| START UP ||||||
 
-func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (queryExecutor, error) {
-	pst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, opts.logger)
-	q := &queue.Debounce[createOperation]{
-		In:        make(chan []createOperation),
-		Out:       make(chan []createOperation),
-		Shutdown:  sd,
-		Interval:  100 * time.Millisecond,
-		Threshold: 50,
-		Logger:    opts.logger,
-	}
-	q.Start()
-	pst.Pipe(batch.Pipe[fileKey, createOperation](
-		q.Out,
-		sd,
-		&batch.Create[fileKey, ChannelKey, createOperation]{}),
-	)
-
-	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
-	if err != nil {
-		return nil, err
-	}
-	nextFile := &fileCounter{PersistedCounter: *counter}
-
-	alloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
-		MaxDescriptors: 10,
-		MaxSize:        1e9,
-	})
-
-	return &createQueryExecutor{
-		allocator: alloc,
-		skv:       segmentKV{kv: kve},
-		ckv:       channelKV{kv: kve},
-		queue:     q.In,
-		lock:      lock.NewMap[ChannelKey](),
-		shutdown:  sd,
-		logger:    opts.logger,
-	}, nil
-}
-
 func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) queryExecutor {
-	pst := persist.New[fileKey, batch.Operation[fileKey]](fs, 50, sd, opts.logger)
+	pst := persist.New[fileKey, retrieveOperationSet](fs, 50, sd, opts.logger)
 	q := &queue.Debounce[retrieveOperation]{
 		In:        make(chan []retrieveOperation),
 		Out:       make(chan []retrieveOperation),
@@ -351,11 +377,12 @@ func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shut
 		Logger:    opts.logger,
 	}
 	q.Start()
-	pst.Pipe(batch.Pipe[fileKey, retrieveOperation](
+	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](
 		q.Out,
 		sd,
-		&batch.Retrieve[fileKey, retrieveOperation]{}),
+		&retrieveBatch{},
 	)
+	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, sd)
 	return &retrieveQueryExecutor{
 		parser:   retrieveParser{skv: segmentKV{kv: kve}, ckv: channelKV{kv: kve}, logger: opts.logger},
 		queue:    q.In,

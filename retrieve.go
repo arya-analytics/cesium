@@ -3,17 +3,20 @@ package cesium
 import (
 	"cesium/internal/errutil"
 	"cesium/internal/kv"
+	"cesium/internal/operation"
 	"cesium/internal/wg"
 	"cesium/shut"
 	"context"
 	"go.uber.org/zap"
 	"go/types"
 	"io"
+	"sort"
 )
 
 type (
-	retrieveStream    = stream[types.Nil, RetrieveResponse]
-	retrieveWaitGroup = wg.Slice[retrieveOperation]
+	retrieveStream       = stream[types.Nil, RetrieveResponse]
+	retrieveWaitGroup    = wg.Slice[retrieveOperation]
+	retrieveOperationSet = operation.Set[fileKey, retrieveOperation]
 )
 
 // ||||||| OPERATION ||||||
@@ -131,4 +134,23 @@ func (rp retrieveQueryExecutor) exec(ctx context.Context, q query) error {
 	})
 	rp.queue <- w.Items
 	return nil
+}
+
+// ||||||| BATCH |||||||
+
+type retrieveBatch struct{}
+
+func (r *retrieveBatch) Exec(ops []retrieveOperation) []retrieveOperationSet {
+	files := make(map[fileKey][]retrieveOperation)
+	for _, op := range ops {
+		files[op.FileKey()] = append(files[op.FileKey()], op)
+	}
+	sets := make([]retrieveOperationSet, 0, len(files))
+	for _, ops := range files {
+		sort.Slice(ops, func(i, j int) bool {
+			return ops[i].Offset() < ops[j].Offset()
+		})
+		sets = append(sets, ops)
+	}
+	return sets
 }

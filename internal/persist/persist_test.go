@@ -61,7 +61,7 @@ var _ = Describe("Persist", func() {
 			Expect(string(buf)).To(Equal("hello"))
 		})
 	})
-	Describe("Pipe", func() {
+	Describe("PipeTransform", func() {
 		It("Should pipe an operation correctly", func() {
 			b := BasicOperation{}
 			ch := make(chan []operation.Operation[int])

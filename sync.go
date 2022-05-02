@@ -31,3 +31,13 @@ func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
 	}
 	return nil
 }
+
+func sync(ctx context.Context, query Query, seg *[]Segment) error {
+	switch q := query.Variant().(type) {
+	case Create:
+		return createSync(ctx, q, seg)
+	case Retrieve:
+		return retrieveSync(ctx, q, seg)
+	}
+	panic("only create and retrieve queries can be run synchronously")
+}

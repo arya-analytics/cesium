@@ -7,7 +7,9 @@ import (
 	"fmt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 	"io"
+	"io/ioutil"
 	"sync"
 )
 
@@ -54,7 +56,7 @@ var progressiveCreate = []createVars{
 	//},
 	{
 		nChannels: 5,
-		dataRate:  10000 * cesium.Hz,
+		dataRate:  100 * cesium.Hz,
 		dataType:  cesium.Float64,
 	},
 	//{
@@ -71,17 +73,25 @@ var progressiveCreate = []createVars{
 
 var _ = Describe("Create", func() {
 	var (
-		db cesium.DB
-		//log *zap.Logger
+		db  cesium.DB
+		log *zap.Logger
+		exp alamos.Experiment
 	)
 	BeforeEach(func() {
 		var err error
-		//log, _ = zap.NewProduction()
-		db, err = cesium.Open("./testdata", cesium.MemBacked())
+		log = zap.NewNop()
+		exp = alamos.New("create_test")
+		db, err = cesium.Open("./testdata",
+			cesium.WithLogger(log),
+			cesium.WithExperiment(exp),
+		)
 		Expect(err).ToNot(HaveOccurred())
 	})
 	AfterEach(func() {
 		Expect(db.Close()).To(Succeed())
+		rpt, err := exp.Report().JSON()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ioutil.WriteFile("create_test.json", rpt, 0644)).To(Succeed())
 	})
 	Describe("Simple", func() {
 		config := &createConfig{vars: progressiveCreate}
@@ -106,7 +116,7 @@ var _ = Describe("Create", func() {
 							Res:               res,
 							SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, ch),
 						}
-						stc.CreateCRequestsOfN(1, 1)
+						stc.CreateCRequestsOfN(100, 1)
 						Expect(stc.CloseAndWait()).To(Succeed())
 						wg.Done()
 					}(ch)
