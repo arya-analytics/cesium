@@ -9,5 +9,5 @@ import (
 
 func TestAlloc(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Alloc Suite")
+	RunSpecs(t, "Allocate Suite")
 }

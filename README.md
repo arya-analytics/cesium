@@ -11,7 +11,7 @@ Cesium extends CockroachDB's [Pebble](https://github.com/cockroachdb/pebble) to 
 
 ## Use Case
 
-Cesium is tailored towards a specific class of time series data:
+Cesium is tailored towards a specific class of time-series data:
 
 1. Regular - samples are taken at specific, known intervals. Cesium will not work well with data that arrives at unpredictable 
 intervals.
@@ -20,6 +20,12 @@ it will be far slower than other storage engines for low sample rates.
 
 
 ## Concepts
+
+### Channels
+
+### Segments
+
+## Production Readiness
 
 ## Installation
 
