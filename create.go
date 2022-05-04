@@ -10,16 +10,15 @@ import (
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
 	"github.com/arya-analytics/cesium/internal/queue"
-	"github.com/arya-analytics/cesium/internal/wg"
 	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
 	"io"
+	"sync"
 	"time"
 )
 
 type (
 	createStream       = stream[CreateRequest, CreateResponse]
-	createWaitGroup    = wg.Slice[createOperation]
 	segmentAllocator   = allocate.Allocator[ChannelKey, fileKey, Segment]
 	createOperationSet = operation.Set[fileKey, createOperation]
 )
@@ -33,9 +32,9 @@ type createOperation struct {
 	segmentKV  segmentKV
 	stream     *createStream
 	ctx        context.Context
-	done       chan struct{}
 	logger     *zap.Logger
 	metrics    createMetrics
+	wg         *sync.WaitGroup
 }
 
 // Context implements persist.Operation.
@@ -79,13 +78,14 @@ func (cr createOperation) Exec(f file) {
 			return err
 		})
 	}
-	cr.done <- struct{}{}
+	cr.wg.Done()
 	d := tft.Stop()
 	last := cr.segments[len(cr.segments)-1]
 	cr.logger.Debug(
 		"completed create operation",
 		zap.Any("file", f.Key()),
 		zap.Time("start", cr.segments[0].Start.Time()),
+		zap.Binary("key", cr.segments[0].KVKey()),
 		zap.Time("end", last.Start.Time()),
 		zap.Duration("duration", d),
 	)
@@ -106,26 +106,35 @@ type createParser struct {
 	metrics   createMetrics
 }
 
-func (cp *createParser) parse(ctx context.Context, req CreateRequest) (cwg createWaitGroup) {
+func (cp *createParser) parse(ctx context.Context, req CreateRequest, wg *sync.WaitGroup) (ops []createOperation, err error) {
 	cp.logger.Debug("parsing create requests", zap.Int("nSegments", len(req.Segments)))
-	cwg.Done = make(chan struct{}, len(req.Segments))
+
 	fileKeys := cp.allocator.Allocate(req.Segments...)
+
+	wg.Add(len(req.Segments))
+
 	for i, seg := range req.Segments {
+		if seg.ChannelKey == 0 {
+			return ops, newSimpleError(ErrInvalidQuery, "segment must be assigned a channel key")
+		}
+		if seg.Start.IsZero() {
+			return ops, newSimpleError(ErrInvalidQuery, "segment must have a start time")
+		}
 		cp.metrics.dataSize.Record(seg.Size())
-		cwg.Items = append(cwg.Items, createOperation{
+		ops = append(ops, createOperation{
 			fileKey:    fileKeys[i],
 			channelKey: seg.ChannelKey,
-			segments:   req.Segments,
+			segments:   []Segment{seg},
 			segmentKV:  cp.skv,
 			stream:     cp.stream,
 			ctx:        ctx,
-			done:       cwg.Done,
 			logger:     cp.logger,
 			metrics:    cp.metrics,
+			wg:         wg,
 		})
 	}
-	cp.logger.Debug("generated create operations", zap.Int("nOperations", len(cwg.Items)))
-	return cwg
+	cp.logger.Debug("generated create operations", zap.Int("nOperations", len(ops)))
+	return ops
 }
 
 // |||||| EXECUTOR ||||||
@@ -163,8 +172,8 @@ func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
 		logger:    cp.logger,
 		metrics:   cp.metrics,
 	}
-	var w createWaitGroup
 	cp.shutdown.Go(func(sig chan shut.Signal) error {
+		wg := sync.WaitGroup{}
 	o:
 		for {
 			select {
@@ -176,13 +185,10 @@ func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
 				if !ok {
 					break o
 				}
-				w = parse.parse(ctx, req)
-				cp.queue <- w.Items
+				cp.queue <- parse.parse(ctx, req, &wg)
 			}
 		}
-		cp.logger.Debug("waiting for create operations to complete", zap.Int("nOperations", len(w.Items)))
-		w.Wait()
-		cp.logger.Debug("create operations completed", zap.Int("nOperations", len(w.Items)))
+		wg.Wait()
 		lrt := cp.metrics.lockRelease.Stopwatch()
 		lrt.Start()
 		cp.lock.Release(keys...)
@@ -273,4 +279,9 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 			request:     alamos.NewGaugeDuration(exp, "requestTime"),
 		},
 	}, nil
+}
+
+type queryPackage[Q Query] struct {
+	Assembler func(qExec queryExecutor) Q
+	Validators
 }

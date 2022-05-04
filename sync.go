@@ -2,6 +2,7 @@ package cesium
 
 import (
 	"context"
+	log "github.com/sirupsen/logrus"
 	"io"
 )
 
@@ -16,6 +17,7 @@ func createSync(ctx context.Context, c Create, segments *[]Segment) error {
 }
 
 func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
+	log.Info(r)
 	res, err := r.Stream(ctx)
 	if err != nil {
 		return err
@@ -32,12 +34,12 @@ func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
 	return nil
 }
 
-func sync(ctx context.Context, query Query, seg *[]Segment) error {
-	switch q := query.Variant().(type) {
+func syncExec(ctx context.Context, query Query, seg *[]Segment) error {
+	switch query.Variant().(type) {
 	case Create:
-		return createSync(ctx, q, seg)
+		return createSync(ctx, query.(Create), seg)
 	case Retrieve:
-		return retrieveSync(ctx, q, seg)
+		return retrieveSync(ctx, query.(Retrieve), seg)
 	}
 	panic("only create and retrieve queries can be run synchronously")
 }

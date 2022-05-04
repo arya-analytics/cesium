@@ -94,11 +94,6 @@ func (sk segmentKV) latest(keys ...ChannelKey) (segments []Segment, err error) {
 	for _, key := range keys {
 		prefix := kv.CompositeKey(segmentKVPrefix, key)
 		iter := sk.kv.IterPrefix(prefix)
-		defer func() {
-			if err := iter.Close(); err != nil {
-				panic(err)
-			}
-		}()
 		if ok := iter.Last(); !ok {
 			return nil, newSimpleError(ErrNotFound, "No segmentKV found")
 		}
@@ -107,6 +102,9 @@ func (sk segmentKV) latest(keys ...ChannelKey) (segments []Segment, err error) {
 			return nil, err
 		}
 		segments = append(segments, *s)
+		if err := iter.Close(); err != nil {
+			panic(err)
+		}
 	}
 	return segments, nil
 }

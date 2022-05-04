@@ -18,6 +18,10 @@ func (ts TimeStamp) Time() time.Time {
 	return time.UnixMicro(int64(ts))
 }
 
+func (ts TimeStamp) IsZero() bool {
+	return ts == 0
+}
+
 func Now() TimeStamp {
 	return NewTimeStamp(time.Now())
 }

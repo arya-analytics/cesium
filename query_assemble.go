@@ -62,8 +62,6 @@ func (q query) set(key queryOptKey, value interface{}) {
 	q.opts[key] = value
 }
 
-type execFunc func(ctx context.Context, q query) error
-
 // |||||| CONSTRUCTORS |||||||
 
 func newQuery(variant interface{}, exec queryExecutor) query {

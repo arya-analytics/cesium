@@ -29,8 +29,8 @@ type DB interface {
 	//		}
 	//
 	//		// Open the query
-	//		// db.sync is a helper that turns a typically async write into an acknowledged, sync write.
-	//	    err := db.sync(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{segments})
+	//		// db.syncExec is a helper that turns a typically async write into an acknowledged, syncExec write.
+	//	    err := db.syncExec(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{segments})
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -74,10 +74,10 @@ type DB interface {
 	// 	 	// Open the DB, create a channel, and write some data to it. See NewCreate for details.
 	//
 	//		// Open the Retrieve query, and write the results into resSeg.
-	//		// DB.Sync is a helper that turns a async read into sync read.
+	//		// DB.Sync is a helper that turns a async read into syncExec read.
 	//		// If you don't know what a Segment is, check out the Segment documentation.
 	//		var resSeg []Segment
-	//		err := db.sync(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
+	//		err := db.syncExec(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -207,7 +207,7 @@ func (d *db) NewRetrieveChannel() RetrieveChannel {
 
 // Sync implements DB.
 func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
-	return sync(ctx, query, seg)
+	return syncExec(ctx, query, seg)
 }
 
 // Close implements DB.
