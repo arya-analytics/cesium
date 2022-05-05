@@ -21,6 +21,7 @@ type (
 	createStream       = stream[CreateRequest, CreateResponse]
 	segmentAllocator   = allocate.Allocator[ChannelKey, fileKey, Segment]
 	createOperationSet = operation.Set[fileKey, createOperation]
+	strategy           = query.Strategy[fileKey, createOperation]
 )
 
 // |||||| OPERATION ||||||

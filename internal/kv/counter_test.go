@@ -22,7 +22,7 @@ var _ = Describe("Counter", Ordered, func() {
 		Expect(kve.Close()).To(Succeed())
 	})
 	Describe("PersistedCounter", func() {
-		Context("New Counter", Ordered, func() {
+		Context("Open Counter", Ordered, func() {
 			var c *kv.PersistedCounter
 			BeforeAll(func() {
 				var err error
