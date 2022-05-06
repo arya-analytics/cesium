@@ -35,7 +35,7 @@ func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
 }
 
 func syncExec(ctx context.Context, query Query, seg *[]Segment) error {
-	switch query.Variant().(type) {
+	switch query.(type) {
 	case Create:
 		return createSync(ctx, query.(Create), seg)
 	case Retrieve:

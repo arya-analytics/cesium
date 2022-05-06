@@ -3,7 +3,16 @@ package cesium
 import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/query"
 	"github.com/arya-analytics/cesium/shut"
+)
+
+var (
+	ErrNotFound = query.ErrNotFound
+)
+
+type (
+	Query = query.Query
 )
 
 type DB interface {
@@ -16,7 +25,7 @@ type DB interface {
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
 	//      // Create a new channel
-	//      ch, err := cesium.NewCreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).Exec(ctx)
+	//      ch, err := cesium.NewCreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).QExec(ctx)
 	//		if err != nil {
 	// 	    	 log.Fatal(err)
 	//		}
@@ -133,7 +142,7 @@ type DB interface {
 	//		ch, err := cesium.NewCreateChannel().
 	//				WithType(cesium.Float64).
 	//				WithRate(5 * cesium.Hz).
-	//				Exec(ctx)
+	//				QExec(ctx)
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -151,7 +160,7 @@ type DB interface {
 	// 		// Assuming DB is opened and a channel with Key 1 has been created. See NewCreateChannel for details.
 	//
 	//		// Retrieve the channel.
-	//		ch, err := cesium.NewRetrieveChannel().WhereKey(1).Exec(ctx)
+	//		ch, err := cesium.NewRetrieveChannel().WhereKey(1).QExec(ctx)
 	//		if err != nil {
 	//			log.Fatal(err)
 	//		}
@@ -179,30 +188,30 @@ type DB interface {
 type db struct {
 	kv              kv.KV
 	shutdown        *shut.Group
-	create          queryExecutor
-	retrieve        queryExecutor
-	createChannel   queryExecutor
-	retrieveChannel queryExecutor
+	create          query.Factory[Create]
+	retrieve        query.Factory[Retrieve]
+	createChannel   query.Factory[CreateChannel]
+	retrieveChannel query.Factory[RetrieveChannel]
 }
 
 // NewCreate implements DB.
 func (d *db) NewCreate() Create {
-	return newCreate(d.create)
+	return d.create.New()
 }
 
 // NewRetrieve implements DB.
 func (d *db) NewRetrieve() Retrieve {
-	return newRetrieve(d.retrieve)
+	return d.retrieve.New()
 }
 
 // NewCreateChannel implements DB.
 func (d *db) NewCreateChannel() CreateChannel {
-	return newCreateChannel(d.createChannel)
+	return d.createChannel.New()
 }
 
 // NewRetrieveChannel implements DB.
 func (d *db) NewRetrieveChannel() RetrieveChannel {
-	return newRetrieveChannel(d.retrieveChannel)
+	return d.retrieveChannel.New()
 }
 
 // Sync implements DB.

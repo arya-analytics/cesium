@@ -15,8 +15,8 @@ import (
 // Catch provides an interface for catching errors returned by a set of operations.
 //
 // c := errutil.NewCatchSimple()
-// c.Exec(myFunc1)  // Returns an error
-// c.Exec(myFunc2)
+// c.QExec(myFunc1)  // Returns an error
+// c.QExec(myFunc2)
 // fmt.Println(c.Error())
 // Output:
 // 		error returned by func1
@@ -140,8 +140,8 @@ type CatchOpt func(o *catchOpts)
 // For Example:
 //
 // 		c := errutil.NewCatchSimple(errutil.WithAggregation())
-// 		c.Exec(myFunc1)  // Returns an error
-// 		c.Exec(myFunc2)
+// 		c.QExec(myFunc1)  // Returns an error
+// 		c.QExec(myFunc2)
 // 		fmt.Println(c.errors())
 //
 // 	Output:

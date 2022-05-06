@@ -3,6 +3,7 @@ package cesium
 import (
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/kv/pebblekv"
+	"github.com/arya-analytics/cesium/internal/query"
 	"github.com/arya-analytics/cesium/kfs"
 	"github.com/arya-analytics/cesium/shut"
 	"github.com/cockroachdb/pebble"
@@ -40,7 +41,10 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	retrieve := startRetrievePipeline(fs, kve, _opts, sd)
+	retrieve, err := startRetrievePipeline(fs, kve, _opts, sd)
+	if err != nil {
+		return nil, err
+	}
 	createChannel, retrieveChannel, err := startChannelPipeline(kve)
 	if err != nil {
 		return nil, err
@@ -72,9 +76,10 @@ func startKV(opts *options) (kv.KV, error) {
 	return pebblekv.Wrap(pebbleDB), err
 }
 
-func startChannelPipeline(kve kv.KV) (queryExecutor, queryExecutor, error) {
+func startChannelPipeline(kve kv.KV) (query.Factory[CreateChannel], query.Factory[RetrieveChannel], error) {
 	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextChannel"))
 	ckv := channelKV{kv: kve}
-	return &createChannelQueryExecutor{ckv: ckv, counter: counter},
-		&retrieveChannelQueryExecutor{ckv: ckv}, err
+	cf := &createChannelFactory{exec: &createChannelQueryExecutor{ckv: ckv, counter: counter}}
+	rf := &retrieveChannelFactory{exec: &retrieveChannelQueryExecutor{ckv: ckv}}
+	return cf, rf, err
 }

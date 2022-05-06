@@ -2,33 +2,106 @@ package cesium
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/internal/errutil"
+	"github.com/arya-analytics/cesium/alamos"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
+	"github.com/arya-analytics/cesium/internal/query"
 	"github.com/arya-analytics/cesium/internal/queue"
-	"github.com/arya-analytics/cesium/internal/wg"
 	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
 	"go/types"
 	"io"
 	"sort"
+	"sync"
 	"time"
 )
 
 type (
-	retrieveStream       = stream[types.Nil, RetrieveResponse]
-	retrieveWaitGroup    = wg.Slice[retrieveOperation]
+	retrieveStream       = query.Stream[types.Nil, RetrieveResponse]
 	retrieveOperationSet = operation.Set[fileKey, retrieveOperation]
+	retrieveStrategy     = query.Strategy[fileKey, retrieveOperation, retrieveRequest]
+	retrieveContext      = query.Context[fileKey, retrieveOperation, retrieveRequest]
 )
+
+// |||||| STREAM ||||||
+
+type RetrieveResponse struct {
+	Err      error
+	Segments []Segment
+}
+
+func (r RetrieveResponse) Error() error {
+	return r.Err
+}
+
+type retrieveRequest struct {
+	position TimeStamp
+	span     TimeSpan
+}
+
+// |||||| QUERY ||||||
+
+type Retrieve struct {
+	query.Query
+}
+
+// WhereChannels sets the channels to retrieve data for.
+// If no keys are provided, will return an ErrInvalidQuery error.
+func (r Retrieve) WhereChannels(keys ...ChannelKey) Retrieve {
+	setChannelKeys(r, keys...)
+	return r
+}
+
+// WhereTimeRange sets the time range to retrieve data from.
+func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve {
+	setTimeRange(r, tr)
+	return r
+}
+
+func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
+	query.SetContext(r, ctx)
+	s := retrieveStream{Responses: make(chan RetrieveResponse)}
+	query.SetStream(r, s)
+	return s.Responses, r.QExec()
+}
+
+// |||||| OPTIONS ||||||
+
+// |||| TIME RANGE ||||
+
+const timeRangeOptKey query.OptionKey = "tr"
+
+func setTimeRange(q query.Query, tr TimeRange) {
+	q.Set(timeRangeOptKey, tr)
+}
+
+func timeRange(q query.Query) TimeRange {
+	tr, ok := q.Get(timeRangeOptKey)
+	if !ok {
+		return TimeRangeMax
+	}
+	return tr.(TimeRange)
+}
+
+// |||||| QUERY FACTORY ||||||
+
+type retrieveFactory struct {
+	exec query.Executor
+}
+
+func (r retrieveFactory) New() Retrieve {
+	return Retrieve{Query: query.New(r.exec)}
+}
 
 // ||||||| OPERATION ||||||
 
 type retrieveOperation struct {
-	seg    Segment
-	stream *retrieveStream
-	done   chan struct{}
-	ctx    context.Context
+	seg      Segment
+	stream   retrieveStream
+	wg       *sync.WaitGroup
+	ctx      context.Context
+	dataRead alamos.Duration
 }
 
 // Context implements persist.Operation.
@@ -43,21 +116,24 @@ func (ro retrieveOperation) FileKey() fileKey {
 
 // SendError implements persist.Operation.
 func (ro retrieveOperation) SendError(err error) {
-	ro.stream.res <- RetrieveResponse{Err: err}
+	ro.stream.Responses <- RetrieveResponse{Err: err}
 }
 
 // Exec implements persist.Operation.
 func (ro retrieveOperation) Exec(f file) {
-	c := errutil.NewCatchReadWriteSeek(f)
-	c.Seek(ro.seg.offset, io.SeekStart)
+	defer ro.wg.Done()
+	s := ro.dataRead.Stopwatch()
+	s.Start()
 	b := make([]byte, ro.seg.size)
-	c.Read(b)
-	ro.seg.Data = b
-	if c.Error() == io.EOF {
-		panic("get encountered unexpected EOF. this is a bug.")
+	if _, err := f.ReadAt(b, ro.seg.offset); err != nil {
+		if err == io.EOF {
+			panic("retrieve operation: encountered unexpected EOF. this is a bug.")
+		}
+		ro.SendError(err)
 	}
-	ro.stream.res <- RetrieveResponse{Segments: []Segment{ro.seg}, Err: c.Error()}
-	ro.done <- struct{}{}
+	ro.seg.Data = b
+	s.Stop()
+	ro.stream.Responses <- RetrieveResponse{Segments: []Segment{ro.seg}}
 }
 
 // Offset implements batch.RetrieveOperation.
@@ -68,75 +144,86 @@ func (ro retrieveOperation) Offset() int64 {
 // |||||| PARSER ||||||
 
 type retrieveParser struct {
-	ckv    channelKV
-	skv    segmentKV
-	logger *zap.Logger
+	ckv     channelKV
+	skv     segmentKV
+	logger  *zap.Logger
+	metrics retrieveMetrics
 }
 
-func (rp retrieveParser) parse(ctx context.Context, q query) (w retrieveWaitGroup, err error) {
-	keys, err := channelKeys(q, true)
-	if err != nil {
-		rp.logger.Error("failed to parse query", zap.Error(err))
-		return w, err
-	}
-	// Check if the channels exist.
-	if _, err := rp.ckv.getMultiple(keys...); err != nil {
-		rp.logger.Error("failed to get channels", zap.Error(err))
-		return w, err
-	}
+func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retrieveOperation, err error) {
+	keys := channelKeys(q)
 	tr := timeRange(q)
-	from, to := generateRangeKeys(keys[0], tr)
+
+	last := false
+	if req.position.Add(req.span).After(tr.End) {
+		last = true
+	}
+
+	stream := query.GetStream[types.Nil, RetrieveResponse](q)
+
 	rp.logger.Debug("retrieving segments",
 		zap.Int("count", len(keys)),
 		zap.Time("from", tr.Start.Time()),
 		zap.Time("to", tr.End.Time()),
-		zap.Binary("from-key", from),
-		zap.Binary("to-key", to),
 		zap.Binary("prefix", kv.CompositeKey(segmentKVPrefix, keys[0])),
 	)
-	var segments []Segment
+
 	for _, key := range keys {
-		nSegments, err := rp.skv.filter(tr, key)
+		kvs := rp.metrics.kvRetrieve.Stopwatch()
+		kvs.Start()
+		segments, err := rp.skv.filter(req.position.SpanRange(req.span), key)
+		kvs.Stop()
 		if err != nil {
-			return w, err
+			return ops, err
 		}
-		if len(nSegments) == 0 {
-			return w, newSimpleError(ErrNotFound, "no data found to satisfy query")
+		rp.metrics.segCount.Record(len(segments))
+		for _, seg := range segments {
+			rp.metrics.segSize.Record(seg.Size())
+			ops = append(ops,
+				retrieveOperation{
+					seg:      seg,
+					stream:   stream,
+					wg:       query.WaitGroup(q),
+					dataRead: rp.metrics.dataRead,
+					ctx:      q.Context(),
+				},
+			)
 		}
-		segments = append(segments, nSegments...)
 	}
-	w.Done = make(chan struct{}, len(segments))
-	s := getStream[types.Nil, RetrieveResponse](q)
-	for _, seg := range segments {
-		w.Items = append(w.Items, retrieveOperation{seg: seg, stream: s, done: w.Done, ctx: ctx})
+	if last {
+		return ops, io.EOF
 	}
-	return w, nil
+	return ops, nil
 }
 
 // |||||| EXECUTOR ||||||
 
-type retrieveQueryExecutor struct {
-	parser   retrieveParser
+type retrieveIteratorProxy struct {
 	queue    chan<- []retrieveOperation
 	shutdown shut.Shutdown
 	logger   *zap.Logger
 }
 
-// exec implements queryExecutor.
-func (rp retrieveQueryExecutor) exec(ctx context.Context, q query) error {
-	w, err := rp.parser.parse(ctx, q)
-	if err != nil {
-		return err
+func (rp *retrieveIteratorProxy) Open(ctx retrieveContext) (query.Iterator[retrieveRequest], error) {
+	return &retrieveIterator{ctx, rp}, nil
+}
+
+type retrieveIterator struct {
+	retrieveContext
+	*retrieveIteratorProxy
+}
+
+func (r *retrieveIterator) Next(request retrieveRequest) (last bool) {
+	stream := query.GetStream[types.Nil, RetrieveResponse](r.Query)
+	ops, err := r.Parser.Parse(r.Query, request)
+	if err == io.EOF {
+		last = true
+	} else if err != nil {
+		stream.Responses <- RetrieveResponse{Err: err}
 	}
-	s := getStream[types.Nil, RetrieveResponse](q)
-	rp.shutdown.Go(func(_ chan shut.Signal) error {
-		// We don't care about the signal. The query will finish when it finishes.
-		w.Wait()
-		close(s.res)
-		return nil
-	})
-	rp.queue <- w.Items
-	return nil
+	r.WaitGroup.Add(len(ops))
+	r.queue <- ops
+	return last
 }
 
 // ||||||| BATCH |||||||
@@ -158,7 +245,39 @@ func (r *retrieveBatch) Exec(ops []retrieveOperation) []retrieveOperationSet {
 	return sets
 }
 
-func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) queryExecutor {
+// |||||| METRICS ||||||
+
+type retrieveMetrics struct {
+	kvRetrieve alamos.Duration
+	dataRead   alamos.Duration
+	segSize    alamos.Metric[int]
+	segCount   alamos.Metric[int]
+}
+
+func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (query.Factory[Retrieve], error) {
+	exp := alamos.Sub(opts.exp, "retrieve")
+	metrics := retrieveMetrics{
+		kvRetrieve: alamos.NewGaugeDuration(exp, "kvRetrieve"),
+		dataRead:   alamos.NewGaugeDuration(exp, "dataRead"),
+		segSize:    alamos.NewGauge[int](exp, "segSize"),
+		segCount:   alamos.NewGauge[int](exp, "segCount"),
+	}
+
+	ckv := channelKV{kv: kve}
+
+	strategy := new(retrieveStrategy)
+	strategy.Shutdown = sd
+	strategy.Parser = &retrieveParser{
+		ckv:     ckv,
+		skv:     segmentKV{kv: kve},
+		logger:  opts.logger,
+		metrics: metrics,
+	}
+	strategy.Hooks.PreAssembly = append(
+		strategy.Hooks.PreAssembly,
+		validateChannelKeysHook{ckv: ckv},
+	)
+
 	pst := persist.New[fileKey, retrieveOperationSet](fs, 50, sd, opts.logger)
 	q := &queue.Debounce[retrieveOperation]{
 		In:        make(chan []retrieveOperation),
@@ -169,16 +288,15 @@ func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shut
 		Logger:    opts.logger,
 	}
 	q.Start()
-	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](
-		q.Out,
-		sd,
-		&retrieveBatch{},
-	)
+
+	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](q.Out, sd, new(retrieveBatch))
 	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, sd)
-	return &retrieveQueryExecutor{
-		parser:   retrieveParser{skv: segmentKV{kv: kve}, ckv: channelKV{kv: kve}, logger: opts.logger},
+
+	strategy.IterProxy = &retrieveIteratorProxy{
 		queue:    q.In,
 		shutdown: sd,
 		logger:   opts.logger,
 	}
+
+	return retrieveFactory{exec: strategy}, nil
 }

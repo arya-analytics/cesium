@@ -95,7 +95,7 @@ func (sk segmentKV) latest(keys ...ChannelKey) (segments []Segment, err error) {
 		prefix := kv.CompositeKey(segmentKVPrefix, key)
 		iter := sk.kv.IterPrefix(prefix)
 		if ok := iter.Last(); !ok {
-			return nil, newSimpleError(ErrNotFound, "No segmentKV found")
+			return nil, ErrNotFound
 		}
 		s := &Segment{}
 		if err := kv.LoadBytes(iter.Value(), s); err != nil {

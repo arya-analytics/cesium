@@ -2,8 +2,10 @@ package cesium
 
 import (
 	"context"
+	"fmt"
 	"github.com/arya-analytics/cesium/internal/binary"
 	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/query"
 	"io"
 )
 
@@ -97,25 +99,59 @@ func (ckv channelKV) getEach(keys ...ChannelKey) (cs []Channel, err error) {
 
 // |||||| CREATE ||||||
 
+// |||| QUERY ||||
+
+// CreateChannel creates a new channel in the DB. See DB.NewCreate for more information.
+type CreateChannel struct {
+	query.Query
+}
+
+// Exec creates a new channel in the DB given the query.Query parameters.
+func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
+	query.SetContext(cc.Query, ctx)
+	if err := cc.Query.QExec(); err != nil {
+		return Channel{}, err
+	}
+	c, _ := queryRecord[Channel](cc.Query)
+	return c, nil
+}
+
+// ExecN creates a set of N channels in the DB with identical parameters, as specified in the query.Query.
+func (cc CreateChannel) ExecN(ctx context.Context, n int) (channels []Channel, err error) {
+	query.SetContext(cc.Query, ctx)
+	for i := 0; i < n; i++ {
+		if err = cc.Query.QExec(); err != nil {
+			return channels, err
+		}
+		cs, _ := queryRecord[Channel](cc.Query)
+		channels = append(channels, cs)
+	}
+	return channels, nil
+}
+
+// |||| FACTORY ||||
+
+type createChannelFactory struct {
+	exec query.Executor
+}
+
+func (c createChannelFactory) New() CreateChannel {
+	return CreateChannel{Query: query.New(c.exec)}
+}
+
+// |||| EXECUTOR ||||
+
 type createChannelQueryExecutor struct {
 	ckv     channelKV
 	counter *kv.PersistedCounter
 }
 
-func (cr *createChannelQueryExecutor) exec(_ context.Context, q query) (err error) {
-	dr, ok := dataRate(q)
-	if !ok {
-		return newSimpleError(ErrInvalidQuery, "no data rate provided to create query")
-	}
-	ds, ok := density(q)
-	if !ok {
-		return newSimpleError(ErrInvalidQuery, "no density provided to create query")
-	}
+func (cr *createChannelQueryExecutor) Exec(q query.Query) (err error) {
 	npk, err := cr.counter.Increment()
 	if err != nil {
 		return err
 	}
-	c := Channel{Key: ChannelKey(npk), DataRate: dr, DataType: ds}
+	c := Channel{Key: ChannelKey(npk), DataRate: dataRate(q), DataType: density(q)}
 	err = cr.ckv.set(c)
 	setQueryRecord[Channel](q, c)
 	return err
@@ -123,20 +159,125 @@ func (cr *createChannelQueryExecutor) exec(_ context.Context, q query) (err erro
 
 // |||||| RETRIEVE ||||||
 
+// |||| QUERY ||||
+
+// RetrieveChannel retrieves a channel from the DB. See DB.NewRetrieve for more information.
+type RetrieveChannel struct {
+	query.Query
+}
+
+// WhereKey returns a query.Query that will only return Channel that match the given primary LKey.
+func (r RetrieveChannel) WhereKey(key ChannelKey) RetrieveChannel {
+	setChannelKeys(r.Query, key)
+	return r
+}
+
+// Exec retrieves a channel from the DB given the query.Query parameters.
+func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
+	query.SetContext(r.Query, ctx)
+	if err := r.Query.QExec(); err != nil {
+		return Channel{}, err
+	}
+	c, _ := queryRecord[Channel](r.Query)
+	return c, nil
+}
+
+// |||| FACTORY ||||
+
+type retrieveChannelFactory struct {
+	exec query.Executor
+}
+
+func (r retrieveChannelFactory) New() RetrieveChannel {
+	return RetrieveChannel{Query: query.New(r.exec)}
+}
+
+// |||||| HOOKS ||||||
+
+type validateChannelKeysHook struct {
+	ckv channelKV
+}
+
+func (vch validateChannelKeysHook) Exec(query query.Query) error {
+	_, err := vch.ckv.getMultiple(channelKeys(query)...)
+	return err
+}
+
+// |||| EXECUTOR ||||
+
 type retrieveChannelQueryExecutor struct {
 	ckv channelKV
 }
 
-func (rc *retrieveChannelQueryExecutor) exec(_ context.Context, q query) error {
-	_, ok := q.variant.(RetrieveChannel)
-	if !ok {
-		return nil
-	}
-	cpk, err := getChannelKey(q)
-	if err != nil {
-		return err
-	}
+func (rc *retrieveChannelQueryExecutor) Exec(q query.Query) error {
+	cpk := getChannelKey(q)
 	c, err := rc.ckv.get(cpk)
 	setQueryRecord[Channel](q, c)
 	return err
+}
+
+// |||||| OPTIONS ||||||
+
+// |||| DATA RATE ||||
+
+const dataRateOptKey query.OptionKey = "dr"
+
+func setDataRate(q query.Query, dr DataRate) {
+	q.Set(dataRateOptKey, dr)
+}
+
+func dataRate(q query.Query) DataRate {
+	return q.GetRequired(dataRateOptKey).(DataRate)
+}
+
+func (cc CreateChannel) WithRate(dr DataRate) CreateChannel {
+	setDataRate(cc.Query, dr)
+	return cc
+}
+
+// |||| DENSITY ||||
+
+const densityOptKey query.OptionKey = "den"
+
+func setDensity(q query.Query, d DataType) {
+	q.Set(densityOptKey, d)
+}
+
+func density(q query.Query) DataType {
+	return q.GetRequired(densityOptKey).(DataType)
+}
+
+func (cc CreateChannel) WithType(dt DataType) CreateChannel {
+	setDensity(cc.Query, dt)
+	return cc
+}
+
+const recordOptKey query.OptionKey = "rec"
+
+func setQueryRecord[T any](q query.Query, r T) {
+	q.Set(recordOptKey, r)
+}
+
+func queryRecord[T any](q query.Query) (T, bool) {
+	return q.Get(recordOptKey)
+}
+
+// |||| KEYS ||||
+
+const channelKeysOptKey query.OptionKey = "cks"
+
+func setChannelKeys(q query.Query, keys ...ChannelKey) {
+	q.Set(channelKeysOptKey, keys)
+}
+
+func channelKeys(q query.Query) []ChannelKey {
+	return q.GetRequired(channelKeysOptKey).([]ChannelKey)
+}
+
+func getChannelKey(q query.Query) ChannelKey {
+	pks := channelKeys(q)
+	if len(pks) > 1 {
+		panic(fmt.Sprintf("query %s only supports on channel key", q))
+	}
+	return pks[0]
 }

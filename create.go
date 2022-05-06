@@ -9,6 +9,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/lock"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
+	"github.com/arya-analytics/cesium/internal/query"
 	"github.com/arya-analytics/cesium/internal/queue"
 	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
@@ -18,11 +19,61 @@ import (
 )
 
 type (
-	createStream       = stream[CreateRequest, CreateResponse]
+	createStream       = query.Stream[CreateRequest, CreateResponse]
 	segmentAllocator   = allocate.Allocator[ChannelKey, fileKey, Segment]
 	createOperationSet = operation.Set[fileKey, createOperation]
-	strategy           = query.Strategy[fileKey, createOperation]
+	createStrategy     = query.Strategy[fileKey, createOperation, CreateRequest]
+	createContext      = query.Context[fileKey, createOperation, CreateRequest]
 )
+
+// |||||| STREAM ||||||
+
+// CreateRequest is a request containing a set of segmentKV to write to the DB.
+type CreateRequest struct {
+	Segments []Segment
+}
+
+// CreateResponse contains any errors that occurred during the execution of the Create query.Query.
+type CreateResponse struct {
+	Err error
+}
+
+// Error implements the Response interface.
+func (r CreateResponse) Error() error {
+	return r.Err
+}
+
+// |||||| QUERY ||||||
+
+type Create struct {
+	query.Query
+}
+
+// WhereChannels sets the channels to acquire a lock on for creation.
+// The request stream will only accept segmentKV bound to channel with the given primary keys.
+// If no keys are provided, will return an ErrInvalidQuery error.
+func (c Create) WhereChannels(keys ...ChannelKey) Create {
+	setChannelKeys(c, keys...)
+	return c
+}
+
+// Stream opens a stream
+func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
+	query.SetContext(c, ctx)
+	s := createStream{Requests: make(chan CreateRequest), Responses: make(chan CreateResponse)}
+	query.SetStream[CreateRequest, CreateResponse](c, s)
+	return s.Requests, s.Responses, c.Query.QExec()
+}
+
+// |||||| QUERY FACTORY ||||||
+
+type createFactory struct {
+	exec query.Executor
+}
+
+func (c createFactory) New() Create {
+	return Create{Query: query.New(c.exec)}
+}
 
 // |||||| OPERATION ||||||
 
@@ -50,7 +101,7 @@ func (cr createOperation) FileKey() fileKey {
 
 // SendError implements persist.Operation.
 func (cr createOperation) SendError(err error) {
-	cr.stream.res <- CreateResponse{Err: err}
+	cr.stream.Responses <- CreateResponse{Err: err}
 }
 
 // Exec implements persist.Operation.
@@ -107,40 +158,55 @@ type createParser struct {
 	metrics   createMetrics
 }
 
-func (cp *createParser) parse(ctx context.Context, req CreateRequest, wg *sync.WaitGroup) (ops []createOperation, err error) {
-	cp.logger.Debug("parsing create requests", zap.Int("nSegments", len(req.Segments)))
-
+func (cp *createParser) Parse(q query.Query, req CreateRequest) (ops []createOperation, err error) {
 	fileKeys := cp.allocator.Allocate(req.Segments...)
-
-	wg.Add(len(req.Segments))
-
 	for i, seg := range req.Segments {
-		if seg.ChannelKey == 0 {
-			return ops, newSimpleError(ErrInvalidQuery, "segment must be assigned a channel key")
-		}
-		if seg.Start.IsZero() {
-			return ops, newSimpleError(ErrInvalidQuery, "segment must have a start time")
-		}
-		cp.metrics.dataSize.Record(seg.Size())
+		cp.metrics.segSize.Record(seg.Size())
 		ops = append(ops, createOperation{
 			fileKey:    fileKeys[i],
 			channelKey: seg.ChannelKey,
 			segments:   []Segment{seg},
 			segmentKV:  cp.skv,
 			stream:     cp.stream,
-			ctx:        ctx,
+			ctx:        q.Context(),
 			logger:     cp.logger,
 			metrics:    cp.metrics,
-			wg:         wg,
+			wg:         query.WaitGroup(q),
 		})
 	}
-	cp.logger.Debug("generated create operations", zap.Int("nOperations", len(ops)))
-	return ops
+	return ops, nil
 }
 
-// |||||| EXECUTOR ||||||
+// |||||| HOOKS ||||||
 
-type createQueryExecutor struct {
+type lockAcquireHook struct {
+	lock   lock.Map[ChannelKey]
+	metric alamos.Duration
+}
+
+func (l lockAcquireHook) Exec(query query.Query) error {
+	s := l.metric.Stopwatch()
+	s.Start()
+	defer s.Stop()
+	return l.lock.Acquire(channelKeys(query)...)
+}
+
+type lockReleaseHook struct {
+	lock   lock.Map[ChannelKey]
+	metric alamos.Duration
+}
+
+func (l lockReleaseHook) Exec(query query.Query) error {
+	s := l.metric.Stopwatch()
+	s.Start()
+	defer s.Stop()
+	l.lock.Release(channelKeys(query)...)
+	return nil
+}
+
+// |||||| ITERATOR ||||||
+
+type createIteratorProxy struct {
 	allocator segmentAllocator
 	skv       segmentKV
 	ckv       channelKV
@@ -151,54 +217,24 @@ type createQueryExecutor struct {
 	metrics   createMetrics
 }
 
-// exec implements queryExecutor.
-func (cp *createQueryExecutor) exec(ctx context.Context, q query) error {
-	rt := cp.metrics.request.Stopwatch()
-	rt.Start()
-	keys, err := channelKeys(q, true)
+func (cf *createIteratorProxy) Open(ctx createContext) (query.Iterator[CreateRequest], error) {
+	return &createIterator{ctx, cf}, nil
+}
+
+type createIterator struct {
+	createContext
+	*createIteratorProxy
+}
+
+func (cp *createIterator) Next(request CreateRequest) bool {
+	stream := query.GetStream[CreateRequest, CreateResponse](cp.Query)
+	ops, err := cp.Parser.Parse(cp.Query, request)
 	if err != nil {
-		return err
+		stream.Responses <- CreateResponse{Err: err}
 	}
-	lat := cp.metrics.lockAcquire.Stopwatch()
-	lat.Start()
-	if err := cp.lock.Acquire(keys...); err != nil {
-		return err
-	}
-	lat.Stop()
-	s := getStream[CreateRequest, CreateResponse](q)
-	parse := &createParser{
-		skv:       cp.skv,
-		allocator: cp.allocator,
-		stream:    s,
-		logger:    cp.logger,
-		metrics:   cp.metrics,
-	}
-	cp.shutdown.Go(func(sig chan shut.Signal) error {
-		wg := sync.WaitGroup{}
-	o:
-		for {
-			select {
-			case <-sig:
-				break o
-			case <-ctx.Done():
-				return nil
-			case req, ok := <-s.req:
-				if !ok {
-					break o
-				}
-				cp.queue <- parse.parse(ctx, req, &wg)
-			}
-		}
-		wg.Wait()
-		lrt := cp.metrics.lockRelease.Stopwatch()
-		lrt.Start()
-		cp.lock.Release(keys...)
-		lrt.Stop()
-		rt.Stop()
-		close(s.res)
-		return nil
-	})
-	return nil
+	cp.WaitGroup.Add(len(ops))
+	cp.queue <- ops
+	return true
 }
 
 // |||||| BATCH ||||||
@@ -229,13 +265,39 @@ type createMetrics struct {
 	totalFlush  alamos.Duration
 	lockAcquire alamos.Duration
 	lockRelease alamos.Duration
-	dataSize    alamos.Metric[int]
+	segSize     alamos.Metric[int]
 	request     alamos.Duration
 }
 
 // |||||| START UP |||||||
 
-func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (queryExecutor, error) {
+func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (query.Factory[Create], error) {
+	exp := alamos.Sub(opts.exp, "create")
+	metrics := createMetrics{
+		segSize:     alamos.NewGauge[int](exp, "segSize"),
+		lockAcquire: alamos.NewGaugeDuration(exp, "lockAcquireTime"),
+		lockRelease: alamos.NewGaugeDuration(exp, "lockReleaseTime"),
+		dataFlush:   alamos.NewGaugeDuration(exp, "dataFlushTime"),
+		kvFlush:     alamos.NewGaugeDuration(exp, "kvFlushTime"),
+		totalFlush:  alamos.NewGaugeDuration(exp, "totalFlushTime"),
+		request:     alamos.NewGaugeDuration(exp, "requestTime"),
+	}
+
+	ckv := channelKV{kv: kve}
+
+	strategy := new(createStrategy)
+	strategy.Shutdown = sd
+	strategy.Parser = &createParser{}
+	channelLock := lock.NewMap[ChannelKey]()
+	strategy.Hooks.PreAssembly = append(
+		strategy.Hooks.PreAssembly,
+		validateChannelKeysHook{ckv: ckv},
+		lockAcquireHook{lock: channelLock, metric: metrics.lockAcquire},
+	)
+	strategy.Hooks.PostExecution = append(
+		strategy.Hooks.PostExecution,
+		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
+	)
 
 	pst := persist.New[fileKey, createOperationSet](fs, 50, sd, opts.logger)
 	q := &queue.Debounce[createOperation]{
@@ -247,6 +309,7 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 		Logger:    opts.logger,
 	}
 	q.Start()
+
 	batchPipe := operation.PipeTransform[fileKey, createOperation, createOperationSet](q.Out, sd, &createBatch{})
 	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, sd)
 
@@ -254,6 +317,7 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 	if err != nil {
 		return nil, err
 	}
+
 	nextFile := &fileCounter{PersistedCounter: *counter}
 
 	alloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
@@ -261,28 +325,15 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 		MaxSize:        1e9,
 	})
 
-	exp := alamos.Sub(opts.exp, "create")
-	return &createQueryExecutor{
+	strategy.IterProxy = &createIteratorProxy{
 		allocator: alloc,
 		skv:       segmentKV{kv: kve},
-		ckv:       channelKV{kv: kve},
+		ckv:       ckv,
 		queue:     q.In,
-		lock:      lock.NewMap[ChannelKey](),
+		lock:      channelLock,
 		shutdown:  sd,
 		logger:    opts.logger,
-		metrics: createMetrics{
-			dataSize:    alamos.NewGauge[int](exp, "dataSize"),
-			lockAcquire: alamos.NewGaugeDuration(exp, "lockAcquireTime"),
-			lockRelease: alamos.NewGaugeDuration(exp, "lockReleaseTime"),
-			dataFlush:   alamos.NewGaugeDuration(exp, "dataFlushTime"),
-			kvFlush:     alamos.NewGaugeDuration(exp, "kvFlushTime"),
-			totalFlush:  alamos.NewGaugeDuration(exp, "totalFlushTime"),
-			request:     alamos.NewGaugeDuration(exp, "requestTime"),
-		},
-	}, nil
-}
-
-type queryPackage[Q Query] struct {
-	Assembler func(qExec queryExecutor) Q
-	Validators
+		metrics:   metrics,
+	}
+	return createFactory{exec: strategy}, nil
 }

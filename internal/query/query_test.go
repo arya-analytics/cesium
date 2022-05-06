@@ -15,7 +15,7 @@ type (
 	executionContext = query.ExecutionContext[fileKey, simpleQuery, operation.Operation[fileKey]]
 )
 
-const simpleKey query.OptKey = "simpleKey"
+const simpleKey query.OptionKey = "simpleKey"
 
 type simpleQuery struct {
 	query.Query

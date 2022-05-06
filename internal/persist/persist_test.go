@@ -43,7 +43,7 @@ var _ = Describe("Persist", func() {
 		fs = kfs.New[int]("", kfs.WithFS(kfs.NewMem()))
 		p = persist.New[int, operation.Operation[int]](fs, 50, sd, zap.NewNop())
 	})
-	Describe("Exec", func() {
+	Describe("QExec", func() {
 		It("Should execute an operation correctly", func() {
 			b := BasicOperation{}
 			p.Exec([]operation.Operation[int]{b})
