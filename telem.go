@@ -86,6 +86,16 @@ func (tr TimeRange) IsZero() bool {
 	return tr.Span().IsZero()
 }
 
+func (tr TimeRange) Bound(otr TimeRange) TimeRange {
+	if otr.Start.Before(tr.Start) {
+		tr.Start = otr.Start
+	}
+	if otr.End.After(tr.End) {
+		tr.End = otr.End
+	}
+	return tr
+}
+
 var (
 	TimeRangeMax = TimeRange{Start: TimeStampMin, End: TimeStampMax}
 )

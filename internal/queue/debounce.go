@@ -45,7 +45,7 @@ func (d *Debounce[T]) Start() {
 			default:
 			}
 			values := d.fill(t)
-			d.Logger.Debug("flushing debounce queue", zap.Int("count", len(values)))
+			//d.Logger.Debug("flushing debounce queue", zap.Int("count", len(values)))
 			if len(values) == 0 {
 				if sd {
 					numEmpty++

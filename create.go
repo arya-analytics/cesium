@@ -22,7 +22,7 @@ type (
 	createStream       = query.Stream[CreateRequest, CreateResponse]
 	segmentAllocator   = allocate.Allocator[ChannelKey, fileKey, Segment]
 	createOperationSet = operation.Set[fileKey, createOperation]
-	createStrategy     = query.Strategy[fileKey, createOperation, CreateRequest]
+	createStrategy     = query.Strategy[fileKey, createOperation, CreateRequest, CreateResponse]
 	createContext      = query.Context[fileKey, createOperation, CreateRequest]
 )
 
@@ -82,7 +82,7 @@ type createOperation struct {
 	channelKey ChannelKey
 	segments   []Segment
 	segmentKV  segmentKV
-	stream     *createStream
+	stream     createStream
 	ctx        context.Context
 	logger     *zap.Logger
 	metrics    createMetrics
@@ -153,13 +153,13 @@ func (cr createOperation) ChannelKey() ChannelKey {
 type createParser struct {
 	skv       segmentKV
 	allocator segmentAllocator
-	stream    *createStream
-	logger    *zap.Logger
 	metrics   createMetrics
+	logger    *zap.Logger
 }
 
 func (cp *createParser) Parse(q query.Query, req CreateRequest) (ops []createOperation, err error) {
 	fileKeys := cp.allocator.Allocate(req.Segments...)
+	stream := query.GetStream[CreateRequest, CreateResponse](q)
 	for i, seg := range req.Segments {
 		cp.metrics.segSize.Record(seg.Size())
 		ops = append(ops, createOperation{
@@ -167,7 +167,7 @@ func (cp *createParser) Parse(q query.Query, req CreateRequest) (ops []createOpe
 			channelKey: seg.ChannelKey,
 			segments:   []Segment{seg},
 			segmentKV:  cp.skv,
-			stream:     cp.stream,
+			stream:     stream,
 			ctx:        q.Context(),
 			logger:     cp.logger,
 			metrics:    cp.metrics,
@@ -207,14 +207,7 @@ func (l lockReleaseHook) Exec(query query.Query) error {
 // |||||| ITERATOR ||||||
 
 type createIteratorProxy struct {
-	allocator segmentAllocator
-	skv       segmentKV
-	ckv       channelKV
-	queue     chan<- []createOperation
-	lock      lock.Map[ChannelKey]
-	shutdown  shut.Shutdown
-	logger    *zap.Logger
-	metrics   createMetrics
+	queue chan<- []createOperation
 }
 
 func (cf *createIteratorProxy) Open(ctx createContext) (query.Iterator[CreateRequest], error) {
@@ -283,11 +276,30 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 		request:     alamos.NewGaugeDuration(exp, "requestTime"),
 	}
 
-	ckv := channelKV{kv: kve}
+	ckv, skv := channelKV{kv: kve}, segmentKV{kv: kve}
 
 	strategy := new(createStrategy)
 	strategy.Shutdown = sd
-	strategy.Parser = &createParser{}
+
+	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
+	if err != nil {
+		return nil, err
+	}
+
+	nextFile := &fileCounter{PersistedCounter: *counter}
+
+	allocator := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
+		MaxDescriptors: 10,
+		MaxSize:        1e9,
+	})
+
+	strategy.Parser = &createParser{
+		skv:       skv,
+		allocator: allocator,
+		logger:    opts.logger,
+		metrics:   metrics,
+	}
+
 	channelLock := lock.NewMap[ChannelKey]()
 	strategy.Hooks.PreAssembly = append(
 		strategy.Hooks.PreAssembly,
@@ -297,6 +309,7 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 	strategy.Hooks.PostExecution = append(
 		strategy.Hooks.PostExecution,
 		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
+		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
 	)
 
 	pst := persist.New[fileKey, createOperationSet](fs, 50, sd, opts.logger)
@@ -312,28 +325,7 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 
 	batchPipe := operation.PipeTransform[fileKey, createOperation, createOperationSet](q.Out, sd, &createBatch{})
 	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, sd)
+	strategy.IterProxy = &createIteratorProxy{queue: q.In}
 
-	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
-	if err != nil {
-		return nil, err
-	}
-
-	nextFile := &fileCounter{PersistedCounter: *counter}
-
-	alloc := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
-		MaxDescriptors: 10,
-		MaxSize:        1e9,
-	})
-
-	strategy.IterProxy = &createIteratorProxy{
-		allocator: alloc,
-		skv:       segmentKV{kv: kve},
-		ckv:       ckv,
-		queue:     q.In,
-		lock:      channelLock,
-		shutdown:  sd,
-		logger:    opts.logger,
-		metrics:   metrics,
-	}
 	return createFactory{exec: strategy}, nil
 }

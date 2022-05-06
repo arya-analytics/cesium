@@ -59,7 +59,9 @@ func (s *Strategy[F, O, REQ, RES]) Exec(query Query) error {
 	}
 
 	stream := GetStream[REQ, RES](query)
+
 	wg := &sync.WaitGroup{}
+	setWaitGroup(query, wg)
 
 	iterCtx := Context[F, O, REQ]{Query: query, Parser: s.Parser, WaitGroup: wg}
 	iter, err := s.IterProxy.Open(iterCtx)

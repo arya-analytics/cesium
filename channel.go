@@ -259,7 +259,8 @@ func setQueryRecord[T any](q query.Query, r T) {
 }
 
 func queryRecord[T any](q query.Query) (T, bool) {
-	return q.Get(recordOptKey)
+	r, ok := q.Get(recordOptKey)
+	return r.(T), ok
 }
 
 // |||| KEYS ||||

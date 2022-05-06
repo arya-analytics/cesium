@@ -10,7 +10,6 @@ import (
 	"github.com/arya-analytics/cesium/internal/queue"
 	"github.com/arya-analytics/cesium/shut"
 	"go.uber.org/zap"
-	"go/types"
 	"io"
 	"sort"
 	"sync"
@@ -18,9 +17,9 @@ import (
 )
 
 type (
-	retrieveStream       = query.Stream[types.Nil, RetrieveResponse]
+	retrieveStream       = query.Stream[retrieveRequest, RetrieveResponse]
 	retrieveOperationSet = operation.Set[fileKey, retrieveOperation]
-	retrieveStrategy     = query.Strategy[fileKey, retrieveOperation, retrieveRequest]
+	retrieveStrategy     = query.Strategy[fileKey, retrieveOperation, retrieveRequest, RetrieveResponse]
 	retrieveContext      = query.Context[fileKey, retrieveOperation, retrieveRequest]
 )
 
@@ -36,8 +35,7 @@ func (r RetrieveResponse) Error() error {
 }
 
 type retrieveRequest struct {
-	position TimeStamp
-	span     TimeSpan
+	tr TimeRange
 }
 
 // |||||| QUERY ||||||
@@ -61,9 +59,14 @@ func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve {
 
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	query.SetContext(r, ctx)
-	s := retrieveStream{Responses: make(chan RetrieveResponse)}
+	s := retrieveStream{Responses: make(chan RetrieveResponse), Requests: make(chan retrieveRequest)}
 	query.SetStream(r, s)
-	return s.Responses, r.QExec()
+	err := r.QExec()
+	if err != nil {
+		return nil, err
+	}
+	s.Requests <- retrieveRequest{tr: TimeRangeMax}
+	return s.Responses, nil
 }
 
 // |||||| OPTIONS ||||||
@@ -152,26 +155,29 @@ type retrieveParser struct {
 
 func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retrieveOperation, err error) {
 	keys := channelKeys(q)
-	tr := timeRange(q)
+	queryRange := timeRange(q)
+	requestRange := req.tr
 
 	last := false
-	if req.position.Add(req.span).After(tr.End) {
+	if requestRange.End.After(queryRange.End) {
 		last = true
 	}
 
-	stream := query.GetStream[types.Nil, RetrieveResponse](q)
+	requestRange = queryRange.Bound(requestRange)
+
+	stream := query.GetStream[retrieveRequest, RetrieveResponse](q)
 
 	rp.logger.Debug("retrieving segments",
 		zap.Int("count", len(keys)),
-		zap.Time("from", tr.Start.Time()),
-		zap.Time("to", tr.End.Time()),
+		zap.Time("from", queryRange.Start.Time()),
+		zap.Time("to", queryRange.End.Time()),
 		zap.Binary("prefix", kv.CompositeKey(segmentKVPrefix, keys[0])),
 	)
 
 	for _, key := range keys {
 		kvs := rp.metrics.kvRetrieve.Stopwatch()
 		kvs.Start()
-		segments, err := rp.skv.filter(req.position.SpanRange(req.span), key)
+		segments, err := rp.skv.filter(requestRange, key)
 		kvs.Stop()
 		if err != nil {
 			return ops, err
@@ -214,7 +220,7 @@ type retrieveIterator struct {
 }
 
 func (r *retrieveIterator) Next(request retrieveRequest) (last bool) {
-	stream := query.GetStream[types.Nil, RetrieveResponse](r.Query)
+	stream := query.GetStream[retrieveRequest, RetrieveResponse](r.Query)
 	ops, err := r.Parser.Parse(r.Query, request)
 	if err == io.EOF {
 		last = true
@@ -276,6 +282,10 @@ func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shut
 	strategy.Hooks.PreAssembly = append(
 		strategy.Hooks.PreAssembly,
 		validateChannelKeysHook{ckv: ckv},
+	)
+	strategy.Hooks.PostExecution = append(
+		strategy.Hooks.PostExecution,
+		query.CloseStreamResponseHook[retrieveRequest, RetrieveResponse]{},
 	)
 
 	pst := persist.New[fileKey, retrieveOperationSet](fs, 50, sd, opts.logger)

@@ -4,16 +4,17 @@ import (
 	"github.com/arya-analytics/cesium"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 )
 
-var _ = FDescribe("Create", func() {
+var _ = Describe("Create", func() {
 	var (
 		db cesium.DB
 	)
 	BeforeEach(func() {
 		var err error
-		//log, err := zap.NewDevelopment()
-		db, err = cesium.Open("", cesium.MemBacked())
+		log := zap.NewNop()
+		db, err = cesium.Open("", cesium.MemBacked(), cesium.WithLogger(log))
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -65,9 +66,7 @@ var _ = FDescribe("Create", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resSeg).To(HaveLen(1))
 					Expect(resSeg[0].Start).To(Equal(cReq.Segments[0].Start))
-
 				})
-
 			})
 
 			Context("Multi Segment", func() {
@@ -180,7 +179,7 @@ var _ = FDescribe("Create", func() {
 	})
 
 	Describe("Channel Validation", func() {
-		
+
 	})
 
 	Describe("Segment Validation", func() {

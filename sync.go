@@ -2,8 +2,6 @@ package cesium
 
 import (
 	"context"
-	log "github.com/sirupsen/logrus"
-	"io"
 )
 
 func createSync(ctx context.Context, c Create, segments *[]Segment) error {
@@ -17,7 +15,6 @@ func createSync(ctx context.Context, c Create, segments *[]Segment) error {
 }
 
 func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
-	log.Info(r)
 	res, err := r.Stream(ctx)
 	if err != nil {
 		return err
@@ -25,9 +22,6 @@ func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
 	for resV := range res {
 		if resV.Err != nil {
 			return resV.Err
-		}
-		if resV.Err == io.EOF {
-			return nil
 		}
 		*segments = append(*segments, resV.Segments...)
 	}
