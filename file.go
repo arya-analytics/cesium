@@ -1,6 +1,7 @@
 package cesium
 
 import (
+	"github.com/arya-analytics/cesium/internal/allocate"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/kfs"
 )
@@ -9,6 +10,14 @@ type (
 	fileKey    int16
 	fileSystem = kfs.FS[fileKey]
 	file       = kfs.File[fileKey]
+)
+
+const (
+	// maxFileSize is the default maximum size of a cesium file.
+	maxFileSize = allocate.DefaultMaxDescriptors
+	// maxFileDescriptors is the default maximum number of file descriptors
+	// cesium can open at a time.
+	maxFileDescriptors = allocate.DefaultMaxSize
 )
 
 type fileCounter struct {

@@ -5,7 +5,7 @@ import (
 )
 
 type Iterator[REQ Request] interface {
-	Next(req REQ) bool
+	Next(req REQ) (last bool)
 }
 
 type IteratorFactory[F comparable, O operation.Operation[F], REQ Request] interface {

@@ -62,7 +62,7 @@ const (
 	// DefaultMaxDescriptors is the default maximum number of descriptors.
 	DefaultMaxDescriptors = 50
 	// DefaultMaxSize is the default maximum size of a descriptor in bytes.
-	DefaultMaxSize = 1e8
+	DefaultMaxSize = 1e9
 )
 
 type Config struct {

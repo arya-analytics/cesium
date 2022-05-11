@@ -88,7 +88,7 @@ func (s *Strategy[F, O, REQ, RES]) Exec(query Query) error {
 				if !ok {
 					break o
 				}
-				if ok := iter.Next(request); !ok {
+				if last := iter.Next(request); last {
 					break o
 				}
 			}

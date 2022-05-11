@@ -31,27 +31,58 @@ import (
 // See each options documentation for more.
 func Open(dirname string, opts ...Option) (DB, error) {
 	_opts := newOptions(dirname, opts...)
-	sd := shut.New(_opts.shutdownOpts...)
-	fs := startFS(_opts, sd)
-	kve, err := startKV(_opts)
+
+	// |||||| SHUTDOWN ||||||
+
+	shutdown := shut.New(_opts.shutdownOpts...)
+
+	// |||||| FILE SYSTEM ||||||
+
+	fs := openFS(_opts, shutdown)
+
+	// |||||| KV ||||||
+
+	kve, err := openKV(_opts)
 	if err != nil {
 		return nil, err
 	}
-	create, err := startCreate(fs, kve, _opts, sd)
+
+	// |||||| CREATE ||||||
+
+	create, err := startCreate(createConfig{
+		exp:      _opts.exp,
+		logger:   _opts.logger,
+		shutdown: shutdown,
+		fs:       fs,
+		kv:       kve,
+	})
 	if err != nil {
 		return nil, err
 	}
-	retrieve, err := startRetrievePipeline(fs, kve, _opts, sd)
+
+	// |||||| RETRIEVE ||||||
+
+	retrieve, err := startRetrieve(retrieveConfig{
+		exp:      _opts.exp,
+		logger:   _opts.logger,
+		shutdown: shutdown,
+		fs:       fs,
+		kv:       kve,
+	})
 	if err != nil {
 		return nil, err
 	}
-	createChannel, retrieveChannel, err := startChannelPipeline(kve)
+
+	// |||||| CHANNEL ||||||
+
+	createChannel, retrieveChannel, err := startChannel(kve)
 	if err != nil {
 		return nil, err
 	}
+
 	return &db{
 		kv:              kve,
-		shutdown:        shut.NewGroup(sd),
+		shutdown:        shut.NewGroup(shutdown),
 		create:          create,
 		retrieve:        retrieve,
 		createChannel:   createChannel,
@@ -59,7 +90,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	}, nil
 }
 
-func startFS(opts *options, sd shut.Shutdown) fileSystem {
+func openFS(opts *options, sd shut.Shutdown) fileSystem {
 	fs := kfs.New[fileKey](opts.dirname, opts.kfs.opts...)
 	sync := &kfs.Sync[fileKey]{
 		FS:       fs,
@@ -71,15 +102,26 @@ func startFS(opts *options, sd shut.Shutdown) fileSystem {
 	return fs
 }
 
-func startKV(opts *options) (kv.KV, error) {
+func openKV(opts *options) (kv.KV, error) {
 	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, "pebble"), &pebble.Options{FS: opts.kvFS})
 	return pebblekv.Wrap(pebbleDB), err
 }
 
-func startChannelPipeline(kve kv.KV) (query.Factory[CreateChannel], query.Factory[RetrieveChannel], error) {
-	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextChannel"))
+const channelCounterKey = "cs-nc"
+
+func startChannel(kve kv.KV) (query.Factory[CreateChannel], query.Factory[RetrieveChannel], error) {
+	// a kv persisted counter that tracks the number of channels that a DB has created.
+	// this is used to autogenerate unique keys for a channel.
+	cCount, err := kv.NewPersistedCounter(kve, []byte(channelCounterKey))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	ckv := channelKV{kv: kve}
-	cf := &createChannelFactory{exec: &createChannelQueryExecutor{ckv: ckv, counter: counter}}
+
+	cf := &createChannelFactory{exec: &createChannelQueryExecutor{ckv: ckv, counter: cCount}}
+
 	rf := &retrieveChannelFactory{exec: &retrieveChannelQueryExecutor{ckv: ckv}}
+
 	return cf, rf, err
 }

@@ -20,6 +20,11 @@ type Persist[F comparable, O operation.Operation[F]] struct {
 	Config
 }
 
+const (
+	// DefaultMaxRoutines is the default maximum number of goroutines Persist can operate at once.
+	DefaultMaxRoutines = 50
+)
+
 type Config struct {
 	// MaxRoutines represents the maximum number of goroutines that will be used to execute operations.
 	// This value must be at least 1.
@@ -31,6 +36,12 @@ type Config struct {
 	// to ensure that the flow of operations is halted beforehand. Shutdown is not required if the caller
 	// is tracking the completion of operations internally.
 	Shutdown shut.Shutdown
+}
+
+func DefaultConfig() Config {
+	return Config{
+		MaxRoutines: DefaultMaxRoutines,
+	}
 }
 
 // New creates a new Persist that wraps the provided kfs.FS.

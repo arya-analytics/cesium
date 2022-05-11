@@ -25,11 +25,14 @@ type (
 
 // |||||| STREAM ||||||
 
+// RetrieveResponse is a response containing segments satisfying a Retrieve Query as well as any errors
+// encountered during the retrieval.
 type RetrieveResponse struct {
 	Err      error
 	Segments []Segment
 }
 
+// Error implements the query.Response interface.
 func (r RetrieveResponse) Error() error {
 	return r.Err
 }
@@ -66,6 +69,7 @@ func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 		return nil, err
 	}
 	s.Requests <- retrieveRequest{tr: TimeRangeMax}
+	//close(s.Requests)
 	return s.Responses, nil
 }
 
@@ -159,7 +163,7 @@ func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retri
 	requestRange := req.tr
 
 	last := false
-	if requestRange.End.After(queryRange.End) {
+	if requestRange.End >= queryRange.End {
 		last = true
 	}
 
@@ -204,19 +208,19 @@ func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retri
 
 // |||||| EXECUTOR ||||||
 
-type retrieveIteratorProxy struct {
+type retrieveIteratorFactory struct {
 	queue    chan<- []retrieveOperation
 	shutdown shut.Shutdown
 	logger   *zap.Logger
 }
 
-func (rp *retrieveIteratorProxy) Open(ctx retrieveContext) (query.Iterator[retrieveRequest], error) {
+func (rp *retrieveIteratorFactory) New(ctx retrieveContext) (query.Iterator[retrieveRequest], error) {
 	return &retrieveIterator{ctx, rp}, nil
 }
 
 type retrieveIterator struct {
 	retrieveContext
-	*retrieveIteratorProxy
+	*retrieveIteratorFactory
 }
 
 func (r *retrieveIterator) Next(request retrieveRequest) (last bool) {
@@ -254,61 +258,158 @@ func (r *retrieveBatch) Exec(ops []retrieveOperation) []retrieveOperationSet {
 // |||||| METRICS ||||||
 
 type retrieveMetrics struct {
+	// kvRetrieve is the time spent retrieving Segment metadata from key-value storage.
 	kvRetrieve alamos.Duration
-	dataRead   alamos.Duration
-	segSize    alamos.Metric[int]
-	segCount   alamos.Metric[int]
-	request    alamos.Duration
+	// dataRead is the duration spent reading Segment data from disk.
+	dataRead alamos.Duration
+	// segSize tracks the size of each Segment retrieved.
+	segSize alamos.Metric[int]
+	// segCount tracks the number of segments retrieved.
+	segCount alamos.Metric[int]
+	// request tracks the total duration that the Retrieve query is open i.e. from calling Retrieve.Stream(ctx) to
+	// an internal close(res) call that represents the query is complete.
+	request alamos.Duration
 }
 
-func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (query.Factory[Retrieve], error) {
-	strategy := new(retrieveStrategy)
-	exp := alamos.Sub(opts.exp, "retrieve")
-	metrics := retrieveMetrics{
-		kvRetrieve: alamos.NewGaugeDuration(exp, "kvRetrieve"),
-		dataRead:   alamos.NewGaugeDuration(exp, "dataRead"),
-		segSize:    alamos.NewGauge[int](exp, "segSize"),
-		segCount:   alamos.NewGauge[int](exp, "segCount"),
-		request:    alamos.NewGaugeDuration(exp, "request"),
+const (
+	// retrieveMetricsKey is the key used to store retrieve metrics in cesium's alamos.Experiment.
+	retrieveMetricsKey = "retrieve"
+)
+
+func newRetrieveMetrics(exp alamos.Experiment) retrieveMetrics {
+	sub := alamos.Sub(exp, retrieveMetricsKey)
+	return retrieveMetrics{
+		kvRetrieve: alamos.NewGaugeDuration(sub, "kvRetrieveDur"),
+		dataRead:   alamos.NewGaugeDuration(sub, "dataReadDur"),
+		segSize:    alamos.NewGauge[int](sub, "segSize"),
+		segCount:   alamos.NewGauge[int](sub, "segCount"),
+		request:    alamos.NewGaugeDuration(sub, "requestDur"),
 	}
+}
+
+type retrieveConfig struct {
+	// exp is used to trakc metrics for the Retrieve query. See retrieveMetrics for more.
+	exp alamos.Experiment
+	// fs is the file system for reading Segment data from.
+	fs fileSystem
+	// kv is the key-value store for reading Segment metadata from.
+	kv kv.KV
+	// shutdown is used to gracefully shut down retrieve operations.
+	// retrieve releases the shutdown when all queries have been served.
+	shutdown shut.Shutdown
+	// logger is where retrieve operations will log their progress.
+	logger *zap.Logger
+	// debounce sets the debounce parameters for retrieve operations.
+	// this is mostly here for optimizing performance under varied conditions.
+	debounce queue.DebounceConfig
+	// persist used for setting the parameters for persist.Persist thar reads
+	// segment data from disk.
+	persist persist.Config
+}
+
+func mergeRetrieveConfigDefaults(cfg *retrieveConfig) {
+
+	// |||||| PERSIST ||||||
+
+	if cfg.persist.MaxRoutines == 0 {
+		cfg.persist.MaxRoutines = retrievePersistMaxRoutines
+	}
+	if cfg.persist.Shutdown == nil {
+		cfg.persist.Shutdown = cfg.shutdown
+	}
+	if cfg.persist.Logger == nil {
+		cfg.persist.Logger = cfg.logger
+	}
+
+	// |||||| DEBOUNCE ||||||
+
+	if cfg.debounce.Interval == 0 {
+		cfg.debounce.Interval = retrieveDebounceFlushInterval
+	}
+	if cfg.debounce.Threshold == 0 {
+		cfg.debounce.Threshold = retrieveDebounceFlushThreshold
+	}
+	if cfg.debounce.Shutdown == nil {
+		cfg.debounce.Shutdown = cfg.shutdown
+	}
+	if cfg.debounce.Logger == nil {
+		cfg.debounce.Logger = cfg.logger
+	}
+}
+
+const (
+	// retrievePersistMaxRoutines is the maximum number of goroutines the retrieve query persist.Persist can use.
+	retrievePersistMaxRoutines = persist.DefaultMaxRoutines
+	// retrieveDebounceFlushInterval is the interval at which retrieve debounce queue will flush if the number of
+	// retrieve operations is below the threshold.
+	retrieveDebounceFlushInterval = 100 * time.Millisecond
+	// retrieveDebounceFlushThreshold is the number of retrieve operations that must be in the debounce queue before
+	// it flushes
+	retrieveDebounceFlushThreshold = 10
+)
+
+func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
+
+	mergeRetrieveConfigDefaults(&cfg)
+
+	// strategy represents a general strategy for executing a Retrieve query.
+	// The elements of the strategy are intended to be modular and swappable for
+	// the purposes of experimentation. All components of the strategy must
+	// follow the interface laid out in the query.Strategy interface.
+	strategy := new(retrieveStrategy)
+
+	metrics := newRetrieveMetrics(cfg.exp)
 	strategy.Metrics.Request = metrics.request
 
-	ckv := channelKV{kv: kve}
+	ckv := channelKV{kv: cfg.kv}
 
-	strategy.Shutdown = sd
+	strategy.Shutdown = cfg.shutdown
+
 	strategy.Parser = &retrieveParser{
 		ckv:     ckv,
-		skv:     segmentKV{kv: kve},
-		logger:  opts.logger,
+		skv:     segmentKV{kv: cfg.kv},
+		logger:  cfg.logger,
 		metrics: metrics,
 	}
-	strategy.Hooks.PreAssembly = append(
-		strategy.Hooks.PreAssembly,
-		validateChannelKeysHook{ckv: ckv},
-	)
-	strategy.Hooks.PostExecution = append(
-		strategy.Hooks.PostExecution,
-		query.CloseStreamResponseHook[retrieveRequest, RetrieveResponse]{},
-	)
 
-	pst := persist.New[fileKey, retrieveOperationSet](fs, 50, sd, opts.logger)
+	strategy.Hooks.PreAssembly = []query.Hook{
+		// validates that all channel keys provided to the Retrieve query are valid.
+		validateChannelKeysHook{ckv: ckv},
+	}
+
+	strategy.Hooks.PostExecution = []query.Hook{
+		// closes the retrieve response channel for the query, which signals to the caller that the query has completed,
+		// and all segments have been sent through the response channel.
+		query.CloseStreamResponseHook[retrieveRequest, RetrieveResponse]{},
+	}
+
+	// executes the operations generated by strategy.Parser, reading them from disk.
+	pst := persist.New[fileKey, retrieveOperationSet](cfg.fs, cfg.persist)
+
+	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more efficient
+	// operation batching.
 	q := &queue.Debounce[retrieveOperation]{
-		In:        make(chan []retrieveOperation),
-		Out:       make(chan []retrieveOperation),
-		Shutdown:  sd,
-		Interval:  100 * time.Millisecond,
-		Threshold: 50,
-		Logger:    opts.logger,
+		In:     make(chan []retrieveOperation),
+		Out:    make(chan []retrieveOperation),
+		Config: cfg.debounce,
 	}
 	q.Start()
 
-	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](q.Out, sd, new(retrieveBatch))
-	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, sd)
+	// batches operations from the debounced queue into sequential operations on the same file.
+	batchPipe := operation.PipeTransform[
+		fileKey,
+		retrieveOperation,
+		retrieveOperationSet,
+	](q.Out, cfg.shutdown, new(retrieveBatch))
 
-	strategy.IterFactory = &retrieveIteratorProxy{
+	// receives and executes the operations from batchPipe on persist.
+	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, cfg.shutdown)
+
+	// opens new iterators for generating retrieve operations for the RetrieveRequest piped in via q.In.
+	strategy.IterFactory = &retrieveIteratorFactory{
 		queue:    q.In,
-		shutdown: sd,
-		logger:   opts.logger,
+		shutdown: cfg.shutdown,
+		logger:   cfg.logger,
 	}
 
 	return retrieveFactory{exec: strategy}, nil

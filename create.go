@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"sync"
+	"time"
 )
 
 type (
@@ -32,12 +33,12 @@ type CreateRequest struct {
 	Segments []Segment
 }
 
-// CreateResponse contains any errors that occurred during the execution of the Create query.Query.
+// CreateResponse contains any errors that occurred during the execution of the Create Query.
 type CreateResponse struct {
 	Err error
 }
 
-// Error implements the Response interface.
+// Error implements the query.Response interface.
 func (r CreateResponse) Error() error {
 	return r.Err
 }
@@ -218,7 +219,7 @@ type createIterator struct {
 	*createIterFactory
 }
 
-func (cp *createIterator) Next(request CreateRequest) bool {
+func (cp *createIterator) Next(request CreateRequest) (last bool) {
 	stream := query.GetStream[CreateRequest, CreateResponse](cp.Query)
 	ops, err := cp.Parser.Parse(cp.Query, request)
 	if err != nil {
@@ -226,7 +227,7 @@ func (cp *createIterator) Next(request CreateRequest) bool {
 	}
 	cp.WaitGroup.Add(len(ops))
 	cp.queue <- ops
-	return true
+	return false
 }
 
 // |||||| BATCH ||||||
@@ -266,15 +267,20 @@ type createMetrics struct {
 	// lockRelease tracks the duration it takes to release the lock on the channels
 	// that are being written to.
 	lockRelease alamos.Duration
-	// segSize tracks the size of each Segment written.
+	// segSize tracks the size of each Segment created.
 	segSize alamos.Metric[int]
 	// request tracks the total duration that the Create query is open i.e. from
 	// calling Create.Stream(ctx) to the close(res) call.
 	request alamos.Duration
 }
 
+const (
+	// createMetricsKey is the key used to store create metrics in cesium's alamos.Experiment.
+	createMetricsKey = "create"
+)
+
 func newCreateMetrics(exp alamos.Experiment) createMetrics {
-	sub := alamos.Sub(exp, "create")
+	sub := alamos.Sub(exp, createMetricsKey)
 	return createMetrics{
 		segSize:     alamos.NewGauge[int](sub, "segSize"),
 		lockAcquire: alamos.NewGaugeDuration(sub, "lockAcquireDur"),
@@ -309,12 +315,64 @@ type createConfig struct {
 	// persist is used for setting the parameters for persist.Persist that writes
 	// Segment data to disk.
 	persist persist.Config
-	// debounce sets the debounce parameters for query creation.
+	// debounce sets the debounce parameters for create operations.
 	// this is mostly here for optimizing performance under varied conditions.
 	debounce queue.DebounceConfig
 }
 
+func mergeCreateConfigDefaults(cfg *createConfig) {
+
+	// |||||| ALLOCATION ||||||
+
+	if cfg.allocate.MaxSize == 0 {
+		cfg.allocate.MaxSize = maxFileSize
+	}
+	if cfg.allocate.MaxDescriptors == 0 {
+		cfg.allocate.MaxDescriptors = maxFileDescriptors
+	}
+
+	// |||||| PERSIST ||||||
+
+	if cfg.persist.MaxRoutines == 0 {
+		cfg.persist.MaxRoutines = createPersistMaxRoutines
+	}
+	if cfg.persist.Shutdown == nil {
+		cfg.persist.Shutdown = cfg.shutdown
+	}
+	if cfg.persist.Logger == nil {
+		cfg.persist.Logger = cfg.logger
+	}
+
+	// |||||| DEBOUNCE ||||||
+
+	if cfg.debounce.Interval == 0 {
+		cfg.debounce.Interval = createDebounceFlushInterval
+	}
+	if cfg.debounce.Threshold == 0 {
+		cfg.debounce.Threshold = createDebounceFlushThreshold
+	}
+	if cfg.debounce.Shutdown == nil {
+		cfg.debounce.Shutdown = cfg.shutdown
+	}
+	if cfg.debounce.Logger == nil {
+		cfg.debounce.Logger = cfg.logger
+	}
+}
+
+const (
+	// createPersistMaxRoutines is the maximum number of goroutines the create query persist.Persist can use.
+	createPersistMaxRoutines = persist.DefaultMaxRoutines
+	// createDebounceFlushInterval is the interval at which create debounce queue will flush if the number of
+	// create operations is below the threshold.
+	createDebounceFlushInterval = 100 * time.Millisecond
+	// createDebounceFlushThreshold is the number of requests that must be queued before create debounce queue
+	// will flush.
+	createDebounceFlushThreshold = 10
+)
+
 func startCreate(cfg createConfig) (query.Factory[Create], error) {
+
+	mergeCreateConfigDefaults(&cfg)
 
 	// strategy represents a general strategy for executing a Create query.
 	// The elements of the strategy are intended to be modular and swappable
@@ -329,7 +387,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 
 	strategy.Shutdown = cfg.shutdown
 
-	// fCount is a kv persisted counter that tracks the number of files that a DB has created.
+	// a kv persisted counter that tracks the number of files that a DB has created.
 	// The segment allocator uses it to determine the next file to open.
 	fCount, err := newFileCounter(cfg.kv, []byte(fileCounterKey))
 	if err != nil {
@@ -354,27 +412,26 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	// from different goroutines.
 	channelLock := lock.NewMap[ChannelKey]()
 
-	strategy.Hooks.PreAssembly = append(
-		strategy.Hooks.PreAssembly,
-		// asserts that all channel keys provided to the Create query are valid.
+	strategy.Hooks.PreAssembly = []query.Hook{
+		// validates that all channel keys provided to the Create query are valid.
 		validateChannelKeysHook{ckv: ckv},
 		// acquires the locks on the channels that are being written to.
 		lockAcquireHook{lock: channelLock, metric: metrics.lockAcquire},
-	)
+	}
 
-	strategy.Hooks.PostExecution = append(
-		strategy.Hooks.PostExecution,
+	strategy.Hooks.PostExecution = []query.Hook{
 		// releases the locks on the channels that are being written to.
 		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
 		// closes the stream response channel for the query, which signals to the caller that the
 		// query has completed, and the Segment writes are durable.
 		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
-	)
+	}
 
 	// executes the operations generated by strategy.Parser, persisting them to disk.
 	pst := persist.New[fileKey, createOperationSet](cfg.fs, cfg.persist)
 
-	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more efficient batching.
+	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more
+	// efficient batching.
 	q := &queue.Debounce[createOperation]{
 		In:     make(chan []createOperation),
 		Out:    make(chan []createOperation),
