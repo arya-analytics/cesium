@@ -20,7 +20,16 @@ var _ = Describe("Debounce", func() {
 		req = make(chan []int)
 		res = make(chan []int, 100)
 		s = shut.New()
-		d = &queue.Debounce[int]{req, res, s, 30 * time.Millisecond, 15, zap.NewNop()}
+		d = &queue.Debounce[int]{
+			In:  req,
+			Out: res,
+			Config: queue.DebounceConfig{
+				Shutdown:  s,
+				Interval:  30 * time.Millisecond,
+				Threshold: 15,
+				Logger:    zap.NewNop(),
+			},
+		}
 		d.Start()
 	})
 	It("Should flush the queue at a specified interval", func() {

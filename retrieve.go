@@ -175,7 +175,6 @@ func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retri
 		zap.Int("count", len(keys)),
 		zap.Time("from", queryRange.Start.Time()),
 		zap.Time("to", queryRange.End.Time()),
-		zap.Binary("prefix", kv.CompositeKey(segmentKVPrefix, keys[0])),
 	)
 
 	for _, key := range keys {

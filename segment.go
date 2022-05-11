@@ -77,7 +77,11 @@ func (sg Segment) flushData(w io.Writer) error {
 const segmentKVPrefix = "segments"
 
 func (sg Segment) KVKey() []byte {
-	return kv.CompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
+	key, err := kv.CompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
+	if err != nil {
+		panic(err)
+	}
+	return key
 }
 
 // |||||| KV ||||||
@@ -88,25 +92,6 @@ type segmentKV struct {
 
 func (sk segmentKV) set(s Segment) error {
 	return kv.Flush(sk.kv, s.KVKey(), s)
-}
-
-func (sk segmentKV) latest(keys ...ChannelKey) (segments []Segment, err error) {
-	for _, key := range keys {
-		prefix := kv.CompositeKey(segmentKVPrefix, key)
-		iter := sk.kv.IterPrefix(prefix)
-		if ok := iter.Last(); !ok {
-			return nil, ErrNotFound
-		}
-		s := &Segment{}
-		if err := kv.LoadBytes(iter.Value(), s); err != nil {
-			return nil, err
-		}
-		segments = append(segments, *s)
-		if err := iter.Close(); err != nil {
-			panic(err)
-		}
-	}
-	return segments, nil
 }
 
 func (sk segmentKV) filter(tr TimeRange, cpk ChannelKey) (segments []Segment, err error) {
@@ -130,8 +115,14 @@ func (sk segmentKV) filter(tr TimeRange, cpk ChannelKey) (segments []Segment, er
 }
 
 func generateRangeKeys(cpk ChannelKey, tr TimeRange) ([]byte, []byte) {
-	s := kv.CompositeKey(segmentKVPrefix, cpk, tr.Start)
-	e := kv.CompositeKey(segmentKVPrefix, cpk, tr.End)
+	s, err := kv.CompositeKey(segmentKVPrefix, cpk, tr.Start)
+	if err != nil {
+		panic(err)
+	}
+	e, err := kv.CompositeKey(segmentKVPrefix, cpk, tr.End)
+	if err != nil {
+		panic(err)
+	}
 	return s, e
 }
 

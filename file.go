@@ -25,7 +25,7 @@ type fileCounter struct {
 }
 
 func newFileCounter(kve kv.KV, key []byte) (*fileCounter, error) {
-	counter, err := kv.NewPersistedCounter(kve, []byte(fileCounterKey))
+	counter, err := kv.NewPersistedCounter(kve, key)
 	return &fileCounter{PersistedCounter: *counter}, err
 }
 

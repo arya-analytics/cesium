@@ -41,7 +41,11 @@ func (c *Channel) Load(r io.Reader) error {
 const channelKVPrefix = "chan"
 
 func (c Channel) KVKey() []byte {
-	return kv.CompositeKey(channelKVPrefix, c.Key)
+	key, err := kv.CompositeKey(channelKVPrefix, c.Key)
+	if err != nil {
+		panic(err)
+	}
+	return key
 }
 
 // LKey implements lock.MapItem.
