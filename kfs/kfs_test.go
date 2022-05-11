@@ -20,7 +20,7 @@ var _ = Describe("KFS", func() {
 		)
 		BeforeEach(func() {
 			baseFS = kfs.NewMem()
-			fs = kfs.New[int]("testdata", kfs.WithSuffix(".test"), kfs.WithFS(baseFS))
+			fs = kfs.New[int]("testdata", kfs.WithExtensionConfig(".test"), kfs.WithFS(baseFS))
 		})
 		AfterEach(func() {
 			Expect(fs.RemoveAll()).To(BeNil())

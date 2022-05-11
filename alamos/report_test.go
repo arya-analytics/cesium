@@ -9,7 +9,7 @@ import (
 )
 
 var _ = Describe("Report", func() {
-	FIt("Should write the experiment to JSON", func() {
+	It("Should write the experiment to JSON", func() {
 		exp := alamos.New("exp")
 		g := alamos.NewGauge[int](exp, "gauge")
 		g.Record(1)

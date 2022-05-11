@@ -1,6 +1,7 @@
 package query
 
 import (
+	"github.com/arya-analytics/cesium/alamos"
 	"github.com/arya-analytics/cesium/internal/errutil"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/shut"
@@ -51,6 +52,9 @@ type Strategy[
 	}
 	Parser    Parser[F, O, REQ]
 	IterProxy IteratorProxy[F, O, REQ]
+	Metrics   struct {
+		Request alamos.Duration
+	}
 }
 
 func (s *Strategy[F, O, REQ, RES]) Exec(query Query) error {
@@ -70,6 +74,9 @@ func (s *Strategy[F, O, REQ, RES]) Exec(query Query) error {
 	}
 
 	s.Shutdown.Go(func(sig chan shut.Signal) error {
+		sw := s.Metrics.Request.Stopwatch()
+		sw.Start()
+		defer sw.Stop()
 	o:
 		for {
 			select {

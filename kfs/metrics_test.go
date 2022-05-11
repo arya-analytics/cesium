@@ -16,7 +16,7 @@ var _ = Describe("Metrics", func() {
 	BeforeEach(func() {
 		baseFS = kfs.NewMem()
 		exp = alamos.New("metrics")
-		fs = kfs.New[int]("", kfs.WithSuffix(".metrics"), kfs.WithFS(baseFS), kfs.WithExperiment(exp))
+		fs = kfs.New[int]("", kfs.WithExtensionConfig(".metrics"), kfs.WithFS(baseFS), kfs.WithExperiment(exp))
 	})
 	Describe("Acquire", func() {
 		It("Should record the count and average time", func() {

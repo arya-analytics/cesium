@@ -53,13 +53,14 @@ func WithExperiment(e alamos.Experiment) Option {
 	}
 }
 
-// WithSuffix sets the suffix that the KFS uses to append to its filenames.
-func WithSuffix(s string) Option {
+// WithExtensionConfig sets the suffix that the KFS uses to append to its filenames.
+func WithExtensionConfig(s string) Option {
 	return func(o *options) {
 		o.suffix = s
 	}
 }
 
+// WithLogger sets the logger that the KFS uses.
 func WithLogger(logger *zap.Logger) Option {
 	return func(o *options) {
 		o.logger = logger

@@ -53,7 +53,7 @@ func mergeDefaultOptions(o *options) {
 	}
 	o.kfs.opts = append(o.kfs.opts, kfs.WithLogger(o.logger))
 	o.kfs.opts = append(o.kfs.opts, kfs.WithExperiment(o.exp))
-	o.kfs.opts = append(o.kfs.opts, kfs.WithSuffix(".cseg"))
+	o.kfs.opts = append(o.kfs.opts, kfs.WithExtensionConfig(".tof"))
 }
 
 func MemBacked() Option {

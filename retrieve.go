@@ -258,20 +258,23 @@ type retrieveMetrics struct {
 	dataRead   alamos.Duration
 	segSize    alamos.Metric[int]
 	segCount   alamos.Metric[int]
+	request    alamos.Duration
 }
 
 func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (query.Factory[Retrieve], error) {
+	strategy := new(retrieveStrategy)
 	exp := alamos.Sub(opts.exp, "retrieve")
 	metrics := retrieveMetrics{
 		kvRetrieve: alamos.NewGaugeDuration(exp, "kvRetrieve"),
 		dataRead:   alamos.NewGaugeDuration(exp, "dataRead"),
 		segSize:    alamos.NewGauge[int](exp, "segSize"),
 		segCount:   alamos.NewGauge[int](exp, "segCount"),
+		request:    alamos.NewGaugeDuration(exp, "request"),
 	}
+	strategy.Metrics.Request = metrics.request
 
 	ckv := channelKV{kv: kve}
 
-	strategy := new(retrieveStrategy)
 	strategy.Shutdown = sd
 	strategy.Parser = &retrieveParser{
 		ckv:     ckv,

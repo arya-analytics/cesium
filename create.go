@@ -265,6 +265,7 @@ type createMetrics struct {
 // |||||| START UP |||||||
 
 func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (query.Factory[Create], error) {
+	strategy := new(createStrategy)
 	exp := alamos.Sub(opts.exp, "create")
 	metrics := createMetrics{
 		segSize:     alamos.NewGauge[int](exp, "segSize"),
@@ -275,10 +276,10 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 		totalFlush:  alamos.NewGaugeDuration(exp, "totalFlushTime"),
 		request:     alamos.NewGaugeDuration(exp, "requestTime"),
 	}
+	strategy.Metrics.Request = metrics.request
 
 	ckv, skv := channelKV{kv: kve}, segmentKV{kv: kve}
 
-	strategy := new(createStrategy)
 	strategy.Shutdown = sd
 
 	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))

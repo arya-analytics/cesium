@@ -34,41 +34,41 @@ func (c *createConfig) Next() (createVars, error) {
 }
 
 var progressiveCreate = []createVars{
-	//{
-	//	nChannels: 1,
-	//	dataRate:  5 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
-	//{
-	//	nChannels: 2,
-	//	dataRate:  12 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
-	//{
-	//	nChannels: 3,
-	//	dataRate:  20 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
-	//{
-	//	nChannels: 4,
-	//	dataRate:  30 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
+	{
+		nChannels: 1,
+		dataRate:  5 * cesium.Hz,
+		dataType:  cesium.Float64,
+	},
+	{
+		nChannels: 2,
+		dataRate:  12 * cesium.Hz,
+		dataType:  cesium.Float64,
+	},
+	{
+		nChannels: 3,
+		dataRate:  20 * cesium.Hz,
+		dataType:  cesium.Float64,
+	},
+	{
+		nChannels: 4,
+		dataRate:  30 * cesium.Hz,
+		dataType:  cesium.Float64,
+	},
 	{
 		nChannels: 5,
 		dataRate:  100 * cesium.Hz,
 		dataType:  cesium.Float64,
 	},
-	//{
-	//	nChannels: 500,
-	//	dataRate:  1 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
-	//{
-	//	nChannels: 100,
-	//	dataRate:  20 * cesium.Hz,
-	//	dataType:  cesium.Float64,
-	//},
+	{
+		nChannels: 500,
+		dataRate:  1 * cesium.Hz,
+		dataType:  cesium.Float64,
+	},
+	{
+		nChannels: 100,
+		dataRate:  20 * cesium.Hz,
+		dataType:  cesium.Float64,
+	},
 }
 
 var _ = Describe("Create", func() {
