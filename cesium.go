@@ -27,7 +27,7 @@ type DB interface {
 	//      // Create a new channel
 	//      ch, err := cesium.NewCreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).QExec(ctx)
 	//		if err != nil {
-	// 	    	 log.Fatal(err)
+	// 	    	 logger.Fatal(err)
 	//		}
 	//
 	//	    // Create a new Segment to write. If you don't know what segments are, check out the Segment documentation.
@@ -41,7 +41,7 @@ type DB interface {
 	//		// db.syncExec is a helper that turns a typically async write into an acknowledged, syncExec write.
 	//	    err := db.syncExec(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{segments})
 	//		if err != nil {
-	//			log.Fatal(err)
+	//			logger.Fatal(err)
 	//		}
 	//
 	// The above example will create a new channel with the type Float64 and a data rate of 5 Hz. It will then write a
@@ -67,7 +67,7 @@ type DB interface {
 	// 		// The Create query will close the channel when all written segments are durable.
 	// 		for resV := range res {
 	//			if resV.err != nil {
-	//				log.Fatal(resV.err)
+	//				logger.Fatal(resV.err)
 	//			}
 	//		}
 	//
@@ -88,7 +88,7 @@ type DB interface {
 	//		var resSeg []Segment
 	//		err := db.syncExec(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
 	//		if err != nil {
-	//			log.Fatal(err)
+	//			logger.Fatal(err)
 	//		}
 	//
 	// The above example retrieves all data from the channel and binds it into resSeg. It's possible to retrieve a subset
@@ -123,7 +123,7 @@ type DB interface {
 	//		// Retrieve will close the channel when done.
 	// 		for _, resV := range res {
 	//			if resV.Err != nil {
-	//				log.Fatal(resV.Err)
+	//				logger.Fatal(resV.Err)
 	//			}
 	//			resSeg = append(resSeg, resV.Segments...)
 	//		}
@@ -144,7 +144,7 @@ type DB interface {
 	//				WithRate(5 * cesium.Hz).
 	//				QExec(ctx)
 	//		if err != nil {
-	//			log.Fatal(err)
+	//			logger.Fatal(err)
 	//		}
 	//		fmt.Println(ch.Key)
 	//		// output:
@@ -162,7 +162,7 @@ type DB interface {
 	//		// Retrieve the channel.
 	//		ch, err := cesium.NewRetrieveChannel().WhereKey(1).QExec(ctx)
 	//		if err != nil {
-	//			log.Fatal(err)
+	//			logger.Fatal(err)
 	//		}
 	//		fmt.Println(ch.Key)
 	//		// output:

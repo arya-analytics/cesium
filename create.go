@@ -15,7 +15,6 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"sync"
-	"time"
 )
 
 type (
@@ -28,7 +27,7 @@ type (
 
 // |||||| STREAM ||||||
 
-// CreateRequest is a request containing a set of segmentKV to write to the DB.
+// CreateRequest is a request containing a set of segments (Segment) to write to the DB.
 type CreateRequest struct {
 	Segments []Segment
 }
@@ -206,17 +205,17 @@ func (l lockReleaseHook) Exec(query query.Query) error {
 
 // |||||| ITERATOR ||||||
 
-type createIteratorProxy struct {
+type createIterFactory struct {
 	queue chan<- []createOperation
 }
 
-func (cf *createIteratorProxy) Open(ctx createContext) (query.Iterator[CreateRequest], error) {
+func (cf *createIterFactory) New(ctx createContext) (query.Iterator[CreateRequest], error) {
 	return &createIterator{ctx, cf}, nil
 }
 
 type createIterator struct {
 	createContext
-	*createIteratorProxy
+	*createIterFactory
 }
 
 func (cp *createIterator) Next(request CreateRequest) bool {
@@ -252,44 +251,93 @@ func (b *createBatch) Exec(ops []createOperation) []createOperationSet {
 
 // |||||| METRICS ||||||
 
+// createMetrics is a collection of metrics tracking the performance and health of a Create query.
 type createMetrics struct {
-	dataFlush   alamos.Duration
-	kvFlush     alamos.Duration
-	totalFlush  alamos.Duration
+	// dataFlush tracks the duration it takes to flush Segment data to disk.
+	dataFlush alamos.Duration
+	// kvFlush tracks the duration it takes to flush Segment kv data.
+	kvFlush alamos.Duration
+	// totalFlush tracks the duration it takes all the operations to disk.
+	// (dataFlush,kvFlush,seeks, etc.)
+	totalFlush alamos.Duration
+	// lockAcquire tracks the duration it takes to acquire the lock on the channels
+	// that are being written to.
 	lockAcquire alamos.Duration
+	// lockRelease tracks the duration it takes to release the lock on the channels
+	// that are being written to.
 	lockRelease alamos.Duration
-	segSize     alamos.Metric[int]
-	request     alamos.Duration
+	// segSize tracks the size of each Segment written.
+	segSize alamos.Metric[int]
+	// request tracks the total duration that the Create query is open i.e. from
+	// calling Create.Stream(ctx) to the close(res) call.
+	request alamos.Duration
+}
+
+func newCreateMetrics(exp alamos.Experiment) createMetrics {
+	sub := alamos.Sub(exp, "create")
+	return createMetrics{
+		segSize:     alamos.NewGauge[int](sub, "segSize"),
+		lockAcquire: alamos.NewGaugeDuration(sub, "lockAcquireDur"),
+		lockRelease: alamos.NewGaugeDuration(sub, "lockReleaseDur"),
+		dataFlush:   alamos.NewGaugeDuration(sub, "dataFlushDur"),
+		kvFlush:     alamos.NewGaugeDuration(sub, "kvFlushDur"),
+		totalFlush:  alamos.NewGaugeDuration(sub, "totalFlushDur"),
+		request:     alamos.NewGaugeDuration(sub, "requestDur"),
+	}
 }
 
 // |||||| START UP |||||||
 
-func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdown) (query.Factory[Create], error) {
+const fileCounterKey = "cs-nf"
+
+type createConfig struct {
+	// exp is used to track metrics for the Create query. See createMetrics for all the recorded values.
+	exp alamos.Experiment
+	// fs is the file system for writing Segment data to.
+	fs fileSystem
+	// kv is the key-value store for writing Segment metadata to.
+	kv kv.KV
+	// shutdown is used to gracefully shut down create operations.
+	// create releases the shutdown when all Segment data has persisted to disk.
+	shutdown shut.Shutdown
+	// logger is where create operations will log their progress.
+	logger *zap.Logger
+	// allocate is used for setting the parameters for allocating a Segment to  afile.
+	// This setting is particularly useful in environments where the maximum number of
+	// file descriptors must be limited.
+	allocate allocate.Config
+	// persist is used for setting the parameters for persist.Persist that writes
+	// Segment data to disk.
+	persist persist.Config
+	// debounce sets the debounce parameters for query creation.
+	// this is mostly here for optimizing performance under varied conditions.
+	debounce queue.DebounceConfig
+}
+
+func startCreate(cfg createConfig) (query.Factory[Create], error) {
+
+	// strategy represents a general strategy for executing a Create query.
+	// The elements of the strategy are intended to be modular and swappable
+	// for the purposes of experimentation. All components of the strategy
+	// must follow the interface laid out in the query.Strategy interface.
 	strategy := new(createStrategy)
-	exp := alamos.Sub(opts.exp, "create")
-	metrics := createMetrics{
-		segSize:     alamos.NewGauge[int](exp, "segSize"),
-		lockAcquire: alamos.NewGaugeDuration(exp, "lockAcquireTime"),
-		lockRelease: alamos.NewGaugeDuration(exp, "lockReleaseTime"),
-		dataFlush:   alamos.NewGaugeDuration(exp, "dataFlushTime"),
-		kvFlush:     alamos.NewGaugeDuration(exp, "kvFlushTime"),
-		totalFlush:  alamos.NewGaugeDuration(exp, "totalFlushTime"),
-		request:     alamos.NewGaugeDuration(exp, "requestTime"),
-	}
+
+	metrics := newCreateMetrics(cfg.exp)
 	strategy.Metrics.Request = metrics.request
 
-	ckv, skv := channelKV{kv: kve}, segmentKV{kv: kve}
+	ckv, skv := channelKV{kv: cfg.kv}, segmentKV{kv: cfg.kv}
 
-	strategy.Shutdown = sd
+	strategy.Shutdown = cfg.shutdown
 
-	counter, err := kv.NewPersistedCounter(kve, []byte("cesium-nextFile"))
+	// fCount is a kv persisted counter that tracks the number of files that a DB has created.
+	// The segment allocator uses it to determine the next file to open.
+	fCount, err := newFileCounter(cfg.kv, []byte(fileCounterKey))
 	if err != nil {
 		return nil, err
 	}
 
-	nextFile := &fileCounter{PersistedCounter: *counter}
-
-	allocator := allocate.New[ChannelKey, fileKey, Segment](nextFile, allocate.Config{
+	// allocator is responsible for allocating new Segments to files.
+	allocator := allocate.New[ChannelKey, fileKey, Segment](fCount, allocate.Config{
 		MaxDescriptors: 10,
 		MaxSize:        1e9,
 	})
@@ -297,36 +345,55 @@ func startCreatePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shutdo
 	strategy.Parser = &createParser{
 		skv:       skv,
 		allocator: allocator,
-		logger:    opts.logger,
+		logger:    cfg.logger,
 		metrics:   metrics,
 	}
 
+	// acquires and releases the locks on channels. Acquiring locks on channels simplifies
+	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same channel
+	// from different goroutines.
 	channelLock := lock.NewMap[ChannelKey]()
+
 	strategy.Hooks.PreAssembly = append(
 		strategy.Hooks.PreAssembly,
+		// asserts that all channel keys provided to the Create query are valid.
 		validateChannelKeysHook{ckv: ckv},
+		// acquires the locks on the channels that are being written to.
 		lockAcquireHook{lock: channelLock, metric: metrics.lockAcquire},
 	)
+
 	strategy.Hooks.PostExecution = append(
 		strategy.Hooks.PostExecution,
+		// releases the locks on the channels that are being written to.
 		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
+		// closes the stream response channel for the query, which signals to the caller that the
+		// query has completed, and the Segment writes are durable.
 		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
 	)
 
-	pst := persist.New[fileKey, createOperationSet](fs, 50, sd, opts.logger)
+	// executes the operations generated by strategy.Parser, persisting them to disk.
+	pst := persist.New[fileKey, createOperationSet](cfg.fs, cfg.persist)
+
+	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more efficient batching.
 	q := &queue.Debounce[createOperation]{
-		In:        make(chan []createOperation),
-		Out:       make(chan []createOperation),
-		Shutdown:  sd,
-		Interval:  100 * time.Millisecond,
-		Threshold: 50,
-		Logger:    opts.logger,
+		In:     make(chan []createOperation),
+		Out:    make(chan []createOperation),
+		Config: cfg.debounce,
 	}
 	q.Start()
 
-	batchPipe := operation.PipeTransform[fileKey, createOperation, createOperationSet](q.Out, sd, &createBatch{})
-	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, sd)
-	strategy.IterProxy = &createIteratorProxy{queue: q.In}
+	// batches operations from the debounced queue into sequential operations on the same file.
+	batchPipe := operation.PipeTransform[
+		fileKey,
+		createOperation,
+		createOperationSet,
+	](q.Out, cfg.shutdown, &createBatch{})
+
+	// receives and executes the operations from the batchPipe on persist.
+	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, cfg.shutdown)
+
+	// opens new iterators for generating operations for the CreateRequest piped in via q.In.
+	strategy.IterFactory = &createIterFactory{queue: q.In}
 
 	return createFactory{exec: strategy}, nil
 }

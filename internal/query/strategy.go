@@ -50,9 +50,9 @@ type Strategy[
 		PostAssembly  HookSet
 		PostExecution HookSet
 	}
-	Parser    Parser[F, O, REQ]
-	IterProxy IteratorProxy[F, O, REQ]
-	Metrics   struct {
+	Parser      Parser[F, O, REQ]
+	IterFactory IteratorFactory[F, O, REQ]
+	Metrics     struct {
 		Request alamos.Duration
 	}
 }
@@ -68,7 +68,7 @@ func (s *Strategy[F, O, REQ, RES]) Exec(query Query) error {
 	setWaitGroup(query, wg)
 
 	iterCtx := Context[F, O, REQ]{Query: query, Parser: s.Parser, WaitGroup: wg}
-	iter, err := s.IterProxy.Open(iterCtx)
+	iter, err := s.IterFactory.New(iterCtx)
 	if err != nil {
 		return err
 	}

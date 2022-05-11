@@ -14,32 +14,42 @@ import (
 // Persist uses a pool of goroutines to execute operations concurrently.
 // To create a new Persist, use persist.New.
 type Persist[F comparable, O operation.Operation[F]] struct {
-	wg       *sync.WaitGroup
-	sem      *semaphore.Weighted
-	kfs      kfs.FS[F]
-	shutdown shut.Shutdown
-	logger   *zap.Logger
+	wg  *sync.WaitGroup
+	sem *semaphore.Weighted
+	kfs kfs.FS[F]
+	Config
 }
 
-// New creates a new Persist that wraps the provided kfs.KFS.
-// maxProcs represents the maximum number of goroutines that will be used to execute operations concurrently.
-// This value must be at least 1.
-// shutdown is a shutdown.Shutdown that signals Persist to stop executing operations and exit gracefully.
-func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], maxProcs int64, shutdown shut.Shutdown, logger *zap.Logger) *Persist[F, O] {
+type Config struct {
+	// MaxRoutines represents the maximum number of goroutines that will be used to execute operations.
+	// This value must be at least 1.
+	MaxRoutines int64
+	// Persist will log events to this Logger.
+	Logger *zap.Logger
+	// Shutdown will be used to gracefully stop Persist by waiting for all executed operations to complete.
+	// NOTE: Exec will continue accepting operations after the Shutdown is called. It is up to the caller
+	// to ensure that the flow of operations is halted beforehand. Shutdown is not required if the caller
+	// is tracking the completion of operations internally.
+	Shutdown shut.Shutdown
+}
+
+// New creates a new Persist that wraps the provided kfs.FS.
+func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *Persist[F, O] {
 	p := &Persist[F, O]{
-		sem:      semaphore.NewWeighted(maxProcs),
-		kfs:      kfs,
-		wg:       &sync.WaitGroup{},
-		shutdown: shutdown,
-		logger:   logger,
+		sem:    semaphore.NewWeighted(config.MaxRoutines),
+		kfs:    kfs,
+		wg:     &sync.WaitGroup{},
+		Config: config,
 	}
-	p.listenForShutdown()
+	if p.Shutdown != nil {
+		p.listenForShutdown()
+	}
 	return p
 }
 
 // Exec queues a set of operations for execution. Operations are NOT guaranteed to execute in the order they are queued.
 func (p *Persist[K, O]) Exec(ops []O) {
-	p.logger.Debug("executing operations", zap.Int("count", len(ops)))
+	p.Logger.Debug("executing operations", zap.Int("count", len(ops)))
 	for _, op := range ops {
 		if err := p.sem.Acquire(op.Context(), 1); err != nil {
 			log.Warn(err)
@@ -60,11 +70,11 @@ func (p *Persist[K, O]) Exec(ops []O) {
 }
 
 func (p *Persist[K, O]) listenForShutdown() {
-	p.shutdown.Go(func(sig chan shut.Signal) error {
+	p.Shutdown.Go(func(sig chan shut.Signal) error {
 		<-sig
-		p.logger.Info("persist shutting down. waiting for operations to complete.")
+		p.Logger.Info("persist shutting down. waiting for operations to complete.")
 		p.wg.Wait()
-		p.logger.Info("persist shutdown complete.")
+		p.Logger.Info("persist Shutdown complete.")
 		return nil
 	})
 }

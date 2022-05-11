@@ -305,7 +305,7 @@ func startRetrievePipeline(fs fileSystem, kve kv.KV, opts *options, sd shut.Shut
 	batchPipe := operation.PipeTransform[fileKey, retrieveOperation, retrieveOperationSet](q.Out, sd, new(retrieveBatch))
 	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, sd)
 
-	strategy.IterProxy = &retrieveIteratorProxy{
+	strategy.IterFactory = &retrieveIteratorProxy{
 		queue:    q.In,
 		shutdown: sd,
 		logger:   opts.logger,

@@ -14,11 +14,11 @@ var _ = Describe("Retrieve", func() {
 			db  cesium.DB
 			cpk int16
 			c   cesium.Channel
-			//log *zap.Logger
+			//logger *zap.Logger
 		)
 		BeforeEach(func() {
 			var err error
-			//log, _ = zap.NewDevelopment()
+			//logger, _ = zap.NewDevelopment()
 			db, err = cesium.Open("testdata", cesium.MemBacked())
 			Expect(err).ToNot(HaveOccurred())
 			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)

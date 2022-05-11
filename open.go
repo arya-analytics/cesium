@@ -37,7 +37,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	create, err := startCreatePipeline(fs, kve, _opts, sd)
+	create, err := startCreate(fs, kve, _opts, sd)
 	if err != nil {
 		return nil, err
 	}

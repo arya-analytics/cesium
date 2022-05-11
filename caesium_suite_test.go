@@ -26,7 +26,7 @@ func TestCaesium(t *testing.T) {
 func ExampleDB_NewCreate_simple() {
 	ctx := context.Background()
 
-	// Open the database.
+	// New the database.
 	db, err := cesium.Open("", cesium.MemBacked())
 	if err != nil {
 		log.Fatal(err)
@@ -63,7 +63,7 @@ func ExampleDB_NewCreate_simple() {
 func ExampleDB_NewCreate_multiSegment() {
 	ctx := context.Background()
 
-	// Open the database.
+	// New the database.
 	db, err := cesium.Open("", cesium.MemBacked())
 	if err != nil {
 		log.Fatal(err)
@@ -75,7 +75,7 @@ func ExampleDB_NewCreate_multiSegment() {
 		WithRate(5 * cesium.Hz).
 		Exec(ctx)
 
-	// Open the query.
+	// New the query.
 	req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
 
 	// Listen for errors.
@@ -122,7 +122,7 @@ func ExampleDB_NewCreate_multiSegment() {
 func ExampleDB_NewCreate_multiChannel() {
 	ctx := context.Background()
 
-	// Open the database.
+	// New the database.
 	db, err := cesium.Open("", cesium.MemBacked())
 	if err != nil {
 		log.Fatal(err)
@@ -142,7 +142,7 @@ func ExampleDB_NewCreate_multiChannel() {
 		cPKs = append(cPKs, ch.Key)
 	}
 
-	// Open the query.
+	// New the query.
 	req, res, err := db.NewCreate().WhereChannels(cPKs...).Stream(ctx)
 	if err != nil {
 		log.Fatal(err)
@@ -197,7 +197,7 @@ func ExampleDB_NewRetrieve_simple() {
 	// First we need to write a segment.
 	ctx := context.Background()
 
-	// Open the database.
+	// New the database.
 	db, err := cesium.Open("", cesium.MemBacked())
 	if err != nil {
 		log.Fatal(err)
@@ -224,7 +224,7 @@ func ExampleDB_NewRetrieve_simple() {
 		log.Fatal(err)
 	}
 
-	// Open the retrieve query.
+	// New the retrieve query.
 	var resSegs []cesium.Segment
 	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.Key).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
 	if err != nil {

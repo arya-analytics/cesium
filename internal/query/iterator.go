@@ -8,6 +8,6 @@ type Iterator[REQ Request] interface {
 	Next(req REQ) bool
 }
 
-type IteratorProxy[F comparable, O operation.Operation[F], REQ Request] interface {
-	Open(ctx Context[F, O, REQ]) (Iterator[REQ], error)
+type IteratorFactory[F comparable, O operation.Operation[F], REQ Request] interface {
+	New(ctx Context[F, O, REQ]) (Iterator[REQ], error)
 }
