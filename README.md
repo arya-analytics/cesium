@@ -122,7 +122,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Create a new Segment to write. If you don't know what segments are, check out the Segment documentation.
+	// Create a new Segment to write. If you don't know what segments are, 
+	// check out the Segment documentation.
 	segments := []cesium.Segment{
 		{
 			ChannelKey: ch.Key,
