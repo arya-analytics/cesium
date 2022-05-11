@@ -172,4 +172,13 @@ type DataType uint16
 
 const (
 	Float64 DataType = 8
+	Float32 DataType = 4
+	Int64   DataType = 8
+	Int32   DataType = 4
+	Int16   DataType = 2
+	Int8    DataType = 1
+	Uint64  DataType = 8
+	Uint32  DataType = 4
+	Uint16  DataType = 2
+	Uint8   DataType = 1
 )
