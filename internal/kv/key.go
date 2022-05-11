@@ -7,7 +7,7 @@ import (
 
 // ||||||| GENERATE |||||||
 
-func CompositeKey(elems ...interface{}) []byte {
+func CompositeKey(elems ...interface{}) ([]byte, error) {
 	b := new(bytes.Buffer)
 	cw := errutil.NewCatchWrite(b)
 	for _, e := range elems {
@@ -18,8 +18,5 @@ func CompositeKey(elems ...interface{}) []byte {
 			cw.Write(e)
 		}
 	}
-	if cw.Error() != nil {
-		panic(cw.Error())
-	}
-	return b.Bytes()
+	return b.Bytes(), cw.Error()
 }
