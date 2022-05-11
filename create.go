@@ -444,7 +444,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 		fileKey,
 		createOperation,
 		createOperationSet,
-	](q.Out, cfg.shutdown, &createBatch{})
+	](q.Out, cfg.shutdown, new(createBatch))
 
 	// receives and executes the operations from the batchPipe on persist.
 	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, cfg.shutdown)
