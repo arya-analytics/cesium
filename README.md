@@ -91,6 +91,8 @@ go get github.com/arya-analytics/cesium
 
 ### Writing Samples
 
+The following example is a simple, synchronous example of writing samples to a channel.
+
 ```go
 package main
 
@@ -130,10 +132,11 @@ func main() {
 	}
 
 	// Open the query
-	// DB.Sync is a helper that turns a typically async write into an acknowledged, syncExec write.
+	// DB.Sync is a helper that turns a typically async write into an acknowledged, 
+	// synchronous write.
 	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &segments); err != nil {
 		log.Fatal(err)
 	}
 }
-
 ```
+
