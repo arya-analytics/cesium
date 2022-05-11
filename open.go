@@ -91,7 +91,10 @@ func Open(dirname string, opts ...Option) (DB, error) {
 }
 
 func openFS(opts *options, sd shut.Shutdown) fileSystem {
-	fs := kfs.New[fileKey](opts.dirname, opts.kfs.opts...)
+	fs := kfs.New[fileKey](
+		filepath.Join(opts.dirname, cesiumDirectory),
+		opts.kfs.opts...,
+	)
 	sync := &kfs.Sync[fileKey]{
 		FS:       fs,
 		Interval: opts.kfs.sync.interval,
@@ -103,7 +106,7 @@ func openFS(opts *options, sd shut.Shutdown) fileSystem {
 }
 
 func openKV(opts *options) (kv.KV, error) {
-	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, "pebble"), &pebble.Options{FS: opts.kvFS})
+	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, kvDirectory), &pebble.Options{FS: opts.kvFS})
 	return pebblekv.Wrap(pebbleDB), err
 }
 

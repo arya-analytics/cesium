@@ -6,6 +6,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/errutil"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"io"
+	"sort"
 )
 
 // |||||| SEGMENT ||||||
@@ -137,4 +138,10 @@ func (sg Segment) Range(dr DataRate, d DataType) TimeRange {
 		Start: sg.Start,
 		End:   sg.Start.Add(dr.ByteSpan(len(sg.Data), d)),
 	}
+}
+
+// |||||| SORT ||||||
+
+func Sort(segments []Segment) {
+	sort.Slice(segments, func(i, j int) bool { return segments[i].Start.Before(segments[j].Start) })
 }

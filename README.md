@@ -34,12 +34,11 @@ that emits values with the following properties:
 4. Regular - all values are emitted at a constant interval.
 
 These values are known as samples. Samples can be measurements from a sensor, events from a stream, metrics from a
-database,
-or images from a camera just to name a few.
+database, or images from a camera (to name a few).
 
 ### Segments
 
-A segment (`cesium.Segment`) is a contiguous run of samples (between 1 b and 2.5 Mb). Cesium stores all values in a
+A segment (`cesium.Segment`) is a contiguous run of samples (between 1 B and 2.5 MB). Cesium stores all values in a
 segment sequentially on disk, so it's naturally best to write large segments over small segments.
 
 This obviously has implications in terms of durability, as smaller segments will prevent data loss in the event of a
@@ -132,9 +131,8 @@ func main() {
 		},
 	}
 
-	// Open the query
-	// DB.Sync is a helper that turns a typically async write into an acknowledged, 
-	// synchronous write.
+	// Open the query. DB.Sync is a helper that turns a typically async write 
+	// into an acknowledged, synchronous write.
 	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &segments); err != nil {
 		log.Fatal(err)
 	}

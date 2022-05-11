@@ -18,6 +18,10 @@ const (
 	// maxFileDescriptors is the default maximum number of file descriptors
 	// cesium can open at a time.
 	maxFileDescriptors = allocate.DefaultMaxSize
+	// cesiumDirectory is the directory in which cesium files are stored.
+	cesiumDirectory = "cesium"
+	// kvDirectory is the directory in which kv files are stored.
+	kvDirectory = "kv"
 )
 
 type fileCounter struct {

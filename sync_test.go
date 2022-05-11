@@ -87,6 +87,8 @@ var _ = Describe("Sync", func() {
 			)).To(Succeed())
 
 			Expect(resSegments).To(HaveLen(2))
+			cesium.Sort(resSegments)
+			Expect(resSegments[0].Start).To(Equal(segments[0].Start))
 		})
 	})
 })
