@@ -60,7 +60,7 @@ func (sg Segment) Flush(w io.Writer) error {
 
 // Load implements kv.Loader.
 func (sg *Segment) Load(r io.Reader) error {
-	// Unfortunately this is the most efficient way to read the header
+	// Unfortunately this is the most efficient way I've found to read the header
 	c := errutil.NewCatchRead(r)
 	c.Read(&sg.ChannelKey)
 	c.Read(&sg.fileKey)
@@ -71,11 +71,10 @@ func (sg *Segment) Load(r io.Reader) error {
 }
 
 func (sg Segment) flushData(w io.Writer) error {
-	err := binary.Write(w, sg.Data)
-	return err
+	return binary.Write(w, sg.Data)
 }
 
-const segmentKVPrefix = "segments"
+const segmentKVPrefix = "cs-sg"
 
 func (sg Segment) KVKey() []byte {
 	key, err := kv.CompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)

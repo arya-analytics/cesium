@@ -1,1 +1,138 @@
-{"cesium":{"create":{"dataFlushDur":{"avg":66485,"count":100,"key":"dataFlushDur","max":272720,"min":10706,"value":6648575},"kvFlushDur":{"avg":13314,"count":100,"key":"kvFlushDur","max":126048,"min":3417,"value":1331458},"lockAcquireDur":{"avg":25424,"count":1,"key":"lockAcquireDur","max":25424,"min":25424,"value":25424},"lockReleaseDur":{"avg":6926,"count":1,"key":"lockReleaseDur","max":6926,"min":6926,"value":6926},"requestDur":{"avg":6205021,"count":1,"key":"requestDur","max":6205021,"min":6205021,"value":6205021},"segSize":{"avg":1600,"count":100,"key":"segSize","max":1600,"min":1600,"value":160000},"totalFlushDur":{"avg":97181,"count":100,"key":"totalFlushDur","max":300176,"min":22091,"value":9718150}},"kfs.FS":{"Acquire":{"avg":1473534,"count":100,"key":"Acquire","max":3441496,"min":817,"value":147353487},"Release":{"avg":168889,"count":100,"key":"Release","max":2626525,"min":500,"value":16888946},"Remove":{"avg":0,"count":0,"key":"Remove","max":0,"min":0,"value":0},"Shutdown":{"avg":0,"count":0,"key":"Shutdown","max":0,"min":0,"value":0}},"retrieve":{"dataReadDur":{"avg":0,"count":0,"key":"dataReadDur","max":0,"min":0,"value":0},"kvRetrieveDur":{"avg":0,"count":0,"key":"kvRetrieveDur","max":0,"min":0,"value":0},"requestDur":{"avg":0,"count":0,"key":"requestDur","max":0,"min":0,"value":0},"segCount":{"avg":0,"count":0,"key":"segCount","max":0,"min":0,"value":0},"segSize":{"avg":0,"count":0,"key":"segSize","max":0,"min":0,"value":0}}}}
+{
+  "cesium": {
+    "create": {
+      "dataFlushDur": {
+        "avg": 66485,
+        "count": 100,
+        "key": "dataFlushDur",
+        "max": 272720,
+        "min": 10706,
+        "value": 6648575
+      },
+      "kvFlushDur": {
+        "avg": 13314,
+        "count": 100,
+        "key": "kvFlushDur",
+        "max": 126048,
+        "min": 3417,
+        "value": 1331458
+      },
+      "lockAcquireDur": {
+        "avg": 25424,
+        "count": 1,
+        "key": "lockAcquireDur",
+        "max": 25424,
+        "min": 25424,
+        "value": 25424
+      },
+      "lockReleaseDur": {
+        "avg": 6926,
+        "count": 1,
+        "key": "lockReleaseDur",
+        "max": 6926,
+        "min": 6926,
+        "value": 6926
+      },
+      "requestDur": {
+        "avg": 6205021,
+        "count": 1,
+        "key": "requestDur",
+        "max": 6205021,
+        "min": 6205021,
+        "value": 6205021
+      },
+      "segSize": {
+        "avg": 1600,
+        "count": 100,
+        "key": "segSize",
+        "max": 1600,
+        "min": 1600,
+        "value": 160000
+      },
+      "totalFlushDur": {
+        "avg": 97181,
+        "count": 100,
+        "key": "totalFlushDur",
+        "max": 300176,
+        "min": 22091,
+        "value": 9718150
+      }
+    },
+    "kfs.FS": {
+      "Acquire": {
+        "avg": 1473534,
+        "count": 100,
+        "key": "Acquire",
+        "max": 3441496,
+        "min": 817,
+        "value": 147353487
+      },
+      "Release": {
+        "avg": 168889,
+        "count": 100,
+        "key": "Release",
+        "max": 2626525,
+        "min": 500,
+        "value": 16888946
+      },
+      "Remove": {
+        "avg": 0,
+        "count": 0,
+        "key": "Remove",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      },
+      "Shutdown": {
+        "avg": 0,
+        "count": 0,
+        "key": "Shutdown",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      }
+    },
+    "retrieve": {
+      "dataReadDur": {
+        "avg": 0,
+        "count": 0,
+        "key": "dataReadDur",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      },
+      "kvRetrieveDur": {
+        "avg": 0,
+        "count": 0,
+        "key": "kvRetrieveDur",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      },
+      "requestDur": {
+        "avg": 0,
+        "count": 0,
+        "key": "requestDur",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      },
+      "segCount": {
+        "avg": 0,
+        "count": 0,
+        "key": "segCount",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      },
+      "segSize": {
+        "avg": 0,
+        "count": 0,
+        "key": "segSize",
+        "max": 0,
+        "min": 0,
+        "value": 0
+      }
+    }
+  }
+}

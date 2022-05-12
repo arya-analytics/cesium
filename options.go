@@ -72,11 +72,7 @@ func WithLogger(logger *zap.Logger) Option {
 
 func WithExperiment(exp alamos.Experiment) Option {
 	return func(o *options) {
-		if exp != nil {
-			o.exp = alamos.Sub(exp, "cesium")
-		} else {
-			o.exp = exp
-		}
+		o.exp = alamos.Sub(exp, "cesium")
 	}
 }
 
