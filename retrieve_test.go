@@ -5,6 +5,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 	"sync"
 )
 
@@ -14,12 +15,12 @@ var _ = Describe("Retrieve", func() {
 			db  cesium.DB
 			cpk int16
 			c   cesium.Channel
-			//logger *zap.Logger
+			log *zap.Logger
 		)
 		BeforeEach(func() {
 			var err error
-			//logger, _ = zap.NewDevelopment()
-			db, err = cesium.Open("testdata", cesium.MemBacked())
+			log = zap.NewNop()
+			db, err = cesium.Open("testdata", cesium.MemBacked(), cesium.WithLogger(log))
 			Expect(err).ToNot(HaveOccurred())
 			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -38,12 +39,9 @@ var _ = Describe("Retrieve", func() {
 			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
-			rResV, err := db.NewRetrieve().
-				WhereChannels(cpk).
-				WhereTimeRange(cesium.TimeRangeMax).
-				Stream(ctx)
+			resV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			segments, err := seg.StreamRetrieve{Res: rResV}.All()
+			segments, err := seg.StreamRetrieve{Res: resV}.All()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(segments).To(HaveLen(20))
 		})

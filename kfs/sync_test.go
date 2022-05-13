@@ -9,10 +9,12 @@ import (
 )
 
 var _ = Describe("sync", func() {
+
 	It("Should sync the contents of the file to the file system every interval", func() {
-		fs := kfs.New[int]("testdata", kfs.WithExtensionConfig(".test"), kfs.WithFS(kfs.NewMem()))
+		fs, err := kfs.New[int]("testdata", kfs.WithExtensionConfig(".test"), kfs.WithFS(kfs.NewMem()))
+		Expect(err).ToNot(HaveOccurred())
 		defer Expect(fs.RemoveAll()).To(Succeed())
-		_, err := fs.Acquire(1)
+		_, err = fs.Acquire(1)
 		Expect(err).To(BeNil())
 		_, err = fs.Acquire(2)
 		Expect(err).To(BeNil())
@@ -40,10 +42,12 @@ var _ = Describe("sync", func() {
 		Expect(fOne.Age() < 7*time.Millisecond).To(BeTrue())
 		Expect(s.Shutdown()).To(Succeed())
 	})
+
 	It("Should sync the contents of all of the files on shutdown", func() {
-		fs := kfs.New[int]("testdata", kfs.WithExtensionConfig(".test"), kfs.WithFS(kfs.NewMem()))
+		fs, err := kfs.New[int]("testdata", kfs.WithExtensionConfig(".test"), kfs.WithFS(kfs.NewMem()))
+		Expect(err).ToNot(HaveOccurred())
 		defer Expect(fs.RemoveAll()).To(Succeed())
-		_, err := fs.Acquire(1)
+		_, err = fs.Acquire(1)
 		Expect(err).To(BeNil())
 		_, err = fs.Acquire(2)
 		Expect(err).To(BeNil())
@@ -71,4 +75,5 @@ var _ = Describe("sync", func() {
 		fOne := fs.Files()[1]
 		Expect(fOne.Age() < 3*time.Millisecond).To(BeTrue())
 	})
+
 })

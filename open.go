@@ -38,7 +38,10 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| FILE SYSTEM ||||||
 
-	fs := openFS(_opts, shutdown)
+	fs, err := openFS(_opts, shutdown)
+	if err != nil {
+		return nil, err
+	}
 
 	// |||||| KV ||||||
 
@@ -90,8 +93,8 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	}, nil
 }
 
-func openFS(opts *options, sd shut.Shutdown) fileSystem {
-	fs := kfs.New[fileKey](
+func openFS(opts *options, sd shut.Shutdown) (fileSystem, error) {
+	fs, err := kfs.New[fileKey](
 		filepath.Join(opts.dirname, cesiumDirectory),
 		opts.kfs.opts...,
 	)
@@ -102,7 +105,7 @@ func openFS(opts *options, sd shut.Shutdown) fileSystem {
 		Shutter:  sd,
 	}
 	sync.Start()
-	return fs
+	return fs, err
 }
 
 func openKV(opts *options) (kv.KV, error) {

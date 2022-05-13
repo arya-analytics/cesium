@@ -64,6 +64,8 @@ type BaseFS interface {
 	Remove(name string) error
 	Open(name string) (BaseFile, error)
 	Create(name string) (BaseFile, error)
+	Stat(name string) (os.FileInfo, error)
+	Mkdir(name string, perm os.FileMode) error
 }
 
 type BaseFile interface {
@@ -74,14 +76,16 @@ type BaseFile interface {
 	Sync() error
 }
 
-func New[T comparable](dirname string, opts ...Option) FS[T] {
+// New creates a new FS in the specified directory. If the directory does not exist, it will be created.
+func New[T comparable](dirname string, opts ...Option) (FS[T], error) {
 	o := newOptions(opts...)
-	return &defaultFS[T]{
+	fs := &defaultFS[T]{
 		dirname: dirname,
 		options: *o,
 		metrics: newMetrics(o.experiment),
 		entries: make(map[T]File[T]),
 	}
+	return fs, fs.prep()
 }
 
 type defaultFS[T comparable] struct {
@@ -230,4 +234,12 @@ func (fs *defaultFS[T]) openOrCreate(key T) (BaseFile, error) {
 		return f, err
 	}
 	return fs.baseFS.Create(p)
+}
+
+func (fs *defaultFS[T]) prep() error {
+	_, err := os.Stat(fs.dirname)
+	if os.IsNotExist(err) {
+		return fs.baseFS.Mkdir(fs.dirname, fs.dirPerms)
+	}
+	return err
 }

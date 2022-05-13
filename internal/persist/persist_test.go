@@ -8,27 +8,28 @@ import (
 	"github.com/arya-analytics/cesium/shut"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
-	"time"
 )
 
-type BasicOperation struct{}
+type BasicOperation struct {
+	executed bool
+}
 
-func (b BasicOperation) Context() context.Context {
+func (b *BasicOperation) Context() context.Context {
 	return context.Background()
 }
 
-func (b BasicOperation) FileKey() int {
+func (b *BasicOperation) FileKey() int {
 	return 1
 }
 
-func (b BasicOperation) Exec(f kfs.File[int]) {
+func (b *BasicOperation) Exec(f kfs.File[int]) {
+	b.executed = true
 	if _, err := f.Write([]byte("hello")); err != nil {
 		panic(err)
 	}
 }
 
-func (b BasicOperation) SendError(err error) {
+func (b *BasicOperation) SendError(err error) {
 	panic(err)
 }
 
@@ -40,12 +41,20 @@ var _ = Describe("Persist", func() {
 	)
 	BeforeEach(func() {
 		sd = shut.New()
-		fs = kfs.New[int]("", kfs.WithFS(kfs.NewMem()))
-		p = persist.New[int, operation.Operation[int]](fs, 50, sd, zap.NewNop())
+		var err error
+		fs, err = kfs.New[int]("", kfs.WithFS(kfs.NewMem()))
+		Expect(err).ToNot(HaveOccurred())
+		p = persist.New[int, operation.Operation[int]](fs, persist.Config{
+			MaxRoutines: 50,
+			Shutdown:    sd,
+		})
+	})
+	AfterEach(func() {
+		Expect(sd.Shutdown()).To(Succeed())
 	})
 	Describe("QExec", func() {
 		It("Should execute an operation correctly", func() {
-			b := BasicOperation{}
+			b := &BasicOperation{}
 			p.Exec([]operation.Operation[int]{b})
 			// Read the file.
 			Expect(sd.Shutdown()).To(Succeed())
@@ -61,24 +70,12 @@ var _ = Describe("Persist", func() {
 			Expect(string(buf)).To(Equal("hello"))
 		})
 	})
-	Describe("PipeTransform", func() {
-		It("Should pipe an operation correctly", func() {
-			b := BasicOperation{}
-			ch := make(chan []operation.Operation[int])
-			p.Pipe(ch)
-			ch <- []operation.Operation[int]{b, b}
-			time.Sleep(1 * time.Millisecond)
+	Describe("Shutdown", func() {
+		It("Should execute all operations before shutting down", func() {
+			b := &BasicOperation{}
+			p.Exec([]operation.Operation[int]{b})
 			Expect(sd.Shutdown()).To(Succeed())
-			f, err := fs.Acquire(1)
-			Expect(err).ToNot(HaveOccurred())
-			defer fs.Release(1)
-			buf := make([]byte, 10)
-			_, err = f.Seek(0, 0)
-			Expect(err).ToNot(HaveOccurred())
-			if _, err := f.Read(buf); err != nil {
-				panic(err)
-			}
-			Expect(string(buf)).To(Equal("hellohello"))
+			Expect(b.executed).To(BeTrue())
 		})
 	})
 })

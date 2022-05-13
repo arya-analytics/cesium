@@ -3,6 +3,7 @@ package kfs
 import (
 	"github.com/arya-analytics/cesium/alamos"
 	"go.uber.org/zap"
+	"os"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type options struct {
 	experiment      alamos.Experiment
 	maxSyncInterval time.Duration
 	logger          *zap.Logger
+	dirPerms        os.FileMode
 }
 
 type Option func(o *options)
@@ -36,6 +38,9 @@ func mergeDefaultOptions(o *options) {
 	}
 	if o.logger == nil {
 		o.logger = zap.NewNop()
+	}
+	if o.dirPerms == 0 {
+		o.dirPerms = 0777
 	}
 }
 
@@ -64,5 +69,12 @@ func WithExtensionConfig(s string) Option {
 func WithLogger(logger *zap.Logger) Option {
 	return func(o *options) {
 		o.logger = logger
+	}
+}
+
+// WithDirPerms sets the permissions that the KFS uses to create directories.
+func WithDirPerms(perms os.FileMode) Option {
+	return func(o *options) {
+		o.dirPerms = perms
 	}
 }

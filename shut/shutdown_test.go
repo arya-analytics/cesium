@@ -36,7 +36,8 @@ var _ = Describe("Shutdown", func() {
 				return nil
 			}, shut.WithKey("routine"))
 			Expect(s.Shutdown()).To(Succeed())
-			Expect(exited).To(Equal([]bool{true, true}))
+			Expect(exited[0]).To(Equal(true))
+			Expect(exited[1]).To(Equal(true))
 			Expect(s.NumRoutines()).To(Equal(0))
 		})
 	})

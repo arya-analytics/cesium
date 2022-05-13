@@ -18,7 +18,7 @@ func NewMem() BaseFS {
 type osFS struct{}
 
 func (o *osFS) Open(name string) (BaseFile, error) {
-	return os.OpenFile(name, os.O_RDWR, 0666)
+	return os.OpenFile(name, os.O_RDWR, 0644)
 
 }
 
@@ -30,12 +30,20 @@ func (o *osFS) Remove(name string) error {
 	return os.Remove(name)
 }
 
+func (o *osFS) Mkdir(name string, perm os.FileMode) error {
+	return os.Mkdir(name, perm)
+}
+
+func (o *osFS) Stat(name string) (os.FileInfo, error) {
+	return os.Stat(name)
+}
+
 type memFS struct {
 	fs afero.Fs
 }
 
 func (m *memFS) Open(name string) (BaseFile, error) {
-	return m.fs.OpenFile(name, os.O_RDONLY, 0)
+	return m.fs.OpenFile(name, os.O_RDWR, 0644)
 }
 
 func (m *memFS) Create(name string) (BaseFile, error) {
@@ -44,4 +52,12 @@ func (m *memFS) Create(name string) (BaseFile, error) {
 
 func (m *memFS) Remove(name string) error {
 	return m.fs.Remove(name)
+}
+
+func (m *memFS) Mkdir(name string, perm os.FileMode) error {
+	return m.fs.Mkdir(name, perm)
+}
+
+func (m *memFS) Stat(name string) (os.FileInfo, error) {
+	return m.fs.Stat(name)
 }
