@@ -109,14 +109,13 @@ var _ = Describe("Alloc", func() {
 				i = IntegerItem{key: 1, size: 1}
 				d = a.Allocate(i)
 
-				i = IntegerItem{key: 2, size: 1}
+				i = IntegerItem{key: 1, size: 1}
 				d = a.Allocate(i)
-				Expect(d[0]).To(Equal(2))
 
 				i = IntegerItem{key: 1, size: 1}
 				d = a.Allocate(i)
 
-				Expect(d[0]).To(Equal(2))
+				Expect(d[0]).To(Equal(3))
 			})
 		})
 	})

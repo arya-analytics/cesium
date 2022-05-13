@@ -142,8 +142,8 @@ func (d *defaultAlloc[K, D, I]) new(item I) (key D) {
 	// If we've reached our limit, allocate to the descriptor with the smallest size.
 	if len(d.descriptorSizes) >= d.config.MaxDescriptors {
 		key = d.smallestDescriptor()
-		// If we haven't reached our limit, allocate to a new descriptor.
 	} else {
+		// If we haven't reached our limit, allocate to a new descriptor.
 		key = d.newDescriptor()
 	}
 	d.itemDescriptors[item.Key()] = key
