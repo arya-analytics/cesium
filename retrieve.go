@@ -287,7 +287,7 @@ func newRetrieveMetrics(exp alamos.Experiment) retrieveMetrics {
 }
 
 type retrieveConfig struct {
-	// exp is used to trakc metrics for the Retrieve query. See retrieveMetrics for more.
+	// exp is used to track metrics for the Retrieve query. See retrieveMetrics for more.
 	exp alamos.Experiment
 	// fs is the file system for reading Segment data from.
 	fs fileSystem
@@ -310,8 +310,8 @@ func mergeRetrieveConfigDefaults(cfg *retrieveConfig) {
 
 	// |||||| PERSIST ||||||
 
-	if cfg.persist.MaxRoutines == 0 {
-		cfg.persist.MaxRoutines = retrievePersistMaxRoutines
+	if cfg.persist.NumWorkers == 0 {
+		cfg.persist.NumWorkers = retrievePersistMaxRoutines
 	}
 	if cfg.persist.Shutdown == nil {
 		cfg.persist.Shutdown = cfg.shutdown
@@ -338,7 +338,7 @@ func mergeRetrieveConfigDefaults(cfg *retrieveConfig) {
 
 const (
 	// retrievePersistMaxRoutines is the maximum number of goroutines the retrieve query persist.Persist can use.
-	retrievePersistMaxRoutines = persist.DefaultMaxRoutines
+	retrievePersistMaxRoutines = persist.DefaultNumWorkers
 	// retrieveDebounceFlushInterval is the interval at which retrieve debounce queue will flush if the number of
 	// retrieve operations is below the threshold.
 	retrieveDebounceFlushInterval = 100 * time.Millisecond
@@ -401,8 +401,7 @@ func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 		retrieveOperationSet,
 	](q.Out, cfg.shutdown, new(retrieveBatch))
 
-	// receives and executes the operations from batchPipe on persist.
-	operation.PipeExec[fileKey, retrieveOperationSet](batchPipe, pst, cfg.shutdown)
+	pst.Pipe(batchPipe)
 
 	// opens new iterators for generating retrieve operations for the RetrieveRequest piped in via q.In.
 	strategy.IterFactory = &retrieveIteratorFactory{

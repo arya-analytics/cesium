@@ -4,6 +4,7 @@ import (
 	"github.com/arya-analytics/cesium/shut"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"time"
 )
 
 var _ = Describe("Shutdown", func() {
@@ -36,6 +37,7 @@ var _ = Describe("Shutdown", func() {
 				return nil
 			}, shut.WithKey("routine"))
 			Expect(s.Shutdown()).To(Succeed())
+			time.Sleep(1 * time.Millisecond)
 			Expect(exited[0]).To(Equal(true))
 			Expect(exited[1]).To(Equal(true))
 			Expect(s.NumRoutines()).To(Equal(0))

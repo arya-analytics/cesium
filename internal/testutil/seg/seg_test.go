@@ -37,7 +37,7 @@ var _ = Describe("Seg", func() {
 				c := cesium.Channel{Key: 1, DataRate: 1, DataType: cesium.Float64}
 				seg := seg.New(c, seg.SeqFloat64, 0, 10*cesium.Second)
 				Expect(seg.Data).To(HaveLen(80))
-				f64 := seg.ToFloat64()
+				f64 := binary.ToFloat64(seg.Data)
 				Expect(f64).To(HaveLen(10))
 				Expect(f64[0]).To(Equal(float64(0)))
 				Expect(c.DataRate.Span(len(f64))).To(Equal(10 * cesium.Second))
@@ -49,7 +49,7 @@ var _ = Describe("Seg", func() {
 				segs := seg.NewSet(c, seg.SeqFloat64, 0, 10*cesium.Second, 10)
 				Expect(segs).To(HaveLen(10))
 				Expect(segs[0].Data).To(HaveLen(80))
-				f64 := segs[0].ToFloat64()
+				f64 := binary.ToFloat64(segs[0].Data)
 				Expect(f64).To(HaveLen(10))
 				Expect(f64[0]).To(Equal(float64(0)))
 				lastSeg := segs[len(segs)-1]

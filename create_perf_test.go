@@ -79,7 +79,7 @@ var _ = Describe("Create", func() {
 	)
 	BeforeEach(func() {
 		var err error
-		log, _ = zap.NewDevelopment()
+		log = zap.NewNop()
 		exp = alamos.New("create_test")
 		db, err = cesium.Open("./testdata",
 			cesium.WithLogger(log),
@@ -97,7 +97,7 @@ var _ = Describe("Create", func() {
 		config := &createConfig{vars: progressiveCreate}
 		p := alamos.NewParametrize[createVars](config)
 		p.Template(func(i int, values createVars) {
-			FIt(fmt.Sprintf("Should write data to %v channels in different goroutines correctly", values.nChannels), func() {
+			It(fmt.Sprintf("Should write data to %v channels in different goroutines correctly", values.nChannels), func() {
 				chs, err := db.NewCreateChannel().
 					WithRate(values.dataRate).
 					WithType(values.dataType).

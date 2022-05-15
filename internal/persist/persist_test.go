@@ -42,20 +42,20 @@ var _ = Describe("Persist", func() {
 	BeforeEach(func() {
 		sd = shut.New()
 		var err error
-		fs, err = kfs.New[int]("", kfs.WithFS(kfs.NewMem()))
+		fs, err = kfs.New[int]("testdata", kfs.WithFS(kfs.NewMem()))
 		Expect(err).ToNot(HaveOccurred())
 		p = persist.New[int, operation.Operation[int]](fs, persist.Config{
-			MaxRoutines: 50,
-			Shutdown:    sd,
+			NumWorkers: 50,
+			Shutdown:   sd,
 		})
-	})
-	AfterEach(func() {
-		Expect(sd.Shutdown()).To(Succeed())
 	})
 	Describe("QExec", func() {
 		It("Should execute an operation correctly", func() {
 			b := &BasicOperation{}
-			p.Exec([]operation.Operation[int]{b})
+			ops := make(chan []operation.Operation[int])
+			p.Pipe(ops)
+			ops <- []operation.Operation[int]{b}
+			close(ops)
 			// Read the file.
 			Expect(sd.Shutdown()).To(Succeed())
 			f, err := fs.Acquire(1)
@@ -73,7 +73,10 @@ var _ = Describe("Persist", func() {
 	Describe("Shutdown", func() {
 		It("Should execute all operations before shutting down", func() {
 			b := &BasicOperation{}
-			p.Exec([]operation.Operation[int]{b})
+			ops := make(chan []operation.Operation[int])
+			p.Pipe(ops)
+			ops <- []operation.Operation[int]{b}
+			close(ops)
 			Expect(sd.Shutdown()).To(Succeed())
 			Expect(b.executed).To(BeTrue())
 		})

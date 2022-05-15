@@ -128,10 +128,6 @@ func generateRangeKeys(cpk ChannelKey, tr TimeRange) ([]byte, []byte) {
 
 // |||||| CONVERTER ||||||
 
-func (sg Segment) ToFloat64() []float64 {
-	return binary.ToFloat64(sg.Data)
-}
-
 func (sg Segment) Range(dr DataRate, d DataType) TimeRange {
 	return TimeRange{
 		Start: sg.Start,

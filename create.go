@@ -39,8 +39,8 @@ type CreateResponse struct {
 }
 
 // Error implements the query.Response interface.
-func (r CreateResponse) Error() error {
-	return r.Err
+func (r CreateResponse) Error() string {
+	return r.Err.Error()
 }
 
 // |||||| QUERY ||||||
@@ -333,8 +333,8 @@ func mergeCreateConfigDefaults(cfg *createConfig) {
 
 	// |||||| PERSIST ||||||
 
-	if cfg.persist.MaxRoutines == 0 {
-		cfg.persist.MaxRoutines = createPersistMaxRoutines
+	if cfg.persist.NumWorkers == 0 {
+		cfg.persist.NumWorkers = createPersistMaxRoutines
 	}
 	if cfg.persist.Shutdown == nil {
 		cfg.persist.Shutdown = cfg.shutdown
@@ -361,13 +361,13 @@ func mergeCreateConfigDefaults(cfg *createConfig) {
 
 const (
 	// createPersistMaxRoutines is the maximum number of goroutines the create query persist.Persist can use.
-	createPersistMaxRoutines = persist.DefaultMaxRoutines
+	createPersistMaxRoutines = persist.DefaultNumWorkers
 	// createDebounceFlushInterval is the interval at which create debounce queue will flush if the number of
 	// create operations is below the threshold.
 	createDebounceFlushInterval = 100 * time.Millisecond
 	// createDebounceFlushThreshold is the number of requests that must be queued before create debounce queue
 	// will flush.
-	createDebounceFlushThreshold = 10
+	createDebounceFlushThreshold = 100
 )
 
 func startCreate(cfg createConfig) (query.Factory[Create], error) {
@@ -446,8 +446,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 		createOperationSet,
 	](q.Out, cfg.shutdown, new(createBatch))
 
-	// receives and executes the operations from the batchPipe on persist.
-	operation.PipeExec[fileKey, createOperationSet](batchPipe, pst, cfg.shutdown)
+	pst.Pipe(batchPipe)
 
 	// opens new iterators for generating operations for the CreateRequest piped in via q.In.
 	strategy.IterFactory = &createIterFactory{queue: q.In}
