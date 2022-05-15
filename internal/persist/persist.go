@@ -2,8 +2,8 @@ package persist
 
 import (
 	"github.com/arya-analytics/cesium/internal/operation"
-	"github.com/arya-analytics/cesium/kfs"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 )
@@ -33,7 +33,7 @@ type Config struct {
 	// NOTE: Exec will continue accepting operations after the Shutdown is called. It is up to the caller
 	// to ensure that the flow of operations is halted beforehand. Shutdown is not required if the caller
 	// is tracking the completion of operations internally.
-	Shutdown shut.Shutdown
+	Shutdown shutdown.Shutdown
 }
 
 func DefaultConfig() Config {
@@ -51,7 +51,7 @@ func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *
 
 // Pipe queues a set of operations for execution. Operations are NOT guaranteed to execute in the order they are queued.
 func (p *Persist[K, O]) Pipe(ops <-chan []O) {
-	p.Shutdown.Go(func(sig chan shut.Signal) error {
+	p.Shutdown.Go(func(sig chan shutdown.Signal) error {
 		defer close(p.ops)
 		for _ops := range ops {
 			for _, op := range _ops {
@@ -64,7 +64,7 @@ func (p *Persist[K, O]) Pipe(ops <-chan []O) {
 
 func (p *Persist[K, O]) start() {
 	for i := 0; i < p.NumWorkers; i++ {
-		p.Shutdown.Go(func(sig chan shut.Signal) error {
+		p.Shutdown.Go(func(sig chan shutdown.Signal) error {
 			for op := range p.ops {
 				f, err := p.kfs.Acquire(op.FileKey())
 				if err != nil {

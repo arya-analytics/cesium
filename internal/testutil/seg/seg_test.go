@@ -2,8 +2,8 @@ package seg_test
 
 import (
 	"github.com/arya-analytics/cesium"
-	"github.com/arya-analytics/cesium/internal/binary"
 	"github.com/arya-analytics/cesium/internal/testutil/seg"
+	"github.com/arya-analytics/x/binary"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

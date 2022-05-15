@@ -2,9 +2,9 @@ package cesium
 
 import (
 	"bytes"
-	"github.com/arya-analytics/cesium/internal/binary"
-	"github.com/arya-analytics/cesium/internal/errutil"
-	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/x/binary"
+	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/util/errutil"
 	"io"
 	"sort"
 )

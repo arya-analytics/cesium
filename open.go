@@ -1,11 +1,11 @@
 package cesium
 
 import (
-	"github.com/arya-analytics/cesium/internal/kv"
-	"github.com/arya-analytics/cesium/internal/kv/pebblekv"
 	"github.com/arya-analytics/cesium/internal/query"
-	"github.com/arya-analytics/cesium/kfs"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/kv/pebblekv"
+	"github.com/arya-analytics/x/shutdown"
 	"github.com/cockroachdb/pebble"
 	"path/filepath"
 )
@@ -34,11 +34,11 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| SHUTDOWN ||||||
 
-	shutdown := shut.New(_opts.shutdownOpts...)
+	sd := shutdown.New(_opts.shutdownOpts...)
 
 	// |||||| FILE SYSTEM ||||||
 
-	fs, err := openFS(_opts, shutdown)
+	fs, err := openFS(_opts, sd)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	create, err := startCreate(createConfig{
 		exp:      _opts.exp,
 		logger:   _opts.logger,
-		shutdown: shutdown,
+		shutdown: sd,
 		fs:       fs,
 		kv:       kve,
 	})
@@ -68,7 +68,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	retrieve, err := startRetrieve(retrieveConfig{
 		exp:      _opts.exp,
 		logger:   _opts.logger,
-		shutdown: shutdown,
+		shutdown: sd,
 		fs:       fs,
 		kv:       kve,
 	})
@@ -85,7 +85,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	return &db{
 		kv:              kve,
-		shutdown:        shut.NewGroup(shutdown),
+		shutdown:        shutdown.NewGroup(sd),
 		create:          create,
 		retrieve:        retrieve,
 		createChannel:   createChannel,
@@ -93,7 +93,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	}, nil
 }
 
-func openFS(opts *options, sd shut.Shutdown) (fileSystem, error) {
+func openFS(opts *options, sd shutdown.Shutdown) (fileSystem, error) {
 	fs, err := kfs.New[fileKey](
 		filepath.Join(opts.dirname, cesiumDirectory),
 		opts.kfs.opts...,

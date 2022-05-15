@@ -2,9 +2,9 @@ package cesium
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/query"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/shutdown"
 )
 
 var (
@@ -187,7 +187,7 @@ type DB interface {
 
 type db struct {
 	kv              kv.KV
-	shutdown        *shut.Group
+	shutdown        *shutdown.Group
 	create          query.Factory[Create]
 	retrieve        query.Factory[Retrieve]
 	createChannel   query.Factory[CreateChannel]

@@ -1,6 +1,8 @@
 package cesium
 
-import "github.com/arya-analytics/cesium/internal/binary"
+import (
+	"github.com/arya-analytics/x/binary"
+)
 
 func MarshalFloat64(data []float64) []byte {
 	return marshal(data)

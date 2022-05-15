@@ -2,8 +2,8 @@ package cesium
 
 import (
 	"github.com/arya-analytics/cesium/internal/allocate"
-	"github.com/arya-analytics/cesium/internal/kv"
-	"github.com/arya-analytics/cesium/kfs"
+	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/x/kv"
 )
 
 type (

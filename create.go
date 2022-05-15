@@ -2,16 +2,16 @@ package cesium
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/alamos"
 	"github.com/arya-analytics/cesium/internal/allocate"
-	"github.com/arya-analytics/cesium/internal/errutil"
-	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
 	"github.com/arya-analytics/cesium/internal/query"
-	"github.com/arya-analytics/cesium/internal/queue"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/lock"
+	"github.com/arya-analytics/x/queue"
+	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/util/errutil"
 	"go.uber.org/zap"
 	"io"
 	"sync"
@@ -303,9 +303,9 @@ type createConfig struct {
 	fs fileSystem
 	// kv is the key-value store for writing Segment metadata to.
 	kv kv.KV
-	// shutdown is used to gracefully shut down create operations.
+	// shutdown is used to gracefully shutdown down create operations.
 	// create releases the shutdown when all Segment data has persisted to disk.
-	shutdown shut.Shutdown
+	shutdown shutdown.Shutdown
 	// logger is where create operations will log their progress.
 	logger *zap.Logger
 	// allocate is used for setting the parameters for allocating a Segment to  afile.

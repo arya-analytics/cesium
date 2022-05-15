@@ -3,8 +3,8 @@ package cesium_test
 import (
 	"fmt"
 	"github.com/arya-analytics/cesium"
-	"github.com/arya-analytics/cesium/alamos"
 	"github.com/arya-analytics/cesium/internal/testutil/seg"
+	"github.com/arya-analytics/x/alamos"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"

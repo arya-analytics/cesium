@@ -3,9 +3,9 @@ package cesium
 import (
 	"context"
 	"fmt"
-	"github.com/arya-analytics/cesium/internal/binary"
-	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/query"
+	"github.com/arya-analytics/x/binary"
+	"github.com/arya-analytics/x/kv"
 	"io"
 )
 

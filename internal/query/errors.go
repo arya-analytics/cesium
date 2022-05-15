@@ -2,7 +2,7 @@ package query
 
 import (
 	"errors"
-	"github.com/arya-analytics/cesium/internal/errutil"
+	"github.com/arya-analytics/x/util/errutil"
 )
 
 // |||||| ERRORS ||||||

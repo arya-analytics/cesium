@@ -4,11 +4,10 @@ import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
-	"github.com/arya-analytics/cesium/kfs"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/x/shutdown"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-)
 
 type BasicOperation struct {
 	executed bool
@@ -36,11 +35,11 @@ func (b *BasicOperation) SendError(err error) {
 var _ = Describe("Persist", func() {
 	var (
 		p  *persist.Persist[int, operation.Operation[int]]
-		sd shut.Shutdown
+		sd shutdown.Shutdown
 		fs kfs.FS[int]
 	)
 	BeforeEach(func() {
-		sd = shut.New()
+		sd = shutdown.New()
 		var err error
 		fs, err = kfs.New[int]("testdata", kfs.WithFS(kfs.NewMem()))
 		Expect(err).ToNot(HaveOccurred())

@@ -1,12 +1,12 @@
 package query
 
 import (
-	"github.com/arya-analytics/cesium/alamos"
-	"github.com/arya-analytics/cesium/internal/errutil"
 	"github.com/arya-analytics/cesium/internal/operation"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/util/errutil"
 	"sync"
-)
+
 
 type Executor interface {
 	Exec(query Query) error
@@ -31,20 +31,20 @@ func (hooks HookSet) Exec(query Query) error {
 }
 
 type Parser[
-	F comparable,
-	O operation.Operation[F],
-	R Request,
+F comparable,
+O operation.Operation[F],
+R Request,
 ] interface {
 	Parse(q Query, r R) ([]O, error)
 }
 
 type Strategy[
-	F comparable,
-	O operation.Operation[F],
-	REQ Request,
-	RES Response,
+F comparable,
+O operation.Operation[F],
+REQ Request,
+RES Response,
 ] struct {
-	Shutdown shut.Shutdown
+	Shutdown shutdown.Shutdown
 	Hooks    struct {
 		PreAssembly   HookSet
 		PostAssembly  HookSet
@@ -73,7 +73,7 @@ func (s *Strategy[F, O, REQ, RES]) Exec(query Query) error {
 		return err
 	}
 
-	s.Shutdown.Go(func(sig chan shut.Signal) error {
+	s.Shutdown.Go(func(sig chan shutdown.Signal) error {
 		sw := s.Metrics.Request.Stopwatch()
 		sw.Start()
 		defer sw.Stop()

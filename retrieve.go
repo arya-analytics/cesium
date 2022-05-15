@@ -2,13 +2,13 @@ package cesium
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/alamos"
-	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
 	"github.com/arya-analytics/cesium/internal/query"
-	"github.com/arya-analytics/cesium/internal/queue"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/queue"
+	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
 	"io"
 	"sort"
@@ -209,7 +209,7 @@ func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retri
 
 type retrieveIteratorFactory struct {
 	queue    chan<- []retrieveOperation
-	shutdown shut.Shutdown
+	shutdown shutdown.Shutdown
 	logger   *zap.Logger
 }
 
@@ -293,9 +293,9 @@ type retrieveConfig struct {
 	fs fileSystem
 	// kv is the key-value store for reading Segment metadata from.
 	kv kv.KV
-	// shutdown is used to gracefully shut down retrieve operations.
+	// shutdown is used to gracefully shutdown down retrieve operations.
 	// retrieve releases the shutdown when all queries have been served.
-	shutdown shut.Shutdown
+	shutdown shutdown.Shutdown
 	// logger is where retrieve operations will log their progress.
 	logger *zap.Logger
 	// debounce sets the debounce parameters for retrieve operations.

@@ -2,7 +2,7 @@ package operation
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/kfs"
+	"github.com/arya-analytics/x/kfs"
 )
 
 type Operation[F comparable] interface {

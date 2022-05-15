@@ -1,9 +1,9 @@
 package cesium
 
 import (
-	"github.com/arya-analytics/cesium/alamos"
-	"github.com/arya-analytics/cesium/kfs"
-	"github.com/arya-analytics/cesium/shut"
+	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/x/shutdown"
 	"github.com/cockroachdb/pebble/vfs"
 	"go.uber.org/zap"
 	"time"
@@ -22,7 +22,7 @@ type options struct {
 	}
 	kvFS         vfs.FS
 	exp          alamos.Experiment
-	shutdownOpts []shut.Option
+	shutdownOpts []shutdown.Option
 	logger       *zap.Logger
 }
 
@@ -43,7 +43,7 @@ func mergeDefaultOptions(o *options) {
 		o.kfs.sync.maxAge = 1 * time.Hour
 	}
 	if o.shutdownOpts == nil {
-		o.shutdownOpts = []shut.Option{}
+		o.shutdownOpts = []shutdown.Option{}
 	}
 
 	// || LOGGER ||
@@ -78,11 +78,11 @@ func WithExperiment(exp alamos.Experiment) Option {
 
 func WithShutdownThreshold(threshold time.Duration) Option {
 	return func(o *options) {
-		o.shutdownOpts = append(o.shutdownOpts, shut.WithThreshold(threshold))
+		o.shutdownOpts = append(o.shutdownOpts, shutdown.WithThreshold(threshold))
 	}
 }
 
-func WithShutdownOptions(opts ...shut.Option) Option {
+func WithShutdownOptions(opts ...shutdown.Option) Option {
 	return func(o *options) {
 		o.shutdownOpts = append(o.shutdownOpts, opts...)
 	}
