@@ -2,11 +2,10 @@ package query
 
 import (
 	"github.com/arya-analytics/cesium/internal/operation"
-	"github.com/arya-analytics/x/shutdown"
 	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/shutdown"
 	"github.com/arya-analytics/x/util/errutil"
 	"sync"
-
 
 type Executor interface {
 	Exec(query Query) error
