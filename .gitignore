@@ -32,4 +32,5 @@ main
 
 # |||| TEST DATA ||||
 
-./testdata
+testdata/*
+!testdata/.gitkeep
