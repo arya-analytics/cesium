@@ -39,8 +39,8 @@ type CreateResponse struct {
 }
 
 // Error implements the query.Response interface.
-func (r CreateResponse) Error() string {
-	return r.Err.Error()
+func (r CreateResponse) Error() error {
+	return r.Err
 }
 
 // |||||| QUERY ||||||

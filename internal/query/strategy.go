@@ -6,6 +6,7 @@ import (
 	"github.com/arya-analytics/x/shutdown"
 	"github.com/arya-analytics/x/util/errutil"
 	"sync"
+)
 
 type Executor interface {
 	Exec(query Query) error
@@ -30,18 +31,18 @@ func (hooks HookSet) Exec(query Query) error {
 }
 
 type Parser[
-F comparable,
-O operation.Operation[F],
-R Request,
+	F comparable,
+	O operation.Operation[F],
+	R Request,
 ] interface {
 	Parse(q Query, r R) ([]O, error)
 }
 
 type Strategy[
-F comparable,
-O operation.Operation[F],
-REQ Request,
-RES Response,
+	F comparable,
+	O operation.Operation[F],
+	REQ Request,
+	RES Response,
 ] struct {
 	Shutdown shutdown.Shutdown
 	Hooks    struct {
