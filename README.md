@@ -20,7 +20,11 @@ Cesium is tailored towards a specific class of time-series data:
 2. High Speed - cesium is happiest at sample rates between 10 Hz and 1 MHz. Although it can work with data at any rate,
    it will be far slower than other storage engines for low sample rates.
 
-## Concepts
+## Concepts 
+
+The following is an overview of Cesium concepts from an interface perspective. A detailed design 
+[RFC](https://github.com/arya-analytics/delta/blob/DA-149-cesium-rfc/docs/rfc/220517-cesium-segment-storage.md) is 
+available for those interested in the implementation.
 
 ### Channels
 
