@@ -14,20 +14,21 @@ import (
 // K - The type of the items key.
 // D - The type of the descriptors key.
 //
-// Implementation Details
+// Implementation Details:
 //
 // The implementation of Allocator provided in this package optimizes for:
-// sequential allocation of items with the same key (i.e. all items with the key "hello" go to their own file (if possible)).
-// It uses a simple set of rules:
+// sequential allocation of items with the same key (i.e. all items with the key "hello" go to their own file
+// (if possible)). It uses a simple set of rules:
 //
 // 1. Allocate the item to the descriptor it was allocated to previously.
 // 2. If the item is not allocated OR the size of the descriptor exceeds the size set in Config.MaxSize,
 //    then allocate the item to the next AVAILABLE descriptor.
 //
-// AVAILABLE means:
-//      a. A completely NEW descriptor if config.MaxDescriptors has not been reached.
-//      OR
-//      b. The descriptor with the lowest size if config.MaxDescriptors has been reached.
+// Available Means:
+//
+//   A. A completely NEW descriptor if config.MaxDescriptors has not been reached.
+//   OR
+//   B. The descriptor with the lowest size if config.MaxDescriptors has been reached.
 //
 type Allocator[K, D comparable, I Item[K]] interface {
 	// Allocate allocates itemDescriptors of a given size to descriptors. Returns a slice of descriptor keys.
