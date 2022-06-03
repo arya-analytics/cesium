@@ -11,7 +11,7 @@ type Operation[F comparable] interface {
 	// FileKey returns the key of the file to which the operation applies.
 	FileKey() F
 	// SendError sends an error to the operation. This is only used for IO errors.
-	SendError(error)
+	WriteError(error)
 	// Exec is called by Persist to execute the operation. The provided file will have the key returned by FileKey.
 	// The operation has a lock on the file during this time, and is free to make any modifications.
 	Exec(f kfs.File[F])
@@ -33,8 +33,8 @@ func (s Set[F, T]) Exec(f kfs.File[F]) {
 	}
 }
 
-func (s Set[F, T]) SendError(err error) {
+func (s Set[F, T]) WriteError(err error) {
 	for _, op := range s {
-		op.SendError(err)
+		op.WriteError(err)
 	}
 }

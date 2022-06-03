@@ -29,7 +29,7 @@ func (b *BasicOperation) Exec(f kfs.File[int]) {
 	}
 }
 
-func (b *BasicOperation) SendError(err error) {
+func (b *BasicOperation) WriteError(err error) {
 	panic(err)
 }
 

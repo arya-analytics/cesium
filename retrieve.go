@@ -122,7 +122,7 @@ func (ro retrieveOperation) FileKey() fileKey {
 }
 
 // SendError implements persist.Operation.
-func (ro retrieveOperation) SendError(err error) {
+func (ro retrieveOperation) WriteError(err error) {
 	ro.stream.Responses <- RetrieveResponse{Err: err}
 }
 
@@ -136,7 +136,7 @@ func (ro retrieveOperation) Exec(f file) {
 		if err == io.EOF {
 			panic("retrieve operation: encountered unexpected EOF. this is a bug.")
 		}
-		ro.SendError(err)
+		ro.WriteError(err)
 	}
 	ro.seg.Data = b
 	s.Stop()

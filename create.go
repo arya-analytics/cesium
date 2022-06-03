@@ -99,8 +99,8 @@ func (cr createOperation) FileKey() fileKey {
 	return cr.fileKey
 }
 
-// SendError implements persist.Operation.
-func (cr createOperation) SendError(err error) {
+// WriteError implements persist.Operation.
+func (cr createOperation) WriteError(err error) {
 	cr.stream.Responses <- CreateResponse{Err: err}
 }
 
@@ -108,7 +108,7 @@ func (cr createOperation) SendError(err error) {
 func (cr createOperation) Exec(f file) {
 	tft := cr.metrics.totalFlush.Stopwatch()
 	tft.Start()
-	c := errutil.NewCatchReadWriteSeek(f, errutil.WithHooks(cr.SendError))
+	c := errutil.NewCatchReadWriteSeek(f, errutil.WithHooks(cr.WriteError))
 	c.Seek(0, io.SeekEnd)
 	for _, s := range cr.segments {
 		s.fileKey = f.Key()

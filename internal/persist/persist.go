@@ -68,7 +68,7 @@ func (p *Persist[K, O]) start() {
 			for op := range p.ops {
 				f, err := p.kfs.Acquire(op.FileKey())
 				if err != nil {
-					op.SendError(err)
+					op.WriteError(err)
 					continue
 				}
 				op.Exec(f)
