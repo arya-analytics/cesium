@@ -1,5 +1,7 @@
 package cesium_test
 
+import _ "net/http/pprof"
+
 import (
 	"fmt"
 	"github.com/arya-analytics/cesium"
@@ -71,7 +73,7 @@ var progressiveCreate = []createVars{
 	},
 }
 
-var _ = Describe("Create", func() {
+var _ = FDescribe("Create", func() {
 	var (
 		db  cesium.DB
 		log *zap.Logger
