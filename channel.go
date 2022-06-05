@@ -14,7 +14,7 @@ type ChannelKey = int16
 type Channel struct {
 	Key      ChannelKey
 	DataRate DataRate
-	DataType DataType
+	DataType Density
 	Active   bool
 }
 
@@ -243,15 +243,15 @@ func (cc CreateChannel) WithRate(dr DataRate) CreateChannel {
 
 const densityOptKey query.OptionKey = "den"
 
-func setDensity(q query.Query, d DataType) {
+func setDensity(q query.Query, d Density) {
 	q.Set(densityOptKey, d)
 }
 
-func density(q query.Query) DataType {
-	return q.GetRequired(densityOptKey).(DataType)
+func density(q query.Query) Density {
+	return q.GetRequired(densityOptKey).(Density)
 }
 
-func (cc CreateChannel) WithType(dt DataType) CreateChannel {
+func (cc CreateChannel) WithType(dt Density) CreateChannel {
 	setDensity(cc.Query, dt)
 	return cc
 }

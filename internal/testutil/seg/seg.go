@@ -66,10 +66,8 @@ func generateSpan(c cesium.Channel, fac DataFactory, span cesium.TimeSpan) []byt
 	return fac(sc)
 }
 
-func DataTypeFactory(dt cesium.DataType) DataFactory {
-	m := map[cesium.DataType]DataFactory{
-		cesium.Float64: SeqFloat64,
-	}
+func DataTypeFactory(dt cesium.Density) DataFactory {
+	m := map[cesium.Density]DataFactory{cesium.Float64: SeqFloat64}
 	return m[dt]
 }
 

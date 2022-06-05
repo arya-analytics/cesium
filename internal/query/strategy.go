@@ -3,8 +3,8 @@ package query
 import (
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/errutil"
 	"github.com/arya-analytics/x/shutdown"
-	"github.com/arya-analytics/x/util/errutil"
 	"sync"
 )
 

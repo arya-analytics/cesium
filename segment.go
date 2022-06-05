@@ -3,8 +3,8 @@ package cesium
 import (
 	"bytes"
 	"github.com/arya-analytics/x/binary"
+	"github.com/arya-analytics/x/errutil"
 	"github.com/arya-analytics/x/kv"
-	"github.com/arya-analytics/x/util/errutil"
 	"io"
 	"sort"
 )
@@ -128,7 +128,7 @@ func generateRangeKeys(cpk ChannelKey, tr TimeRange) ([]byte, []byte) {
 
 // |||||| CONVERTER ||||||
 
-func (sg Segment) Range(dr DataRate, d DataType) TimeRange {
+func (sg Segment) Range(dr DataRate, d Density) TimeRange {
 	return TimeRange{
 		Start: sg.Start,
 		End:   sg.Start.Add(dr.ByteSpan(len(sg.Data), d)),
