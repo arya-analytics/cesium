@@ -14,7 +14,7 @@ type DeviceFactory struct {
 	DB  cesium.DB
 }
 
-func (f DeviceFactory) New(dt cesium.DataType, dr cesium.DataRate, fi cesium.TimeSpan) *Device {
+func (f DeviceFactory) New(dt cesium.Density, dr cesium.DataRate, fi cesium.TimeSpan) *Device {
 	return &Device{
 		Ctx:           f.Ctx,
 		DB:            f.DB,
@@ -27,7 +27,7 @@ func (f DeviceFactory) New(dt cesium.DataType, dr cesium.DataRate, fi cesium.Tim
 type Device struct {
 	Ctx           context.Context
 	DB            cesium.DB
-	DataType      cesium.DataType
+	DataType      cesium.Density
 	DataRate      cesium.DataRate
 	FlushInterval cesium.TimeSpan
 	res           <-chan cesium.CreateResponse

@@ -1,6 +1,8 @@
 package cesium_test
 
-import _ "net/http/pprof"
+import (
+	_ "net/http/pprof"
+)
 
 import (
 	"fmt"
@@ -18,7 +20,7 @@ import (
 type createVars struct {
 	nChannels int
 	dataRate  cesium.DataRate
-	dataType  cesium.DataType
+	dataType  cesium.Density
 }
 
 type createConfig struct {
@@ -73,7 +75,7 @@ var progressiveCreate = []createVars{
 	},
 }
 
-var _ = FDescribe("Create", func() {
+var _ = Describe("Create", func() {
 	var (
 		db  cesium.DB
 		log *zap.Logger

@@ -19,23 +19,23 @@ var _ = Describe("CreateChannel", func() {
 	It("Should create the channel correctly", func() {
 		c, err := db.NewCreateChannel().
 			WithRate(cesium.DataRate(25)).
-			WithType(cesium.DataType(8)).
+			WithType(cesium.Density(8)).
 			Exec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(c.DataRate).To(Equal(cesium.DataRate(25)))
-		Expect(c.DataType).To(Equal(cesium.DataType(8)))
+		Expect(c.DataType).To(Equal(cesium.Density(8)))
 	})
 	Specify("The channel can be retrieved after creation", func() {
 		c, err := db.NewCreateChannel().
 			WithRate(cesium.DataRate(25)).
-			WithType(cesium.DataType(8)).
+			WithType(cesium.Density(8)).
 			Exec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(c.DataRate).To(Equal(cesium.DataRate(25)))
-		Expect(c.DataType).To(Equal(cesium.DataType(8)))
+		Expect(c.DataType).To(Equal(cesium.Density(8)))
 		resC, err := db.NewRetrieveChannel().WhereKey(c.Key).Exec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resC.DataRate).To(Equal(cesium.DataRate(25)))
-		Expect(resC.DataType).To(Equal(cesium.DataType(8)))
+		Expect(resC.DataType).To(Equal(cesium.Density(8)))
 	})
 })
