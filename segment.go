@@ -3,13 +3,13 @@ package cesium
 import (
 	"bytes"
 	"github.com/arya-analytics/x/binary"
-	"github.com/arya-analytics/x/errutil"
 	"github.com/arya-analytics/x/kv"
-	"io"
+	"github.com/arya-analytics/x/telem"
+	"github.com/cockroachdb/pebble"
 	"sort"
 )
 
-// |||||| SEGMENT ||||||
+// |||||| CORE |||||||
 
 type Segment struct {
 	ChannelKey ChannelKey
@@ -20,118 +20,234 @@ type Segment struct {
 	size       Size
 }
 
-// |||||| HEADER ||||||
-
-type segmentHeader struct {
-	ChannelPK ChannelKey
-	FilePK    fileKey
-	Offset    int64
-	Start     TimeStamp
-	Size      Size
+type SegmentHeader struct {
+	ChannelKey ChannelKey
+	Start      TimeStamp
+	fileKey    fileKey
+	offset     int64
+	size       Size
 }
 
-func (sg Segment) header() segmentHeader {
-	return segmentHeader{
-		ChannelPK: sg.ChannelKey,
-		FilePK:    sg.fileKey,
-		Offset:    sg.offset,
-		Start:     sg.Start,
-		Size:      sg.size,
-	}
+func (sg Segment) Sugar(channel Channel, Bound TimeRange) SugaredSegment {
+	return SugaredSegment{Segment: sg, Bound: Bound, Channel: channel}
 }
 
-// Size implements allocate.Item.
-func (sg Segment) Size() int {
-	if len(sg.Data) == 0 {
-		return int(sg.size)
+func (sg Segment) Header() SegmentHeader {
+	return SegmentHeader{ChannelKey: sg.ChannelKey, Start: sg.Start, fileKey: sg.fileKey, offset: sg.offset, size: sg.size}
+}
+
+func (sg *Segment) LoadHeader(header SegmentHeader) {
+	sg.ChannelKey = header.ChannelKey
+	sg.Start = header.Start
+	sg.fileKey = header.fileKey
+	sg.offset = header.offset
+	sg.size = header.size
+}
+
+// Size returns the size of the segment in bytes.
+func (sg Segment) Size() Size {
+	l := len(sg.Data)
+	if l == 0 {
+		return sg.size
 	}
-	return len(sg.Data)
+	return Size(l)
 }
 
 // Key implements allocate.Item.
-func (sg Segment) Key() ChannelKey {
-	return sg.ChannelKey
-}
+func (sg Segment) Key() ChannelKey { return sg.ChannelKey }
 
-// Flush implements kv.Flusher.
-func (sg Segment) Flush(w io.Writer) error {
-	return binary.Write(w, sg.header())
-}
-
-// Load implements kv.Loader.
-func (sg *Segment) Load(r io.Reader) error {
-	// Unfortunately this is the most efficient way I've found to read the header
-	c := errutil.NewCatchRead(r)
-	c.Read(&sg.ChannelKey)
-	c.Read(&sg.fileKey)
-	c.Read(&sg.offset)
-	c.Read(&sg.Start)
-	c.Read(&sg.size)
-	return c.Error()
-}
-
-func (sg Segment) flushData(w io.Writer) error {
-	return binary.Write(w, sg.Data)
-}
-
-const segmentKVPrefix = "cs-sg"
+const segmentKVPrefix = "cs/sg"
 
 func (sg Segment) KVKey() []byte {
 	return kv.StaticCompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
 }
 
+// |||||| SUGARED ||||||
+
+// SugaredSegment injects additional functionality into a Segment.
+type SugaredSegment struct {
+	Segment
+	Channel
+	Bound TimeRange
+}
+
+func (s SugaredSegment) Offset() int64 {
+	return s.Segment.offset + int64(TimeSpan(s.Start()-s.Segment.Start).ByteSize(s.Channel.DataRate, s.Channel.DataType))
+}
+
+func (s SugaredSegment) Size() Size { return s.Span().ByteSize(s.Channel.DataRate, s.Channel.DataType) }
+
+func (s SugaredSegment) Start() TimeStamp { return s.Range().Start }
+
+func (s SugaredSegment) End() TimeStamp { return s.Range().End }
+
+// Range returns the bounded range of the segment.
+func (s SugaredSegment) Range() TimeRange { return s.UnboundedRange().Bound(s.Bound) }
+
+// Span returns the bounded span of the segment.
+func (s SugaredSegment) Span() TimeSpan { return s.Range().Span() }
+
+func (s SugaredSegment) UnboundedRange() TimeRange {
+	return s.Segment.Start.SpanRange(s.UnboundedSpan())
+}
+
+func (s SugaredSegment) UnboundedSpan() TimeSpan { return s.DataRate.SizeSpan(s.Size(), s.DataType) }
+
+// |||||| ITERATOR ||||||
+
+type kvIterator struct {
+	kv.Iterator
+	pos     TimeStamp
+	channel Channel
+	value   []SugaredSegment
+	err     error
+	rng     TimeRange
+}
+
+func newSegmentKVIterator(channel Channel, rng telem.TimeRange, kve kv.KV) *kvIterator {
+	sg := &kvIterator{pos: rng.Start, channel: channel}
+	kvIter := kve.IterRange(sg.stampKey(rng.Start), sg.stampKey(rng.End))
+	sg.Iterator = kvIter
+	return &kvIterator{}
+}
+
+// Next returns the next segment in the iterator. Returns a boolean indicating whether the iterator
+// is pointing at a valid segment.
+func (si *kvIterator) Next() bool {
+	si.collectGarbage()
+	if !si.Iterator.Next() {
+		return false
+	}
+	si.loadValue()
+	si.setBounds(si.Position(), TimeStampMax)
+	si.autoUpdatePos()
+	return true
+}
+
+// Position returns the current TimeStamp of the iterator.
+func (si *kvIterator) Position() TimeStamp { return si.pos }
+
+// First seeks the segment to the first Segment in the iterator. Returns true if the iterator is pointing
+// to a valid Segment.
+func (si *kvIterator) First() bool {
+	si.collectGarbage()
+	if !si.Iterator.First() {
+		return false
+	}
+	si.loadValue()
+	si.updatePos(si.rng.Start)
+	si.setBounds(si.Position(), TimeStampMax)
+	return true
+}
+
+// Last seeks the segment to the last Segment in the iterator. Returns true if the iterator is pointing
+// to a valid Segment.
+func (si *kvIterator) Last() bool {
+	si.collectGarbage()
+	if !si.Iterator.Last() {
+		return false
+	}
+	si.loadValue()
+	si.updatePos(si.rng.End)
+	si.setBounds(TimeStampMax, si.Position())
+	return true
+}
+
+// NextSpan reads the segments from the iterator position to the end of the span.
+// Returns a boolean indicating whether the iterator is pointing to a valid Segment.
+func (si *kvIterator) NextSpan(span TimeSpan) bool {
+	si.collectGarbage()
+	end := si.Position().Add(span)
+	limit := si.stampKey(end)
+	for {
+		if state := si.Iterator.NextWithLimit(limit); state != pebble.IterValid {
+			break
+		}
+		si.loadValue()
+	}
+	if si.IsZero() {
+		return true
+	}
+	si.setBounds(si.Position(), end)
+	si.autoUpdatePos()
+	return true
+}
+
+// NextRange reads the segments in the provided range. Returns a boolean indicating whether the iterator
+// is pointing to a valid Segment.
+func (si *kvIterator) NextRange(tr telem.TimeRange) bool {
+	if !si.SeekLT(tr.Start) {
+		return false
+	}
+	return si.NextSpan(tr.Span())
+}
+
+// Value returns the current iterator value.
+func (si *kvIterator) Value() []SugaredSegment { return si.value }
+
+// SeekLT seeks the iterator to the first Segment with a timestamp less than or equal to the given stamp.
+// Returns a boolean indicating whether the iterator is pointing at a valid Segment.
+func (si *kvIterator) SeekLT(stamp TimeStamp) bool {
+	si.collectGarbage()
+	if !si.Iterator.SeekLT(si.stampKey(stamp)) {
+		return false
+	}
+	si.updatePos(stamp)
+	return true
+}
+
+// SeekGE seeks the iterator to the first Segment with a timestamp greater than or equal to the
+// Returns a boolean indicating whether the iterator is pointing at a valid Segment.
+func (si *kvIterator) SeekGE(stamp TimeStamp) bool {
+	si.collectGarbage()
+	if !si.Iterator.SeekGE(si.stampKey(stamp)) {
+		return false
+	}
+	si.updatePos(stamp)
+	return true
+}
+
+// IsZero returns true if the iterator value contains any segments.
+func (si *kvIterator) IsZero() bool { return len(si.value) > 0 }
+
+// stampKey returns the key for a particular TimeStamp.
+func (si *kvIterator) stampKey(stamp TimeStamp) []byte {
+	return Segment{Start: stamp, ChannelKey: si.channel.Key}.KVKey()
+}
+
+// loadValue loads a SugaredSegment from the current iterator value. Assumes the iterator is valid.
+func (si *kvIterator) loadValue() {
+	seg := &Segment{}
+	header := seg.Header()
+	if err := binary.Load(bytes.NewBuffer(si.Iterator.Value()), &header); err != nil {
+		si.writeError(err)
+	}
+	seg.LoadHeader(header)
+	si.value = append(si.value, seg.Sugar(si.channel, TimeRangeMax))
+}
+
+func (si *kvIterator) setBounds(lower TimeStamp, upper TimeStamp) {
+	si.value[0].Bound.Start = lower
+	si.value[len(si.value)-1].Bound.End = upper
+}
+
+// autoUpdatePos updates the iterator position to the bounded end timestamp of the last segment in the value.
+// assumes the iterator is valid.
+func (si *kvIterator) autoUpdatePos() { si.pos = si.Value()[len(si.Value())-1].End() }
+
+// updatePos updates the position of the iterator.
+func (si *kvIterator) updatePos(stamp TimeStamp) { si.pos = stamp }
+
+// writeError writes sets the error for the current iteration.
+func (si *kvIterator) writeError(err error) { si.err = err }
+
+// collectGarbage removes any segments from the value and sets the iterator error to nil.
+func (si *kvIterator) collectGarbage() {
+	si.value = []SugaredSegment{}
+	si.err = nil
+}
+
 // |||||| KV ||||||
-
-type segmentKV struct {
-	kv kv.KV
-}
-
-func (sk segmentKV) set(s Segment) error {
-	return kv.Flush(sk.kv, s.KVKey(), s)
-}
-
-func (sk segmentKV) filter(tr TimeRange, cpk ChannelKey) (segments []Segment, err error) {
-	startKey, endKey := generateRangeKeys(cpk, tr)
-	iter := sk.kv.IterRange(startKey, endKey)
-	defer func() {
-		if err := iter.Close(); err != nil {
-			panic(err)
-		}
-	}()
-	for iter.First(); iter.Valid(); iter.Next() {
-		b := new(bytes.Buffer)
-		b.Write(iter.Value())
-		s := &Segment{}
-		if err := s.Load(b); err != nil {
-			return nil, err
-		}
-		segments = append(segments, *s)
-	}
-	return segments, nil
-}
-
-func generateRangeKeys(cpk ChannelKey, tr TimeRange) ([]byte, []byte) {
-	s, err := kv.CompositeKey(segmentKVPrefix, cpk, tr.Start)
-	if err != nil {
-		panic(err)
-	}
-	e, err := kv.CompositeKey(segmentKVPrefix, cpk, tr.End)
-	if err != nil {
-		panic(err)
-	}
-	return s, e
-}
-
-// |||||| CONVERTER ||||||
-
-func (sg Segment) Range(dr DataRate, d Density) TimeRange {
-	return TimeRange{
-		Start: sg.Start,
-		End:   sg.Start.Add(dr.ByteSpan(len(sg.Data), d)),
-	}
-}
-
-// |||||| SORT ||||||
 
 func Sort(segments []Segment) {
 	sort.Slice(segments, func(i, j int) bool { return segments[i].Start.Before(segments[j].Start) })

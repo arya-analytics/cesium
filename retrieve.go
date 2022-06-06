@@ -102,50 +102,45 @@ func (r retrieveFactory) New() Retrieve {
 	return Retrieve{Query: query.New(r.exec)}
 }
 
-// ||||||| OPERATION ||||||
+// |||||| OPERATION ||||||
 
 type retrieveOperation struct {
-	seg      Segment
-	stream   retrieveStream
+	seg      SugaredSegment
+	outlet   confluence.Inlet[RetrieveResponse]
+	dataRead alamos.Duration
 	wg       *sync.WaitGroup
 	ctx      context.Context
-	dataRead alamos.Duration
 }
 
 // Context implements persist.Operation.
-func (ro retrieveOperation) Context() context.Context {
-	return ro.ctx
-}
+func (ro retrieveOperation) Context() context.Context { return ro.ctx }
 
 // FileKey implements persist.Operation.
-func (ro retrieveOperation) FileKey() fileKey {
-	return ro.seg.fileKey
-}
+func (ro retrieveOperation) FileKey() fileKey { return ro.seg.fileKey }
 
-// SendError implements persist.Operation.
+// WriteError implements persist.Operation.
 func (ro retrieveOperation) WriteError(err error) {
-	ro.stream.Responses <- RetrieveResponse{Err: err}
+	ro.outlet.Inlet() <- RetrieveResponse{Err: err}
 }
 
 // Exec implements persist.Operation.
 func (ro retrieveOperation) Exec(f file) {
-	defer ro.wg.Done()
+	if ro.wg != nil {
+		defer ro.wg.Done()
+	}
 	s := ro.dataRead.Stopwatch()
 	s.Start()
-	b := make([]byte, ro.seg.size)
-	if _, err := f.ReadAt(b, ro.seg.offset); err != nil {
-		if err == io.EOF {
-			panic("retrieve operation: encountered unexpected EOF. this is a bug.")
-		}
-		ro.WriteError(err)
+	b := make([]byte, ro.seg.Size())
+	_, err := f.ReadAt(b, ro.seg.Offset())
+	if err == io.EOF {
+		panic("retrieve operation: encountered unexpected EOF. this is a bug.")
 	}
 	ro.seg.Data = b
-	s.Stop()
-	ro.stream.Responses <- RetrieveResponse{Segments: []Segment{ro.seg}}
+	ro.outlet.Inlet() <- RetrieveResponse{Segments: []Segment{ro.seg.Segment}, Err: err}
 }
 
 // Offset implements batch.RetrieveOperation.
-func (ro retrieveOperation) Offset() int64 { return ro.seg.offset }
+func (ro retrieveOperation) Offset() int64 { return ro.seg.Offset() }
 
 // |||||| PARSER ||||||
 
