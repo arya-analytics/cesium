@@ -22,7 +22,7 @@ func TestCaesium(t *testing.T) {
 
 // |||||| CREATE ||||||
 
-// A simple query to write a segment of data to a channel.
+// A simple query to write a segment of data to a Channel.
 func ExampleDB_NewCreate_simple() {
 	ctx := context.Background()
 
@@ -59,7 +59,7 @@ func ExampleDB_NewCreate_simple() {
 	}
 }
 
-// A query that writes multiple segmentKV of data through a channel.
+// A query that writes multiple segmentKV of data through a Channel.
 func ExampleDB_NewCreate_multiSegment() {
 	ctx := context.Background()
 
@@ -163,7 +163,7 @@ func ExampleDB_NewCreate_multiChannel() {
 		}
 	}()
 
-	// Write 5 segmentKV for each channel.
+	// Write 5 segmentKV for each Channel.
 	const nSegments = 5
 	t0 := cesium.Now()
 	for i := 0; i < nSegments; i++ {

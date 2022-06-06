@@ -24,7 +24,7 @@ type DB interface {
 	//  	ctx := context.Background()
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
-	//      // Create a new channel
+	//      // Create a new Channel
 	//      ch, err := cesium.NewCreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).QExec(ctx)
 	//		if err != nil {
 	// 	    	 logger.Fatal(err)
@@ -44,11 +44,11 @@ type DB interface {
 	//			logger.Fatal(err)
 	//		}
 	//
-	// The above example will create a new channel with the type Float64 and a data rate of 5 Hz. It will then write a
+	// The above example will create a new Channel with the type Float64 and a data rate of 5 Hz. It will then write a
 	// segment with 3 samples to the database.
 	//
 	// The Create query acquires write lock on the channels specified in WhereChannels. No other goroutine can write
-	// to the channel until the Create query is closed.
+	// to the Channel until the Create query is closed.
 	//
 	// Asynchronous Create queries are the default in cesium to allow for network optimization and multi-segment write locks.
 	// However, they are a bit more complex to write. See the following example:
@@ -64,7 +64,7 @@ type DB interface {
 	//		close(req)
 	//
 	//		// Wait for the Create query to acknowledge all writes.
-	// 		// The Create query will close the channel when all written segments are durable.
+	// 		// The Create query will close the Channel when all written segments are durable.
 	// 		for resV := range res {
 	//			if resV.err != nil {
 	//				logger.Fatal(resV.err)
@@ -73,14 +73,14 @@ type DB interface {
 	//
 	//		// Do what you want, but remember to close the database when done.
 	//
-	// Although waiting for the response channel to close is a common pattern for Create queries, it is not required.
+	// Although waiting for the response Channel to close is a common pattern for Create queries, it is not required.
 	// cesium will ensure all writes are acknowledged upon DB.Close.
 	NewCreate() Create
 
 	// NewRetrieve opens a new Retrieve query that is used for retrieving data from the DB. A simple, synchronous
 	// retrieve query looks like the following:
 	//
-	// 	 	// Open the DB, create a channel, and write some data to it. See NewCreate for details.
+	// 	 	// Open the DB, create a Channel, and write some data to it. See NewCreate for details.
 	//
 	//		// Open the Retrieve query, and write the results into resSeg.
 	//		// DB.Sync is a helper that turns a async read into syncExec read.
@@ -91,7 +91,7 @@ type DB interface {
 	//			logger.Fatal(err)
 	//		}
 	//
-	// The above example retrieves all data from the channel and binds it into resSeg. It's possible to retrieve a subset
+	// The above example retrieves all data from the Channel and binds it into resSeg. It's possible to retrieve a subset
 	// of data by time range by using the Retrieve.WhereTimeRange method.
 	//
 	// Notes on Segmentation of Data:
@@ -113,14 +113,14 @@ type DB interface {
 	// across the network as you read more data from IO). However, they are a more complex to write.
 	// See the following example:
 	//
-	// 		// Assuming DB is opened and two Segment have been created for a channel with LKey channelKey. See NewCreate for details.
+	// 		// Assuming DB is opened and two Segment have been created for a Channel with LKey channelKey. See NewCreate for details.
 	//      // Start the retrieve query. See Retrieve.Stream for details on what each return value does.
 	// 		// To cancel a query before it completes, cancel the Context provided to Retrieve.Stream.
 	// 		ctx, cancel := Context.WithCancel(Context.Background())
 	//		res, err := db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(channelKey).Stream(ctx)
 	//
 	//      var resSeg []Segment
-	//		// Retrieve will close the channel when done.
+	//		// Retrieve will close the Channel when done.
 	// 		for _, resV := range res {
 	//			if resV.Err != nil {
 	//				logger.Fatal(resV.Err)
@@ -131,14 +131,14 @@ type DB interface {
 	//      // do what you want with the data, just remember to close the database when done.
 	NewRetrieve() Retrieve
 
-	// NewCreateChannel opens a new CreateChannel query that is used for creating a new channel in the DB.
-	// Creating a channel is simple:
+	// NewCreateChannel opens a new CreateChannel query that is used for creating a new Channel in the DB.
+	// Creating a Channel is simple:
 	//
 	//		// Open the DB
 	//		ctx := context.Background()
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
-	//		// Create a channel
+	//		// Create a Channel
 	//		ch, err := cesium.NewCreateChannel().
 	//				WithType(cesium.Float64).
 	//				WithRate(5 * cesium.Hz).
@@ -151,15 +151,15 @@ type DB interface {
 	//		//  1
 	//
 	// See the Channel documentation for details on what a Channel is, and the CreateChannel documentation
-	// for available options for creating a channel.
+	// for available options for creating a Channel.
 	NewCreateChannel() CreateChannel
 
 	// NewRetrieveChannel opens a new RetrieveChannel query that is used for retrieving information about a Channel
-	// from the DB. Retrieving a channel is simple:
+	// from the DB. Retrieving a Channel is simple:
 	//
-	// 		// Assuming DB is opened and a channel with Key 1 has been created. See NewCreateChannel for details.
+	// 		// Assuming DB is opened and a Channel with Key 1 has been created. See NewCreateChannel for details.
 	//
-	//		// Retrieve the channel.
+	//		// Retrieve the Channel.
 	//		ch, err := cesium.NewRetrieveChannel().WhereKey(1).QExec(ctx)
 	//		if err != nil {
 	//			logger.Fatal(err)

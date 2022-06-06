@@ -51,7 +51,7 @@ type Create struct {
 }
 
 // WhereChannels sets the channels to acquire a lock on for creation.
-// The request stream will only accept segmentKV bound to channel with the given primary keys.
+// The request stream will only accept segmentKV bound to Channel with the given primary keys.
 // If no keys are provided, will return an ErrInvalidQuery error.
 func (c Create) WhereChannels(keys ...ChannelKey) Create {
 	setChannelKeys(c, keys...)
@@ -403,12 +403,12 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	}
 
 	// acquires and releases the locks on channels. Acquiring locks on channels simplifies
-	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same channel
+	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same Channel
 	// from different goroutines.
 	channelLock := lock.NewMap[ChannelKey]()
 
 	strategy.Hooks.PreAssembly = []query.Hook{
-		// validates that all channel keys provided to the Create query are valid.
+		// validates that all Channel keys provided to the Create query are valid.
 		validateChannelKeysHook{ckv: ckv},
 		// acquires the locks on the channels that are being written to.
 		lockAcquireHook{lock: channelLock, metric: metrics.lockAcquire},
@@ -417,7 +417,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	strategy.Hooks.PostExecution = []query.Hook{
 		// releases the locks on the channels that are being written to.
 		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
-		// closes the stream response channel for the query, which signals to the caller that the
+		// closes the stream response Channel for the query, which signals to the caller that the
 		// query has completed, and the Segment writes are durable.
 		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
 	}

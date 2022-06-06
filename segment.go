@@ -77,11 +77,7 @@ func (sg Segment) flushData(w io.Writer) error {
 const segmentKVPrefix = "cs-sg"
 
 func (sg Segment) KVKey() []byte {
-	key, err := kv.CompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
-	if err != nil {
-		panic(err)
-	}
-	return key
+	return kv.StaticCompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
 }
 
 // |||||| KV ||||||

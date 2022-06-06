@@ -105,12 +105,12 @@ func (ckv channelKV) getEach(keys ...ChannelKey) (cs []Channel, err error) {
 
 // |||| QUERY ||||
 
-// CreateChannel creates a new channel in the DB. See DB.NewCreate for more information.
+// CreateChannel creates a new Channel in the DB. See DB.NewCreate for more information.
 type CreateChannel struct {
 	query.Query
 }
 
-// Exec creates a new channel in the DB given the query.Query parameters.
+// Exec creates a new Channel in the DB given the query.Query parameters.
 func (cc CreateChannel) Exec(ctx context.Context) (Channel, error) {
 	query.SetContext(cc.Query, ctx)
 	if err := cc.Query.QExec(); err != nil {
@@ -165,7 +165,7 @@ func (cr *createChannelQueryExecutor) Exec(q query.Query) (err error) {
 
 // |||| QUERY ||||
 
-// RetrieveChannel retrieves a channel from the DB. See DB.NewRetrieve for more information.
+// RetrieveChannel retrieves a Channel from the DB. See DB.NewRetrieve for more information.
 type RetrieveChannel struct {
 	query.Query
 }
@@ -176,7 +176,7 @@ func (r RetrieveChannel) WhereKey(key ChannelKey) RetrieveChannel {
 	return r
 }
 
-// Exec retrieves a channel from the DB given the query.Query parameters.
+// Exec retrieves a Channel from the DB given the query.Query parameters.
 func (r RetrieveChannel) Exec(ctx context.Context) (Channel, error) {
 	query.SetContext(r.Query, ctx)
 	if err := r.Query.QExec(); err != nil {
@@ -282,7 +282,7 @@ func channelKeys(q query.Query) []ChannelKey {
 func getChannelKey(q query.Query) ChannelKey {
 	pks := channelKeys(q)
 	if len(pks) > 1 {
-		panic(fmt.Sprintf("query %s only supports on channel key", q))
+		panic(fmt.Sprintf("query %s only supports on Channel key", q))
 	}
 	return pks[0]
 }

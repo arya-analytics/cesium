@@ -30,7 +30,7 @@ var _ = Describe("Create", func() {
 
 				It("Should write the segment correctly", func() {
 
-					By("Creating a new channel")
+					By("Creating a new Channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -72,7 +72,7 @@ var _ = Describe("Create", func() {
 			Context("Multi Segment", func() {
 
 				It("Should write the segments correctly", func() {
-					By("Creating a new channel")
+					By("Creating a new Channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -120,7 +120,7 @@ var _ = Describe("Create", func() {
 			Context("Multi Request", func() {
 
 				It("Should write the segments correctly", func() {
-					By("Creating a new channel")
+					By("Creating a new Channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 					Expect(err).ToNot(HaveOccurred())
 

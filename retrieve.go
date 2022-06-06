@@ -145,9 +145,7 @@ func (ro retrieveOperation) Exec(f file) {
 }
 
 // Offset implements batch.RetrieveOperation.
-func (ro retrieveOperation) Offset() int64 {
-	return ro.seg.offset
-}
+func (ro retrieveOperation) Offset() int64 { return ro.seg.offset }
 
 // |||||| PARSER ||||||
 
@@ -367,13 +365,13 @@ func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 	}
 
 	strategy.Hooks.PreAssembly = []query.Hook{
-		// validates that all channel keys provided to the Retrieve query are valid.
+		// validates that all Channel keys provided to the Retrieve query are valid.
 		validateChannelKeysHook{ckv: ckv},
 	}
 
 	strategy.Hooks.PostExecution = []query.Hook{
-		// closes the retrieve response channel for the query, which signals to the caller that the query has completed,
-		// and all segments have been sent through the response channel.
+		// closes the retrieve response Channel for the query, which signals to the caller that the query has completed,
+		// and all segments have been sent through the response Channel.
 		query.CloseStreamResponseHook[retrieveRequest, RetrieveResponse]{},
 	}
 
