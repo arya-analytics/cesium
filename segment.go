@@ -6,6 +6,7 @@ import (
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/telem"
 	"github.com/cockroachdb/pebble"
+	"io"
 	"sort"
 )
 
@@ -36,6 +37,8 @@ func (sg Segment) Header() SegmentHeader {
 	return SegmentHeader{ChannelKey: sg.ChannelKey, Start: sg.Start, fileKey: sg.fileKey, offset: sg.offset, size: sg.size}
 }
 
+func (sg SegmentHeader) Flush(w io.Writer) error { return binary.Flush(w, sg) }
+
 func (sg *Segment) LoadHeader(header SegmentHeader) {
 	sg.ChannelKey = header.ChannelKey
 	sg.Start = header.Start
@@ -45,12 +48,12 @@ func (sg *Segment) LoadHeader(header SegmentHeader) {
 }
 
 // Size returns the size of the segment in bytes.
-func (sg Segment) Size() Size {
+func (sg Segment) Size() int {
 	l := len(sg.Data)
 	if l == 0 {
-		return sg.size
+		return int(sg.size)
 	}
-	return Size(l)
+	return l
 }
 
 // Key implements allocate.Item.
@@ -61,6 +64,8 @@ const segmentKVPrefix = "cs/sg"
 func (sg Segment) KVKey() []byte {
 	return kv.StaticCompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
 }
+
+func (sg Segment) flushData(w io.Writer) error { return binary.Write(w, sg.Data) }
 
 // |||||| SUGARED ||||||
 
@@ -111,7 +116,7 @@ func newSegmentKVIterator(channel Channel, rng telem.TimeRange, kve kv.KV) *kvIt
 	return &kvIterator{}
 }
 
-// Next returns the next segment in the iterator. Returns a boolean indicating whether the iterator
+// Next returns the next segment in the streamIterator. Returns a boolean indicating whether the streamIterator
 // is pointing at a valid segment.
 func (si *kvIterator) Next() bool {
 	si.collectGarbage()
@@ -124,10 +129,10 @@ func (si *kvIterator) Next() bool {
 	return true
 }
 
-// Position returns the current TimeStamp of the iterator.
+// Position returns the current TimeStamp of the streamIterator.
 func (si *kvIterator) Position() TimeStamp { return si.pos }
 
-// First seeks the segment to the first Segment in the iterator. Returns true if the iterator is pointing
+// First seeks the segment to the first Segment in the streamIterator. Returns true if the streamIterator is pointing
 // to a valid Segment.
 func (si *kvIterator) First() bool {
 	si.collectGarbage()
@@ -140,7 +145,7 @@ func (si *kvIterator) First() bool {
 	return true
 }
 
-// Last seeks the segment to the last Segment in the iterator. Returns true if the iterator is pointing
+// Last seeks the segment to the last Segment in the streamIterator. Returns true if the streamIterator is pointing
 // to a valid Segment.
 func (si *kvIterator) Last() bool {
 	si.collectGarbage()
@@ -153,8 +158,8 @@ func (si *kvIterator) Last() bool {
 	return true
 }
 
-// NextSpan reads the segments from the iterator position to the end of the span.
-// Returns a boolean indicating whether the iterator is pointing to a valid Segment.
+// NextSpan reads the segments from the streamIterator position to the end of the span.
+// Returns a boolean indicating whether the streamIterator is pointing to a valid Segment.
 func (si *kvIterator) NextSpan(span TimeSpan) bool {
 	si.collectGarbage()
 	end := si.Position().Add(span)
@@ -173,7 +178,7 @@ func (si *kvIterator) NextSpan(span TimeSpan) bool {
 	return true
 }
 
-// NextRange reads the segments in the provided range. Returns a boolean indicating whether the iterator
+// NextRange reads the segments in the provided range. Returns a boolean indicating whether the streamIterator
 // is pointing to a valid Segment.
 func (si *kvIterator) NextRange(tr telem.TimeRange) bool {
 	if !si.SeekLT(tr.Start) {
@@ -182,11 +187,11 @@ func (si *kvIterator) NextRange(tr telem.TimeRange) bool {
 	return si.NextSpan(tr.Span())
 }
 
-// Value returns the current iterator value.
+// Value returns the current streamIterator value.
 func (si *kvIterator) Value() []SugaredSegment { return si.value }
 
-// SeekLT seeks the iterator to the first Segment with a timestamp less than or equal to the given stamp.
-// Returns a boolean indicating whether the iterator is pointing at a valid Segment.
+// SeekLT seeks the streamIterator to the first Segment with a timestamp less than or equal to the given stamp.
+// Returns a boolean indicating whether the streamIterator is pointing at a valid Segment.
 func (si *kvIterator) SeekLT(stamp TimeStamp) bool {
 	si.collectGarbage()
 	if !si.Iterator.SeekLT(si.stampKey(stamp)) {
@@ -196,8 +201,8 @@ func (si *kvIterator) SeekLT(stamp TimeStamp) bool {
 	return true
 }
 
-// SeekGE seeks the iterator to the first Segment with a timestamp greater than or equal to the
-// Returns a boolean indicating whether the iterator is pointing at a valid Segment.
+// SeekGE seeks the streamIterator to the first Segment with a timestamp greater than or equal to the
+// Returns a boolean indicating whether the streamIterator is pointing at a valid Segment.
 func (si *kvIterator) SeekGE(stamp TimeStamp) bool {
 	si.collectGarbage()
 	if !si.Iterator.SeekGE(si.stampKey(stamp)) {
@@ -207,7 +212,7 @@ func (si *kvIterator) SeekGE(stamp TimeStamp) bool {
 	return true
 }
 
-// IsZero returns true if the iterator value contains any segments.
+// IsZero returns true if the streamIterator value contains any segments.
 func (si *kvIterator) IsZero() bool { return len(si.value) > 0 }
 
 // stampKey returns the key for a particular TimeStamp.
@@ -215,7 +220,7 @@ func (si *kvIterator) stampKey(stamp TimeStamp) []byte {
 	return Segment{Start: stamp, ChannelKey: si.channel.Key}.KVKey()
 }
 
-// loadValue loads a SugaredSegment from the current iterator value. Assumes the iterator is valid.
+// loadValue loads a SugaredSegment from the current streamIterator value. Assumes the streamIterator is valid.
 func (si *kvIterator) loadValue() {
 	seg := &Segment{}
 	header := seg.Header()
@@ -231,17 +236,17 @@ func (si *kvIterator) setBounds(lower TimeStamp, upper TimeStamp) {
 	si.value[len(si.value)-1].Bound.End = upper
 }
 
-// autoUpdatePos updates the iterator position to the bounded end timestamp of the last segment in the value.
-// assumes the iterator is valid.
+// autoUpdatePos updates the streamIterator position to the bounded end timestamp of the last segment in the value.
+// assumes the streamIterator is valid.
 func (si *kvIterator) autoUpdatePos() { si.pos = si.Value()[len(si.Value())-1].End() }
 
-// updatePos updates the position of the iterator.
+// updatePos updates the position of the streamIterator.
 func (si *kvIterator) updatePos(stamp TimeStamp) { si.pos = stamp }
 
 // writeError writes sets the error for the current iteration.
 func (si *kvIterator) writeError(err error) { si.err = err }
 
-// collectGarbage removes any segments from the value and sets the iterator error to nil.
+// collectGarbage removes any segments from the value and sets the streamIterator error to nil.
 func (si *kvIterator) collectGarbage() {
 	si.value = []SugaredSegment{}
 	si.err = nil
@@ -251,4 +256,24 @@ func (si *kvIterator) collectGarbage() {
 
 func Sort(segments []Segment) {
 	sort.Slice(segments, func(i, j int) bool { return segments[i].Start.Before(segments[j].Start) })
+}
+
+type segmentKV struct {
+	kv kv.KV
+}
+
+func (sk segmentKV) set(s Segment) error {
+	return kv.Flush(sk.kv, s.KVKey(), s.Header())
+}
+
+func generateRangeKeys(cpk ChannelKey, tr TimeRange) ([]byte, []byte) {
+	s, err := kv.CompositeKey(segmentKVPrefix, cpk, tr.Start)
+	if err != nil {
+		panic(err)
+	}
+	e, err := kv.CompositeKey(segmentKVPrefix, cpk, tr.End)
+	if err != nil {
+		panic(err)
+	}
+	return s, e
 }

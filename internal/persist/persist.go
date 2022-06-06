@@ -2,6 +2,7 @@ package persist
 
 import (
 	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kfs"
 	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
@@ -16,6 +17,7 @@ type Persist[F comparable, O operation.Operation[F]] struct {
 	kfs kfs.FS[F]
 	ops chan O
 	Config
+	confluence.UnarySink[[]O]
 }
 
 const (
@@ -36,35 +38,33 @@ type Config struct {
 	Shutdown shutdown.Shutdown
 }
 
-func DefaultConfig() Config {
-	return Config{
-		NumWorkers: DefaultNumWorkers,
-	}
-}
+func DefaultConfig() Config { return Config{NumWorkers: DefaultNumWorkers} }
 
 // New creates a new Persist that wraps the provided kfs.FS.
 func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *Persist[F, O] {
 	p := &Persist[F, O]{kfs: kfs, Config: config, ops: make(chan O, config.NumWorkers)}
-	p.start()
 	return p
 }
 
-// Pipe queues a set of operations for execution. Operations are NOT guaranteed to execute in the order they are queued.
-func (p *Persist[K, O]) Pipe(ops <-chan []O) {
-	p.Shutdown.Go(func(sig chan shutdown.Signal) error {
-		defer close(p.ops)
-		for _ops := range ops {
-			for _, op := range _ops {
-				p.ops <- op
+func (p *Persist[K, O]) Flow(ctx confluence.Context) {
+	p.start(ctx)
+	ctx.Shutdown.Go(func(sig chan shutdown.Signal) error {
+		for {
+			select {
+			case <-sig:
+				return nil
+			case ops := <-p.In.Outlet():
+				for _, op := range ops {
+					p.ops <- op
+				}
 			}
 		}
-		return nil
 	})
 }
 
-func (p *Persist[K, O]) start() {
+func (p *Persist[K, O]) start(ctx confluence.Context) {
 	for i := 0; i < p.NumWorkers; i++ {
-		p.Shutdown.Go(func(sig chan shutdown.Signal) error {
+		ctx.Shutdown.Go(func(sig chan shutdown.Signal) error {
 			for op := range p.ops {
 				f, err := p.kfs.Acquire(op.FileKey())
 				if err != nil {

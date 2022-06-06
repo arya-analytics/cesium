@@ -10,6 +10,7 @@ import (
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/queue"
 	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/telem"
 	"go.uber.org/zap"
 	"io"
 	"sort"
@@ -17,12 +18,20 @@ import (
 	"time"
 )
 
-type (
-	retrieveStream       = query.Stream[retrieveRequest, RetrieveResponse]
-	retrieveOperationSet = operation.Set[fileKey, retrieveOperation]
-	retrieveStrategy     = query.Strategy[fileKey, retrieveOperation, retrieveRequest, RetrieveResponse]
-	retrieveContext      = query.Context[fileKey, retrieveOperation, retrieveRequest]
-)
+type retrieveSegment = confluence.Segment[[]retrieveOperation]
+
+// |||||| OPERATION ||||||
+
+type retrieveOperation interface {
+	operation.Operation[fileKey]
+	Offset() int64
+}
+
+type retrieveOperationSet struct {
+	operation.Set[fileKey, retrieveOperation]
+}
+
+func (s retrieveOperationSet) Offset() int64 { return s.Set[0].Offset() }
 
 // |||||| STREAM ||||||
 
@@ -34,18 +43,17 @@ type RetrieveResponse struct {
 }
 
 // Error implements the query.Response interface.
-func (r RetrieveResponse) Error() error {
-	return r.Err
-}
-
-type retrieveRequest struct {
-	tr TimeRange
-}
+func (r RetrieveResponse) Error() error { return r.Err }
 
 // |||||| QUERY ||||||
 
 type Retrieve struct {
 	query.Query
+	ops     confluence.Inlet[[]retrieveOperation]
+	kve     kv.KV
+	rng     telem.TimeRange
+	channel Channel
+	ckv     channelKV
 }
 
 // WhereChannels sets the channels to retrieve data for.
@@ -62,16 +70,27 @@ func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve {
 }
 
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
-	query.SetContext(r, ctx)
-	s := retrieveStream{Responses: make(chan RetrieveResponse), Requests: make(chan retrieveRequest)}
-	query.SetStream(r, s)
-	err := r.QExec()
+	stream := confluence.NewStream[RetrieveResponse](10)
+	iter, err := r.NewIter()
 	if err != nil {
 		return nil, err
 	}
-	s.Requests <- retrieveRequest{tr: TimeRangeMax}
-	//close(s.Requests)
-	return s.Responses, nil
+	iter.OutTo(stream)
+	go iter.Exhaust()
+	return stream.Outlet(), nil
+}
+
+func (r Retrieve) NewIter() (StreamIterator, error) {
+	ck := channelKeys(r)
+	c, err := r.ckv.get(ck[0])
+	if err != nil {
+		return nil, err
+	}
+	return &streamIterator{
+		kvIterator: *newSegmentKVIterator(c, timeRange(r), r.kve),
+		ops:        r.ops,
+		wg:         &sync.WaitGroup{},
+	}, nil
 }
 
 // |||||| OPTIONS ||||||
@@ -95,16 +114,20 @@ func timeRange(q query.Query) TimeRange {
 // |||||| QUERY FACTORY ||||||
 
 type retrieveFactory struct {
-	exec query.Executor
+	ops confluence.Inlet[[]retrieveOperation]
+	kve kv.KV
+	ckv channelKV
 }
 
+type nilExecutor struct{ query.Executor }
+
 func (r retrieveFactory) New() Retrieve {
-	return Retrieve{Query: query.New(r.exec)}
+	return Retrieve{Query: query.New(nilExecutor{}), ops: r.ops, kve: r.kve, ckv: r.ckv}
 }
 
 // |||||| OPERATION ||||||
 
-type retrieveOperation struct {
+type unaryRetrieveOperation struct {
 	seg      SugaredSegment
 	outlet   confluence.Inlet[RetrieveResponse]
 	dataRead alamos.Duration
@@ -113,18 +136,18 @@ type retrieveOperation struct {
 }
 
 // Context implements persist.Operation.
-func (ro retrieveOperation) Context() context.Context { return ro.ctx }
+func (ro unaryRetrieveOperation) Context() context.Context { return ro.ctx }
 
 // FileKey implements persist.Operation.
-func (ro retrieveOperation) FileKey() fileKey { return ro.seg.fileKey }
+func (ro unaryRetrieveOperation) FileKey() fileKey { return ro.seg.fileKey }
 
 // WriteError implements persist.Operation.
-func (ro retrieveOperation) WriteError(err error) {
+func (ro unaryRetrieveOperation) WriteError(err error) {
 	ro.outlet.Inlet() <- RetrieveResponse{Err: err}
 }
 
 // Exec implements persist.Operation.
-func (ro retrieveOperation) Exec(f file) {
+func (ro unaryRetrieveOperation) Exec(f file) {
 	if ro.wg != nil {
 		defer ro.wg.Done()
 	}
@@ -140,112 +163,34 @@ func (ro retrieveOperation) Exec(f file) {
 }
 
 // Offset implements batch.RetrieveOperation.
-func (ro retrieveOperation) Offset() int64 { return ro.seg.Offset() }
-
-// |||||| PARSER ||||||
-
-type retrieveParser struct {
-	ckv     channelKV
-	skv     segmentKV
-	logger  *zap.Logger
-	metrics retrieveMetrics
-}
-
-func (rp *retrieveParser) Parse(q query.Query, req retrieveRequest) (ops []retrieveOperation, err error) {
-	keys := channelKeys(q)
-	queryRange := timeRange(q)
-	requestRange := req.tr
-
-	last := false
-	if requestRange.End >= queryRange.End {
-		last = true
-	}
-
-	requestRange = queryRange.Bound(requestRange)
-
-	stream := query.GetStream[retrieveRequest, RetrieveResponse](q)
-
-	rp.logger.Debug("retrieving segments",
-		zap.Int("count", len(keys)),
-		zap.Time("from", queryRange.Start.Time()),
-		zap.Time("to", queryRange.End.Time()),
-	)
-
-	for _, key := range keys {
-		kvs := rp.metrics.kvRetrieve.Stopwatch()
-		kvs.Start()
-		segments, err := rp.skv.filter(requestRange, key)
-		kvs.Stop()
-		if err != nil {
-			return ops, err
-		}
-		rp.metrics.segCount.Record(len(segments))
-		for _, seg := range segments {
-			rp.metrics.segSize.Record(seg.Size())
-			ops = append(ops,
-				retrieveOperation{
-					seg:      seg,
-					stream:   stream,
-					wg:       query.WaitGroup(q),
-					dataRead: rp.metrics.dataRead,
-					ctx:      q.Context(),
-				},
-			)
-		}
-	}
-	if last {
-		return ops, io.EOF
-	}
-	return ops, nil
-}
-
-// |||||| EXECUTOR ||||||
-
-type retrieveIteratorFactory struct {
-	queue    chan<- []retrieveOperation
-	shutdown shutdown.Shutdown
-	logger   *zap.Logger
-}
-
-func (rp *retrieveIteratorFactory) New(ctx retrieveContext) (query.Iterator[retrieveRequest], error) {
-	return &retrieveIterator{ctx, rp}, nil
-}
-
-type retrieveIterator struct {
-	retrieveContext
-	*retrieveIteratorFactory
-}
-
-func (r *retrieveIterator) Next(request retrieveRequest) (last bool) {
-	stream := query.GetStream[retrieveRequest, RetrieveResponse](r.Query)
-	ops, err := r.Parser.Parse(r.Query, request)
-	if err == io.EOF {
-		last = true
-	} else if err != nil {
-		stream.Responses <- RetrieveResponse{Err: err}
-	}
-	r.WaitGroup.Add(len(ops))
-	r.queue <- ops
-	return last
-}
+func (ro unaryRetrieveOperation) Offset() int64 { return ro.seg.Offset() }
 
 // ||||||| BATCH |||||||
 
-type retrieveBatch struct{}
+type retrieveBatch struct {
+	confluence.Transform[[]retrieveOperation]
+}
 
-func (r *retrieveBatch) Exec(ops []retrieveOperation) []retrieveOperationSet {
+func newRetrieveBatch() retrieveSegment {
+	rb := &retrieveBatch{}
+	rb.Transform.Transform = rb.batch
+	return rb
+}
+
+func (r *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) ([]retrieveOperation, bool) {
+	if len(ops) == 0 {
+		return nil, false
+	}
 	files := make(map[fileKey][]retrieveOperation)
 	for _, op := range ops {
 		files[op.FileKey()] = append(files[op.FileKey()], op)
 	}
-	sets := make([]retrieveOperationSet, 0, len(files))
+	sets := make([]retrieveOperation, 0, len(files))
 	for _, ops := range files {
-		sort.Slice(ops, func(i, j int) bool {
-			return ops[i].Offset() < ops[j].Offset()
-		})
-		sets = append(sets, ops)
+		sort.Slice(ops, func(i, j int) bool { return ops[i].Offset() < ops[j].Offset() })
+		sets = append(sets, retrieveOperationSet{Set: operation.Set[fileKey, retrieveOperation](ops)})
 	}
-	return sets
+	return sets, true
 }
 
 // |||||| METRICS ||||||
@@ -336,69 +281,16 @@ const (
 )
 
 func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
-
 	mergeRetrieveConfigDefaults(&cfg)
-
-	// strategy represents a general strategy for executing a Retrieve query.
-	// The elements of the strategy are intended to be modular and swappable for
-	// the purposes of experimentation. All components of the strategy must
-	// follow the interface laid out in the query.Strategy interface.
-	strategy := new(retrieveStrategy)
-
-	metrics := newRetrieveMetrics(cfg.exp)
-	strategy.Metrics.Request = metrics.request
-
-	ckv := channelKV{kv: cfg.kv}
-
-	strategy.Shutdown = cfg.shutdown
-
-	strategy.Parser = &retrieveParser{
-		ckv:     ckv,
-		skv:     segmentKV{kv: cfg.kv},
-		logger:  cfg.logger,
-		metrics: metrics,
-	}
-
-	strategy.Hooks.PreAssembly = []query.Hook{
-		// validates that all Channel keys provided to the Retrieve query are valid.
-		validateChannelKeysHook{ckv: ckv},
-	}
-
-	strategy.Hooks.PostExecution = []query.Hook{
-		// closes the retrieve response Channel for the query, which signals to the caller that the query has completed,
-		// and all segments have been sent through the response Channel.
-		query.CloseStreamResponseHook[retrieveRequest, RetrieveResponse]{},
-	}
-
-	// executes the operations generated by strategy.Parser, reading them from disk.
-	pst := persist.New[fileKey, retrieveOperationSet](cfg.fs, cfg.persist)
-
-	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more efficient
-	// operation batching.
-	q := &queue.Debounce[retrieveOperation]{DebounceConfig: cfg.debounce}
-	iterQueue := confluence.NewStream[[]retrieveOperation](10)
-	queueBatch := confluence.NewStream[[]retrieveOperation](10)
-	q.InFrom(iterQueue)
-	q.OutTo(queueBatch)
-	ctx := confluence.DefaultContext()
-	ctx.Shutdown = cfg.shutdown
-	q.Flow(ctx)
-
-	// batches operations from the debounced queue into sequential operations on the same file.
-	batchPipe := operation.PipeTransform[
-		fileKey,
-		retrieveOperation,
-		retrieveOperationSet,
-	](queueBatch.Outlet(), cfg.shutdown, new(retrieveBatch))
-
-	pst.Pipe(batchPipe)
-
-	// opens new iterators for generating retrieve operations for the RetrieveRequest piped in via q.In.
-	strategy.IterFactory = &retrieveIteratorFactory{
-		queue:    iterQueue.Inlet(),
-		shutdown: cfg.shutdown,
-		logger:   cfg.logger,
-	}
-
-	return retrieveFactory{exec: strategy}, nil
+	pipeline := confluence.NewPipeline[[]retrieveOperation]()
+	pipeline.Segment("queue", &queue.Debounce[retrieveOperation]{DebounceConfig: cfg.debounce})
+	pipeline.Segment("batch", newRetrieveBatch())
+	pipeline.Segment("persist", persist.New[fileKey, retrieveOperation](cfg.fs, cfg.persist))
+	rb := pipeline.NewRouteBuilder()
+	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{FromAddr: "queue", ToAddr: "batch", Capacity: 10})
+	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{FromAddr: "batch", ToAddr: "persist", Capacity: 10})
+	rb.RouteInletTo("queue")
+	inlet := confluence.NewStream[[]retrieveOperation](10)
+	pipeline.InFrom(inlet)
+	return retrieveFactory{ops: inlet, kve: cfg.kv, ckv: channelKV{kv: cfg.kv}}, rb.Error()
 }
