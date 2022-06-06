@@ -5,7 +5,7 @@ import (
 	"github.com/arya-analytics/x/binary"
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/telem"
-	"github.com/cockroachdb/pebble"
+	"github.com/sirupsen/logrus"
 	"io"
 	"sort"
 )
@@ -24,9 +24,9 @@ type Segment struct {
 type SegmentHeader struct {
 	ChannelKey ChannelKey
 	Start      TimeStamp
-	fileKey    fileKey
-	offset     int64
-	size       Size
+	FileKey    fileKey
+	Offset     int64
+	Size       Size
 }
 
 func (sg Segment) Sugar(channel Channel, Bound TimeRange) SugaredSegment {
@@ -34,7 +34,7 @@ func (sg Segment) Sugar(channel Channel, Bound TimeRange) SugaredSegment {
 }
 
 func (sg Segment) Header() SegmentHeader {
-	return SegmentHeader{ChannelKey: sg.ChannelKey, Start: sg.Start, fileKey: sg.fileKey, offset: sg.offset, size: sg.size}
+	return SegmentHeader{ChannelKey: sg.ChannelKey, Start: sg.Start, FileKey: sg.fileKey, Offset: sg.offset, Size: sg.size}
 }
 
 func (sg SegmentHeader) Flush(w io.Writer) error { return binary.Flush(w, sg) }
@@ -42,12 +42,12 @@ func (sg SegmentHeader) Flush(w io.Writer) error { return binary.Flush(w, sg) }
 func (sg *Segment) LoadHeader(header SegmentHeader) {
 	sg.ChannelKey = header.ChannelKey
 	sg.Start = header.Start
-	sg.fileKey = header.fileKey
-	sg.offset = header.offset
-	sg.size = header.size
+	sg.fileKey = header.FileKey
+	sg.offset = header.Offset
+	sg.size = header.Size
 }
 
-// Size returns the size of the segment in bytes.
+// Size returns the Size of the segment in bytes.
 func (sg Segment) Size() int {
 	l := len(sg.Data)
 	if l == 0 {
@@ -62,7 +62,8 @@ func (sg Segment) Key() ChannelKey { return sg.ChannelKey }
 const segmentKVPrefix = "cs/sg"
 
 func (sg Segment) KVKey() []byte {
-	return kv.StaticCompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
+	key := kv.StaticCompositeKey(segmentKVPrefix, sg.ChannelKey, sg.Start)
+	return key
 }
 
 func (sg Segment) flushData(w io.Writer) error { return binary.Write(w, sg.Data) }
@@ -96,7 +97,9 @@ func (s SugaredSegment) UnboundedRange() TimeRange {
 	return s.Segment.Start.SpanRange(s.UnboundedSpan())
 }
 
-func (s SugaredSegment) UnboundedSpan() TimeSpan { return s.DataRate.SizeSpan(s.Size(), s.DataType) }
+func (s SugaredSegment) UnboundedSpan() TimeSpan {
+	return s.DataRate.SizeSpan(Size(s.Segment.Size()), s.DataType)
+}
 
 // |||||| ITERATOR ||||||
 
@@ -113,7 +116,7 @@ func newSegmentKVIterator(channel Channel, rng telem.TimeRange, kve kv.KV) *kvIt
 	sg := &kvIterator{pos: rng.Start, channel: channel}
 	kvIter := kve.IterRange(sg.stampKey(rng.Start), sg.stampKey(rng.End))
 	sg.Iterator = kvIter
-	return &kvIterator{}
+	return sg
 }
 
 // Next returns the next segment in the streamIterator. Returns a boolean indicating whether the streamIterator
@@ -163,9 +166,9 @@ func (si *kvIterator) Last() bool {
 func (si *kvIterator) NextSpan(span TimeSpan) bool {
 	si.collectGarbage()
 	end := si.Position().Add(span)
-	limit := si.stampKey(end)
 	for {
-		if state := si.Iterator.NextWithLimit(limit); state != pebble.IterValid {
+		state := si.Iterator.Next()
+		if !state {
 			break
 		}
 		si.loadValue()
@@ -213,7 +216,7 @@ func (si *kvIterator) SeekGE(stamp TimeStamp) bool {
 }
 
 // IsZero returns true if the streamIterator value contains any segments.
-func (si *kvIterator) IsZero() bool { return len(si.value) > 0 }
+func (si *kvIterator) IsZero() bool { return len(si.value) == 0 }
 
 // stampKey returns the key for a particular TimeStamp.
 func (si *kvIterator) stampKey(stamp TimeStamp) []byte {
@@ -225,8 +228,10 @@ func (si *kvIterator) loadValue() {
 	seg := &Segment{}
 	header := seg.Header()
 	if err := binary.Load(bytes.NewBuffer(si.Iterator.Value()), &header); err != nil {
+		logrus.Fatal(err)
 		si.writeError(err)
 	}
+	logrus.Error(header.FileKey, header)
 	seg.LoadHeader(header)
 	si.value = append(si.value, seg.Sugar(si.channel, TimeRangeMax))
 }

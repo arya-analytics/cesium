@@ -112,7 +112,13 @@ func (i *streamIterator) Close() error {
 	return err
 }
 
-func (i *streamIterator) pipeOperations() { i.ops.Inlet() <- i.operations(i.Value()) }
+func (i *streamIterator) pipeOperations() {
+	ops := i.operations(i.Value())
+	if len(ops) == 0 {
+		return
+	}
+	i.ops.Inlet() <- ops
+}
 
 func (i *streamIterator) operations(segments []SugaredSegment) []retrieveOperation {
 	ops := make([]retrieveOperation, len(segments))

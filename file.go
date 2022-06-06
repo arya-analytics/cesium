@@ -13,7 +13,7 @@ type (
 )
 
 const (
-	// maxFileSize is the default maximum size of a cesium file.
+	// maxFileSize is the default maximum Size of a cesium file.
 	maxFileSize = allocate.DefaultMaxDescriptors
 	// maxFileDescriptors is the default maximum number of file descriptors
 	// cesium can open at a time.

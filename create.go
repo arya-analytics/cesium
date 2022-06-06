@@ -20,12 +20,26 @@ import (
 )
 
 type (
-	createStream       = query.Stream[CreateRequest, CreateResponse]
-	segmentAllocator   = allocate.Allocator[ChannelKey, fileKey, Segment]
-	createOperationSet = operation.Set[fileKey, createOperation]
-	createStrategy     = query.Strategy[fileKey, createOperation, CreateRequest, CreateResponse]
-	createContext      = query.Context[fileKey, createOperation, CreateRequest]
+	createSegment    = confluence.Segment[[]createOperation]
+	createStream     = query.Stream[CreateRequest, CreateResponse]
+	segmentAllocator = allocate.Allocator[ChannelKey, fileKey, Segment]
+	createStrategy   = query.Strategy[fileKey, createOperation, CreateRequest, CreateResponse]
+	createContext    = query.Context[fileKey, createOperation, CreateRequest]
 )
+
+type createOperationSet struct {
+	operation.Set[fileKey, createOperation]
+}
+
+func (c createOperationSet) Size() int { return c.Set[0].Size() }
+
+func (c createOperationSet) SetFileKey(key fileKey) createOperation {
+	panic("unimplemented")
+}
+
+func (c createOperationSet) Key() ChannelKey { return c.Set[0].Key() }
+
+// |||||| ALLOCATOR ||||||
 
 // |||||| STREAM ||||||
 
@@ -78,7 +92,13 @@ func (c createFactory) New() Create {
 
 // |||||| OPERATION ||||||
 
-type createOperation struct {
+type createOperation interface {
+	operation.Operation[fileKey]
+	allocate.Item[ChannelKey]
+	SetFileKey(key fileKey) createOperation
+}
+
+type unaryCreateOperation struct {
 	fileKey    fileKey
 	channelKey ChannelKey
 	segments   []Segment
@@ -90,23 +110,34 @@ type createOperation struct {
 	wg         *sync.WaitGroup
 }
 
-// Context implements persist.Operation.
-func (cr createOperation) Context() context.Context {
-	return cr.ctx
+// Context implements createOperation.
+func (cr unaryCreateOperation) Context() context.Context { return cr.ctx }
+
+// FileKey implements createOperation.
+func (cr unaryCreateOperation) FileKey() fileKey { return cr.fileKey }
+
+// WriteError implements createOperation.
+func (cr unaryCreateOperation) WriteError(err error) { cr.stream.Responses <- CreateResponse{Err: err} }
+
+// Key implements allocate.Item.
+func (cr unaryCreateOperation) Key() ChannelKey { return cr.channelKey }
+
+func (cr unaryCreateOperation) SetFileKey(key fileKey) createOperation {
+	cr.fileKey = key
+	return cr
 }
 
-// FileKey implements persist.Operation.
-func (cr createOperation) FileKey() fileKey {
-	return cr.fileKey
-}
+func (cr unaryCreateOperation) Size() int {
+	size := 0
+	for _, seg := range cr.segments {
+		size += seg.Size()
+	}
+	return size
 
-// WriteError implements persist.Operation.
-func (cr createOperation) WriteError(err error) {
-	cr.stream.Responses <- CreateResponse{Err: err}
 }
 
 // Exec implements persist.Operation.
-func (cr createOperation) Exec(f file) {
+func (cr unaryCreateOperation) Exec(f file) {
 	tft := cr.metrics.totalFlush.Stopwatch()
 	tft.Start()
 	c := errutil.NewCatchReadWriteSeek(f, errutil.WithHooks(cr.WriteError))
@@ -145,9 +176,7 @@ func (cr createOperation) Exec(f file) {
 }
 
 // ChannelKey implements batch.CreateOperation.
-func (cr createOperation) ChannelKey() ChannelKey {
-	return cr.channelKey
-}
+func (cr unaryCreateOperation) ChannelKey() ChannelKey { return cr.channelKey }
 
 // |||||| PARSER ||||||
 
@@ -163,7 +192,7 @@ func (cp *createParser) Parse(q query.Query, req CreateRequest) (ops []createOpe
 	stream := query.GetStream[CreateRequest, CreateResponse](q)
 	for i, seg := range req.Segments {
 		cp.metrics.segSize.Record(seg.Size())
-		ops = append(ops, createOperation{
+		ops = append(ops, unaryCreateOperation{
 			fileKey:    fileKeys[i],
 			channelKey: seg.ChannelKey,
 			segments:   []Segment{seg},
@@ -233,22 +262,30 @@ func (cp *createIterator) Next(request CreateRequest) (last bool) {
 
 // |||||| BATCH ||||||
 
-type createBatch struct{}
+type createBatch struct {
+	confluence.Transform[[]createOperation]
+}
 
-func (b *createBatch) Exec(ops []createOperation) []createOperationSet {
+func (b *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]createOperation, bool) {
 	files := make(map[fileKey][]createOperation)
 	for _, op := range ops {
-		files[op.fileKey] = append(files[op.fileKey], op)
+		files[op.FileKey()] = append(files[op.FileKey()], op)
 	}
 	channels := make(map[ChannelKey]createOperationSet)
 	for _, op := range ops {
-		channels[op.ChannelKey()] = append(channels[op.ChannelKey()], op)
+		channels[op.Key()] = createOperationSet{Set: append(channels[op.Key()].Set, op)}
 	}
-	sets := make([]createOperationSet, 0, len(channels))
+	sets := make([]createOperation, 0, len(channels))
 	for _, opSet := range channels {
 		sets = append(sets, opSet)
 	}
-	return sets
+	return sets, true
+}
+
+func newCreateBatch() createSegment {
+	b := &createBatch{}
+	b.Transform.Transform = b.batch
+	return b
 }
 
 // |||||| METRICS ||||||
@@ -268,7 +305,7 @@ type createMetrics struct {
 	// lockRelease tracks the duration it takes to release the lock on the channels
 	// that are being written to.
 	lockRelease alamos.Duration
-	// segSize tracks the size of each Segment created.
+	// segSize tracks the Size of each Segment created.
 	segSize alamos.Metric[int]
 	// request tracks the total duration that the Create query is open i.e. from
 	// calling Create.Stream(ctx) to the close(res) call.
@@ -423,30 +460,24 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	}
 
 	// executes the operations generated by strategy.Parser, persisting them to disk.
-	pst := persist.New[fileKey, createOperationSet](cfg.fs, cfg.persist)
 
 	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more
 	// efficient batching.
-	q := &queue.Debounce[createOperation]{DebounceConfig: cfg.debounce}
-	iterQueue := confluence.NewStream[[]createOperation](10)
-	q.InFrom(iterQueue)
-	queueBatch := confluence.NewStream[[]createOperation](10)
-	q.OutTo(queueBatch)
+	pipeline := confluence.NewPipeline[[]createOperation]()
+	pipeline.Segment("queue", &queue.Debounce[createOperation]{DebounceConfig: cfg.debounce})
+	pipeline.Segment("batch", newCreateBatch())
+	pipeline.Segment("persist", persist.New[fileKey, createOperation](cfg.fs, cfg.persist))
+
+	rb := pipeline.NewRouteBuilder()
+	rb.Route(confluence.UnaryRouter[[]createOperation]{FromAddr: "queue", ToAddr: "batch", Capacity: 10})
+	rb.Route(confluence.UnaryRouter[[]createOperation]{FromAddr: "batch", ToAddr: "persist", Capacity: 10})
+	rb.RouteInletTo("queue")
+	inlet := confluence.NewStream[[]createOperation](10)
+	pipeline.InFrom(inlet)
 	ctx := confluence.DefaultContext()
 	ctx.Shutdown = cfg.shutdown
-	q.Flow(ctx)
-
-	// batches operations from the debounced queue into sequential operations on the same file.
-	batchPipe := operation.PipeTransform[
-		fileKey,
-		createOperation,
-		createOperationSet,
-	](queueBatch.Outlet(), cfg.shutdown, new(createBatch))
-
-	pst.Pipe(batchPipe)
-
-	// opens new iterators for generating operations for the CreateRequest piped in via q.In.
-	strategy.IterFactory = &createIterFactory{queue: iterQueue.Inlet()}
+	pipeline.Flow(ctx)
+	strategy.IterFactory = &createIterFactory{queue: inlet.Inlet()}
 
 	return createFactory{exec: strategy}, nil
 }

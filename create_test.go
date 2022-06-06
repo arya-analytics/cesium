@@ -4,6 +4,7 @@ import (
 	"github.com/arya-analytics/cesium"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
 
@@ -13,7 +14,7 @@ var _ = Describe("Create", func() {
 	)
 	BeforeEach(func() {
 		var err error
-		log := zap.NewNop()
+		log, _ := zap.NewDevelopment()
 		db, err = cesium.Open("", cesium.MemBacked(), cesium.WithLogger(log))
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -28,7 +29,7 @@ var _ = Describe("Create", func() {
 
 			Context("Single Segment", func() {
 
-				It("Should write the segment correctly", func() {
+				FIt("Should write the segment correctly", func() {
 
 					By("Creating a new Channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
@@ -60,7 +61,8 @@ var _ = Describe("Create", func() {
 						Expect(resV.Err).ToNot(HaveOccurred())
 					}
 
-					By("Retrieving the segment afterwards")
+					logrus.Info("made it here")
+
 					var resSeg []cesium.Segment
 					err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.Key).WhereTimeRange(cesium.TimeRangeMax), &resSeg)
 					Expect(err).ToNot(HaveOccurred())

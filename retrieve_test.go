@@ -5,6 +5,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"sync"
 )
@@ -39,6 +40,7 @@ var _ = Describe("Retrieve", func() {
 			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
+			logrus.Info("Made it here")
 			resV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			segments, err := seg.StreamRetrieve{Res: resV}.All()

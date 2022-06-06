@@ -20,8 +20,6 @@ import (
 
 type retrieveSegment = confluence.Segment[[]retrieveOperation]
 
-// |||||| OPERATION ||||||
-
 type retrieveOperation interface {
 	operation.Operation[fileKey]
 	Offset() int64
@@ -76,7 +74,14 @@ func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 		return nil, err
 	}
 	iter.OutTo(stream)
-	go iter.Exhaust()
+	iter.First()
+	go func() {
+		iter.Exhaust()
+		if err := iter.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
 	return stream.Outlet(), nil
 }
 
@@ -139,7 +144,9 @@ type unaryRetrieveOperation struct {
 func (ro unaryRetrieveOperation) Context() context.Context { return ro.ctx }
 
 // FileKey implements persist.Operation.
-func (ro unaryRetrieveOperation) FileKey() fileKey { return ro.seg.fileKey }
+func (ro unaryRetrieveOperation) FileKey() fileKey {
+	return ro.seg.fileKey
+}
 
 // WriteError implements persist.Operation.
 func (ro unaryRetrieveOperation) WriteError(err error) {
@@ -151,8 +158,8 @@ func (ro unaryRetrieveOperation) Exec(f file) {
 	if ro.wg != nil {
 		defer ro.wg.Done()
 	}
-	s := ro.dataRead.Stopwatch()
-	s.Start()
+	//s := ro.dataRead.Stopwatch()
+	//s.Start()
 	b := make([]byte, ro.seg.Size())
 	_, err := f.ReadAt(b, ro.seg.Offset())
 	if err == io.EOF {
@@ -183,6 +190,9 @@ func (r *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) (
 	}
 	files := make(map[fileKey][]retrieveOperation)
 	for _, op := range ops {
+		if op == nil {
+			continue
+		}
 		files[op.FileKey()] = append(files[op.FileKey()], op)
 	}
 	sets := make([]retrieveOperation, 0, len(files))
@@ -200,7 +210,7 @@ type retrieveMetrics struct {
 	kvRetrieve alamos.Duration
 	// dataRead is the duration spent reading Segment data from disk.
 	dataRead alamos.Duration
-	// segSize tracks the size of each Segment retrieved.
+	// segSize tracks the Size of each Segment retrieved.
 	segSize alamos.Metric[int]
 	// segCount tracks the number of segments retrieved.
 	segCount alamos.Metric[int]
@@ -292,5 +302,8 @@ func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 	rb.RouteInletTo("queue")
 	inlet := confluence.NewStream[[]retrieveOperation](10)
 	pipeline.InFrom(inlet)
+	ctx := confluence.DefaultContext()
+	ctx.Shutdown = cfg.shutdown
+	pipeline.Flow(ctx)
 	return retrieveFactory{ops: inlet, kve: cfg.kv, ckv: channelKV{kv: cfg.kv}}, rb.Error()
 }
