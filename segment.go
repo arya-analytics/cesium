@@ -5,7 +5,7 @@ import (
 	"github.com/arya-analytics/x/binary"
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/telem"
-	"github.com/sirupsen/logrus"
+	"github.com/cockroachdb/pebble"
 	"io"
 	"sort"
 )
@@ -127,7 +127,7 @@ func (si *kvIterator) Next() bool {
 		return false
 	}
 	si.loadValue()
-	si.setBounds(si.Position(), TimeStampMax)
+	si.setBounds(si.valueStart(), TimeStampMax)
 	si.autoUpdatePos()
 	return true
 }
@@ -143,10 +143,13 @@ func (si *kvIterator) First() bool {
 		return false
 	}
 	si.loadValue()
-	si.updatePos(si.rng.Start)
 	si.setBounds(si.Position(), TimeStampMax)
 	return true
 }
+
+func (si *kvIterator) valueStart() TimeStamp { return si.value[0].Start() }
+
+func (si *kvIterator) valueEnd() TimeStamp { return si.value[len(si.value)-1].End() }
 
 // Last seeks the segment to the last Segment in the streamIterator. Returns true if the streamIterator is pointing
 // to a valid Segment.
@@ -166,9 +169,11 @@ func (si *kvIterator) Last() bool {
 func (si *kvIterator) NextSpan(span TimeSpan) bool {
 	si.collectGarbage()
 	end := si.Position().Add(span)
+	limit := si.stampKey(end)
+	i := 0
 	for {
-		state := si.Iterator.Next()
-		if !state {
+		i++
+		if state := si.Iterator.NextWithLimit(limit); state != pebble.IterValid {
 			break
 		}
 		si.loadValue()
@@ -228,10 +233,8 @@ func (si *kvIterator) loadValue() {
 	seg := &Segment{}
 	header := seg.Header()
 	if err := binary.Load(bytes.NewBuffer(si.Iterator.Value()), &header); err != nil {
-		logrus.Fatal(err)
 		si.writeError(err)
 	}
-	logrus.Error(header.FileKey, header)
 	seg.LoadHeader(header)
 	si.value = append(si.value, seg.Sugar(si.channel, TimeRangeMax))
 }
@@ -243,7 +246,7 @@ func (si *kvIterator) setBounds(lower TimeStamp, upper TimeStamp) {
 
 // autoUpdatePos updates the streamIterator position to the bounded end timestamp of the last segment in the value.
 // assumes the streamIterator is valid.
-func (si *kvIterator) autoUpdatePos() { si.pos = si.Value()[len(si.Value())-1].End() }
+func (si *kvIterator) autoUpdatePos() { si.pos = si.valueEnd() }
 
 // updatePos updates the position of the streamIterator.
 func (si *kvIterator) updatePos(stamp TimeStamp) { si.pos = stamp }

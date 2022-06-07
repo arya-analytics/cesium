@@ -14,7 +14,7 @@ var _ = Describe("Create", func() {
 	)
 	BeforeEach(func() {
 		var err error
-		log, _ := zap.NewDevelopment()
+		log := zap.NewNop()
 		db, err = cesium.Open("", cesium.MemBacked(), cesium.WithLogger(log))
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -29,7 +29,7 @@ var _ = Describe("Create", func() {
 
 			Context("Single Segment", func() {
 
-				FIt("Should write the segment correctly", func() {
+				It("Should write the segment correctly", func() {
 
 					By("Creating a new Channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)

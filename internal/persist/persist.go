@@ -65,16 +65,21 @@ func (p *Persist[K, O]) Flow(ctx confluence.Context) {
 func (p *Persist[K, O]) start(ctx confluence.Context) {
 	for i := 0; i < p.NumWorkers; i++ {
 		ctx.Shutdown.Go(func(sig chan shutdown.Signal) error {
-			for op := range p.ops {
-				f, err := p.kfs.Acquire(op.FileKey())
-				if err != nil {
-					op.WriteError(err)
-					continue
+			for {
+				select {
+				case <-sig:
+					return nil
+				case op := <-p.ops:
+					f, err := p.kfs.Acquire(op.FileKey())
+					if err != nil {
+						op.WriteError(err)
+						continue
+					}
+					op.Exec(f)
+					p.kfs.Release(op.FileKey())
 				}
-				op.Exec(f)
-				p.kfs.Release(op.FileKey())
+
 			}
-			return nil
 		})
 	}
 }

@@ -2,78 +2,78 @@
  "cesium": {
   "create": {
    "dataFlushDur": {
-    "avg": 87952,
-    "count": 100,
+    "avg": 39317,
+    "count": 500,
     "key": "dataFlushDur",
-    "max": 387918,
-    "min": 15473,
-    "value": 8795223
+    "max": 246653,
+    "min": 13739,
+    "value": 19658651
    },
    "kvFlushDur": {
-    "avg": 14771,
-    "count": 100,
+    "avg": 13898,
+    "count": 500,
     "key": "kvFlushDur",
-    "max": 31473,
-    "min": 6328,
-    "value": 1477175
+    "max": 421172,
+    "min": 5584,
+    "value": 6949406
    },
    "lockAcquireDur": {
-    "avg": 28984,
-    "count": 1,
+    "avg": 1042,
+    "count": 5,
     "key": "lockAcquireDur",
-    "max": 28984,
-    "min": 28984,
-    "value": 28984
+    "max": 1186,
+    "min": 634,
+    "value": 5213
    },
    "lockReleaseDur": {
-    "avg": 9325,
-    "count": 1,
+    "avg": 488,
+    "count": 5,
     "key": "lockReleaseDur",
-    "max": 9325,
-    "min": 9325,
-    "value": 9325
+    "max": 629,
+    "min": 410,
+    "value": 2442
    },
    "requestDur": {
-    "avg": 7241901,
-    "count": 1,
+    "avg": 28557700,
+    "count": 5,
     "key": "requestDur",
-    "max": 7241901,
-    "min": 7241901,
-    "value": 7241901
+    "max": 28738797,
+    "min": 28427140,
+    "value": 142788501
    },
    "segSize": {
-    "avg": 1600,
-    "count": 100,
+    "avg": 8000,
+    "count": 500,
     "key": "segSize",
-    "max": 1600,
-    "min": 1600,
-    "value": 160000
+    "max": 8000,
+    "min": 8000,
+    "value": 4000000
    },
    "totalFlushDur": {
-    "avg": 128452,
-    "count": 100,
+    "avg": 59990,
+    "count": 500,
     "key": "totalFlushDur",
-    "max": 421021,
-    "min": 29508,
-    "value": 12845274
+    "max": 466187,
+    "min": 22273,
+    "value": 29995275
    }
   },
   "kfs.FS": {
    "Acquire": {
-    "avg": 1967386,
-    "count": 100,
+    "avg": 91795,
+    "count": 25,
     "key": "Acquire",
-    "max": 4872896,
-    "min": 1037,
-    "value": 196738603
+    "max": 852485,
+    "min": 804,
+    "value": 2294888
    },
    "Release": {
-    "avg": 257289,
-    "count": 100,
+    "avg": 731,
+    "count": 25,
     "key": "Release",
-    "max": 3195233,
-    "min": 834,
-    "value": 25728960
+    "max": 1086,
+    "min": 551,
+    "value": 18294
    },
    "Remove": {
     "avg": 0,
@@ -87,48 +87,6 @@
     "avg": 0,
     "count": 0,
     "key": "Shutdown",
-    "max": 0,
-    "min": 0,
-    "value": 0
-   }
-  },
-  "retrieve": {
-   "dataReadDur": {
-    "avg": 0,
-    "count": 0,
-    "key": "dataReadDur",
-    "max": 0,
-    "min": 0,
-    "value": 0
-   },
-   "kvRetrieveDur": {
-    "avg": 0,
-    "count": 0,
-    "key": "kvRetrieveDur",
-    "max": 0,
-    "min": 0,
-    "value": 0
-   },
-   "requestDur": {
-    "avg": 0,
-    "count": 0,
-    "key": "requestDur",
-    "max": 0,
-    "min": 0,
-    "value": 0
-   },
-   "segCount": {
-    "avg": 0,
-    "count": 0,
-    "key": "segCount",
-    "max": 0,
-    "min": 0,
-    "value": 0
-   },
-   "segSize": {
-    "avg": 0,
-    "count": 0,
-    "key": "segSize",
     "max": 0,
     "min": 0,
     "value": 0

@@ -61,7 +61,7 @@ func (i *streamIterator) Next() bool {
 	if !i.kvIterator.Next() {
 		return false
 	}
-	i.ops.Inlet() <- i.operations(i.Value())
+	i.pipeOperations()
 	return true
 }
 
@@ -102,7 +102,13 @@ func (i *streamIterator) NextRange(tr telem.TimeRange) bool {
 }
 
 // Exhaust implements StreamIterator.
-func (i *streamIterator) Exhaust() { i.NextSpan(TimeSpanMax); i.pipeOperations() }
+func (i *streamIterator) Exhaust() {
+	for {
+		if !i.Next() {
+			break
+		}
+	}
+}
 
 // Close implements StreamIterator.
 func (i *streamIterator) Close() error {
