@@ -40,7 +40,7 @@ func (sg Segment) Header() SegmentHeader {
 func (sg SegmentHeader) Flush(w io.Writer) error { return binary.Flush(w, sg) }
 
 func (sg *Segment) LoadHeader(header SegmentHeader) {
-	sg.ChannelKey = header.ChannelKey
+	sg.ChannelKey = header.ChannelKess
 	sg.Start = header.Start
 	sg.fileKey = header.FileKey
 	sg.offset = header.Offset
