@@ -1,4 +1,4 @@
-package iterator_test
+package kv_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestIterator(t *testing.T) {
+func TestKv(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Iterator Suite")
+	RunSpecs(t, "Kv Suite")
 }
