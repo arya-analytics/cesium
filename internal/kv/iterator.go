@@ -39,7 +39,7 @@ func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Itera
 
 	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterPrefix(segment.NewKeyPrefix(chKey)))
 
-	var start, end []byte
+	start, end := iter.key(rng.Start).Bytes(), iter.key(rng.End).Bytes()
 
 	if iter.SeekLT(rng.Start) && iter.Next() && iter.Value().Range().Overlap(rng) {
 		start = iter.key(iter.Value().UnboundedRange().Start).Bytes()
@@ -60,6 +60,7 @@ func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Itera
 	}
 
 	iter.rng = rng
+	iter.setError(iter.internal.Close())
 	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterRange(start, end))
 
 	return iter
@@ -204,7 +205,7 @@ func (i *Iterator) NextRange(tr telem.TimeRange) bool {
 	return true
 }
 
-// SeekFirst seeks the iterator to the first segment. Returns true if the iterator is pointing at a valid segment. Sets
+// SeekFirst seeks the iterator to the first valid segment. Returns true if the iterator is pointing at a valid segment. Sets
 // the iterator position to a zero spanned range starting and ending at the start of the first segment.
 // Calls to Iterator.Value will return an invalid range. Next(), NextRange(), or NextSpan() must be called to validate
 // the iterator.
@@ -223,7 +224,7 @@ func (i *Iterator) SeekFirst() bool {
 	return true
 }
 
-// SeekLast seeks the iterator to the last segment. Returns true if the iterator is pointing at a valid segment. Sets
+// SeekLast seeks the iterator to the last valid segment. Returns true if the iterator is pointing at a valid segment. Sets
 // the iterator position to a zero spanned range starting and ending at the start of the first segment.
 // Calls to Iterator.Value will return an invalid range. Next(), NextRange(), or NextSpan() must be called to validate
 // the iterator.
@@ -337,7 +338,11 @@ func (i *Iterator) resetValue() {
 	i.value.Channel = i.channel
 }
 
-func (i *Iterator) setError(err error) { i._error = err }
+func (i *Iterator) setError(err error) {
+	if err != nil {
+		i._error = err
+	}
+}
 
 func (i *Iterator) Close() error {
 	i.resetValue()
@@ -357,6 +362,9 @@ func (i *Iterator) error() error { return i._error }
 
 func (i *Iterator) Valid() bool {
 	if i.error() != nil {
+		return false
+	}
+	if i.Position().IsZero() {
 		return false
 	}
 	return i.internal.Valid()
