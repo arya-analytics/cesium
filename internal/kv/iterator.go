@@ -7,7 +7,6 @@ import (
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/telem"
 	"github.com/cockroachdb/errors"
-	"github.com/cockroachdb/pebble"
 )
 
 // Iterator is used to iterate over a channel's segment. Iterator stores its values as a bounded range of segments.
@@ -41,18 +40,18 @@ func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Itera
 
 	start, end := iter.key(rng.Start).Bytes(), iter.key(rng.End).Bytes()
 
-	if iter.SeekLT(rng.Start) && iter.Next() && iter.Value().Range().Overlap(rng) {
+	if iter.SeekLT(rng.Start) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
 		start = iter.key(iter.Value().UnboundedRange().Start).Bytes()
-	} else if iter.SeekGE(rng.Start) && iter.Next() && iter.Value().Range().Overlap(rng) {
+	} else if iter.SeekGE(rng.Start) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
 		start = iter.key(iter.Value().UnboundedRange().Start).Bytes()
 	} else {
 		iter.setError(errors.New("[cesium.kv] - range has no data"))
 	}
 
-	if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().Overlap(rng) {
+	if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().OverlapsWith(rng) {
 		iter.loadValue()
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
-	} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().Overlap(rng) {
+	} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
 		iter.loadValue()
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
 	} else {
@@ -69,9 +68,7 @@ func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Itera
 // First moves to the first segment in the iterator. Sets the iterator position to the range
 // of the first segment. Returns true if the iterator is pointing at a valid segment.
 func (i *Iterator) First() bool {
-	if i.error() != nil {
-		return false
-	}
+	i.resetError()
 	i.resetValue()
 
 	if !i.internal.First() {
@@ -87,9 +84,7 @@ func (i *Iterator) First() bool {
 // Last moves to the last segment in the iterator. Sets the iterator position to the range of the last segment.
 // Returns true if the iterator is pointing to a valid segment.
 func (i *Iterator) Last() bool {
-	if i.error() != nil {
-		return false
-	}
+	i.resetError()
 	i.resetValue()
 
 	if !i.internal.Last() {
@@ -148,23 +143,21 @@ func (i *Iterator) NextSpan(span telem.TimeSpan) bool {
 	if i.error() != nil {
 		return false
 	}
-	var (
-		rng    = i.Position().End.SpanRange(span)
-		endKey = i.key(rng.End).Bytes()
-	)
+	var rng = i.Position().End.SpanRange(span)
 
-	if rng.Overlap(i.value.UnboundedRange()) {
-		i.resetValue()
+	prevRange := i.value.UnboundedRange()
+	i.resetValue()
+
+	// If the last segment from the previous value had relevant data, we need to load it back in.
+	if rng.OverlapsWith(prevRange) {
 		i.loadValue()
-	} else {
-		i.resetValue()
 	}
 
-	for {
-		if state := i.internal.NextWithLimit(endKey); state != pebble.IterValid {
-			break
+	// If the current value can't satisfy the range, we need to continue loading in segments until it does.
+	if !i.Value().UnboundedRange().End.After(rng.End) {
+		for i.internal.Next(); i.Value().UnboundedRange().End.Before(rng.End) && i.internal.Valid(); i.internal.Next() {
+			i.loadValue()
 		}
-		i.loadValue()
 	}
 
 	i.updatePosition(rng)
@@ -194,7 +187,7 @@ func (i *Iterator) NextRange(tr telem.TimeRange) bool {
 
 	// If the range of the value we found doesn't overlap with the range we're
 	// looking for then we return false.
-	if !i.value.UnboundedRange().Overlap(tr) {
+	if !i.value.UnboundedRange().OverlapsWith(tr) {
 		return false
 	}
 
@@ -323,6 +316,20 @@ func (i *Iterator) Value() *segment.Range { return i.value }
 
 func (i *Iterator) Position() telem.TimeRange { return i.position }
 
+func (i *Iterator) Error() error {
+	if i.error() != nil {
+		return i.error()
+	}
+	return i.internal.Error()
+}
+
+func (i *Iterator) Valid() bool {
+	if i.error() != nil || i.Position().IsZero() {
+		return false
+	}
+	return i.internal.Valid()
+}
+
 func (i *Iterator) key(stamp telem.TimeStamp) segment.Key {
 	return segment.NewKey(i.channel.Key, stamp)
 }
@@ -352,21 +359,4 @@ func (i *Iterator) Close() error {
 
 func (i *Iterator) resetError() { i._error = nil }
 
-func (i *Iterator) Error() error {
-	if i.error() != nil {
-		return i.error()
-	}
-	return i.internal.Error()
-}
-
 func (i *Iterator) error() error { return i._error }
-
-func (i *Iterator) Valid() bool {
-	if i.error() != nil {
-		return false
-	}
-	if i.Position().IsZero() {
-		return false
-	}
-	return i.internal.Valid()
-}

@@ -135,41 +135,6 @@ var _ = Describe("Iterator", func() {
 				})
 			})
 
-			Describe("NextSpan", func() {
-				Context("Starting at the beginning of a segment", func() {
-					Context("Reading an entire segment", func() {
-						FIt("Should return the correct segment", func() {
-							Expect(iter.SeekFirst()).To(BeTrue())
-							Expect(iter.NextSpan(100 * telem.Second)).To(BeTrue())
-							Expect(iter.Valid()).To(BeTrue())
-							Expect(iter.Error()).ToNot(HaveOccurred())
-							Expect(iter.Position()).To(Equal(telem.TimeRange{
-								Start: 0,
-								End:   telem.TimeStamp(100 * telem.Second),
-							}))
-							Expect(iter.Value().Range()).To(Equal(iter.Position()))
-							Expect(iter.Value().Headers).To(HaveLen(1))
-
-							Expect(iter.Prev()).To(BeTrue())
-						})
-					})
-					Context("Reading a partial segment", func() {
-						It("Should return the partial segment correctly", func() {
-							Expect(iter.SeekFirst()).To(BeTrue())
-							Expect(iter.NextSpan(50 * telem.Second)).To(BeTrue())
-							Expect(iter.Valid()).To(BeTrue())
-							Expect(iter.Error()).ToNot(HaveOccurred())
-							Expect(iter.Position()).To(Equal(telem.TimeRange{
-								Start: 0,
-								End:   telem.TimeStamp(50 * telem.Second),
-							}))
-							Expect(iter.Value().Range()).To(Equal(iter.Position()))
-
-						})
-					})
-				})
-			})
-
 		})
 
 		Describe("Next", func() {
@@ -336,12 +301,12 @@ var _ = Describe("Iterator", func() {
 
 		Describe("First", func() {
 			It("Should return false", func() {
+				Expect(iter.Error()).To(HaveOccurred())
+				Expect(iter.Error()).To(MatchError("[cesium.kv] - range has no data"))
 				Expect(iter.First()).To(BeFalse())
 				Expect(iter.Valid()).To(BeFalse())
 				Expect(iter.Value().Headers).To(HaveLen(0))
 				Expect(iter.Value().Range()).To(Equal(telem.TimeRangeZero))
-				Expect(iter.Error()).To(HaveOccurred())
-				Expect(iter.Error()).To(MatchError("[cesium.kv] - range has no data"))
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
@@ -353,5 +318,111 @@ var _ = Describe("Iterator", func() {
 			})
 		})
 
+	})
+
+	Describe("NextSpan", func() {
+		Context("Starting at the beginning of a segment", func() {
+			Context("Reading an entire segment", func() {
+				It("Should return the correct segment", func() {
+					Expect(headerKV.SetMultiple([]segment.Header{
+						{
+							ChannelKey: ch.Key,
+							Start:      0,
+							Size:       100,
+						},
+						{
+							ChannelKey: ch.Key,
+							Start:      telem.TimeStamp(100 * telem.Second),
+							Size:       100,
+						},
+					})).To(Succeed())
+					iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+						Start: 0,
+						End:   telem.TimeStamp(200 * time.Second),
+					})
+					Expect(iter.SeekFirst()).To(BeTrue())
+					Expect(iter.NextSpan(100 * telem.Second)).To(BeTrue())
+					Expect(iter.Valid()).To(BeTrue())
+					Expect(iter.Error()).ToNot(HaveOccurred())
+					Expect(iter.Position()).To(Equal(telem.TimeRange{
+						Start: 0,
+						End:   telem.TimeStamp(100 * telem.Second),
+					}))
+					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Headers).To(HaveLen(1))
+					Expect(iter.Close()).To(Succeed())
+				})
+			})
+			Context("Reading a partial segment", func() {
+
+				It("Should return the partial segment correctly", func() {
+					Expect(headerKV.SetMultiple([]segment.Header{
+						{
+							ChannelKey: ch.Key,
+							Start:      0,
+							Size:       100,
+						},
+						{
+							ChannelKey: ch.Key,
+							Start:      telem.TimeStamp(100 * telem.Second),
+							Size:       100,
+						},
+					})).To(Succeed())
+					iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+						Start: 0,
+						End:   telem.TimeStamp(200 * time.Second),
+					})
+					Expect(iter.SeekFirst()).To(BeTrue())
+					Expect(iter.NextSpan(50 * telem.Second)).To(BeTrue())
+					Expect(iter.Valid()).To(BeTrue())
+					Expect(iter.Error()).ToNot(HaveOccurred())
+					Expect(iter.Position()).To(Equal(telem.TimeRange{
+						Start: 0,
+						End:   telem.TimeStamp(50 * telem.Second),
+					}))
+					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Headers).To(HaveLen(1))
+					Expect(iter.Value().Headers[0].Start).To(Equal(telem.TimeStamp(0)))
+					Expect(iter.Prev()).To(BeFalse())
+					Expect(iter.Close()).To(Succeed())
+				})
+			})
+		})
+
+		Context("Reading multiple segments", func() {
+			It("Should return the segments correctly", func() {
+				Expect(headerKV.SetMultiple([]segment.Header{
+					{
+						ChannelKey: ch.Key,
+						Start:      0,
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(100 * telem.Second),
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(200 * time.Second),
+						Size:       100,
+					},
+				})).To(Succeed())
+				iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(300 * time.Second),
+				})
+				Expect(iter.SeekFirst()).To(BeTrue())
+				Expect(iter.NextSpan(200 * telem.Second)).To(BeTrue())
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(200 * time.Second),
+				}))
+				Expect(iter.Value().Range()).To(Equal(iter.Position()))
+				Expect(iter.Value().Headers).To(HaveLen(2))
+				Expect(iter.Close()).To(Succeed())
+			})
+		})
 	})
 })
