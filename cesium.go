@@ -39,7 +39,7 @@ type DB interface {
 	//
 	//		// Open the query
 	//		// db.syncExec is a helper that turns a typically async write into an acknowledged, syncExec write.
-	//	    err := db.syncExec(ctx, db.NewCreate().WhereChannels(ch.Pk), []Segment{segments})
+	//	    err := db.syncExec(ctx, db.NewCreate().WhereChannels(ch.Pk), []Header{segments})
 	//		if err != nil {
 	//			logger.Fatal(err)
 	//		}
@@ -85,7 +85,7 @@ type DB interface {
 	//		// Open the Retrieve query, and write the results into resSeg.
 	//		// DB.Sync is a helper that turns a async read into syncExec read.
 	//		// If you don't know what a Segment is, check out the Segment documentation.
-	//		var resSeg []Segment
+	//		var resSeg []Header
 	//		err := db.syncExec(ctx, db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(ch.Pk), &resSeg)
 	//		if err != nil {
 	//			logger.Fatal(err)
@@ -119,7 +119,7 @@ type DB interface {
 	// 		ctx, cancel := Context.WithCancel(Context.Background())
 	//		res, err := db.NewRetrieve().WhereTimeRange(cesium.TimeRangeMax).WhereChannels(channelKey).Stream(ctx)
 	//
-	//      var resSeg []Segment
+	//      var resSeg []Header
 	//		// Retrieve will close the Channel when done.
 	// 		for _, resV := range res {
 	//			if resV.Err != nil {

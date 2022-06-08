@@ -9,3 +9,9 @@ type Channel struct {
 	DataRate telem.DataRate
 	DataType telem.DataType
 }
+
+// GorpKey implements the gorp.Entry interface.
+func (c Channel) GorpKey() interface{} { return c.Key }
+
+// SetOptions implements the gorp.Entry interface.
+func (c Channel) SetOptions() (opts []interface{}) { return opts }

@@ -25,6 +25,12 @@ type Header struct {
 
 func (h Header) Key() Key { return NewKey(h.ChannelKey, h.Start) }
 
+// GorpKey implements the gorp.Entry interface.
+func (h Header) GorpKey() interface{} { return h.Key().Bytes() }
+
+// SetOptions implements the gorp.Entry interface.
+func (h Header) SetOptions() (opts []interface{}) { return opts }
+
 func (h Header) End(dr telem.DataRate, dt telem.DataType) telem.TimeStamp {
 	return h.Start.Add(dr.SizeSpan(telem.Size(h.Size), dt))
 }
@@ -35,10 +41,17 @@ type Key [13]byte
 
 func (k Key) Bytes() []byte { return k[:] }
 
+func NewKeyPrefix(channelKey channel.Key) []byte {
+	keyPrefix := make([]byte, 6)
+	keyPrefix[0] = prefix
+	binary.BigEndian.PutUint16(keyPrefix[1:], uint16(channelKey))
+	return keyPrefix
+}
+
 func NewKey(channelKey channel.Key, stamp telem.TimeStamp) (key Key) {
 	key[0] = prefix
-	binary.LittleEndian.PutUint64(key[1:9], uint64(stamp))
-	binary.LittleEndian.PutUint16(key[9:13], uint16(channelKey))
+	binary.BigEndian.PutUint16(key[1:5], uint16(channelKey))
+	binary.BigEndian.PutUint64(key[5:13], uint64(stamp))
 	return key
 }
 
@@ -47,6 +60,10 @@ type Range struct {
 	Bound   telem.TimeRange
 	Headers []Header
 }
+
+func (r *Range) Range() telem.TimeRange { return r.UnboundedRange().BoundBy(r.Bound) }
+
+func (r *Range) Empty() bool { return r.UnboundedRange().IsZero() }
 
 func (r *Range) UnboundedRange() telem.TimeRange {
 	if len(r.Headers) == 0 {

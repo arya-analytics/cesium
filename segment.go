@@ -40,7 +40,7 @@ func (sg Segment) Header() SegmentHeader {
 func (sg SegmentHeader) Flush(w io.Writer) error { return binary.Flush(w, sg) }
 
 func (sg *Segment) LoadHeader(header SegmentHeader) {
-	sg.ChannelKey = header.ChannelKess
+	sg.ChannelKey = header.ChannelKey
 	sg.Start = header.Start
 	sg.fileKey = header.FileKey
 	sg.offset = header.Offset
@@ -88,7 +88,7 @@ func (s SugaredSegment) Start() TimeStamp { return s.Range().Start }
 func (s SugaredSegment) End() TimeStamp { return s.Range().End }
 
 // Range returns the bounded range of the segment.
-func (s SugaredSegment) Range() TimeRange { return s.UnboundedRange().Bound(s.Bound) }
+func (s SugaredSegment) Range() TimeRange { return s.UnboundedRange().BoundBy(s.Bound) }
 
 // Span returns the bounded span of the segment.
 func (s SugaredSegment) Span() TimeSpan { return s.Range().Span() }

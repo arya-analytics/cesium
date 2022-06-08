@@ -455,7 +455,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 		// releases the locks on the channels that are being written to.
 		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
 		// closes the stream response Channel for the query, which signals to the caller that the
-		// query has completed, and the Segment writes are durable.
+		// query has completed, and the Header writes are durable.
 		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
 	}
 

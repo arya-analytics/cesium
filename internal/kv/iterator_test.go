@@ -56,12 +56,12 @@ var _ = Describe("Iterator", func() {
 				Expect(iter.First()).To(BeTrue())
 				Expect(iter.Valid()).To(BeTrue())
 				Expect(iter.Error()).ToNot(HaveOccurred())
-				Expect(iter.Position()).To(Equal(telem.TimeRange{
+				Expect(iter.View()).To(Equal(telem.TimeRange{
 					Start: 0,
 					End:   telem.TimeStamp(100 * telem.Second),
 				}))
 				Expect(iter.Value().Headers).To(HaveLen(1))
-				Expect(iter.Value().Range()).To(Equal(iter.Position()))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
@@ -71,40 +71,40 @@ var _ = Describe("Iterator", func() {
 				Expect(iter.Last()).To(BeTrue())
 				Expect(iter.Valid()).To(BeTrue())
 				Expect(iter.Error()).ToNot(HaveOccurred())
-				Expect(iter.Position()).To(Equal(telem.TimeRange{
+				Expect(iter.View()).To(Equal(telem.TimeRange{
 					Start: telem.TimeStamp(100 * telem.Second),
 					End:   telem.TimeStamp(200 * time.Second),
 				}))
-				Expect(iter.Value().Range()).To(Equal(iter.Position()))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
 
 		Describe("SeekFirst", func() {
-			It("Should seek the correct position", func() {
+			It("Should seek the correct view", func() {
 				Expect(iter.SeekFirst()).To(BeTrue())
 				Expect(iter.Valid()).To(BeFalse())
 				Expect(iter.Error()).ToNot(HaveOccurred())
-				Expect(iter.Position()).To(Equal(telem.TimeRange{Start: 0, End: 0}))
+				Expect(iter.View()).To(Equal(telem.TimeRange{Start: 0, End: 0}))
 				Expect(iter.Value().Headers).To(HaveLen(1))
-				Expect(iter.Value().Range()).To(Equal(iter.Position()))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
 
 		Describe("SeekLast", func() {
-			It("Should seek the correct position", func() {
+			It("Should seek the correct view", func() {
 				Expect(iter.SeekLast()).To(BeTrue())
 				Expect(iter.Valid()).To(BeFalse())
 				Expect(iter.Error()).ToNot(HaveOccurred())
-				Expect(iter.Position()).To(Equal(telem.TimeStamp(200 * time.Second).SpanRange(0)))
+				Expect(iter.View()).To(Equal(telem.TimeStamp(200 * time.Second).SpanRange(0)))
 			})
 		})
 
 		Describe("Seek", func() {
 
 			Context("Within Range", func() {
-				It("Should seek the correct position", func() {
+				It("Should seek the correct view", func() {
 					Expect(iter.Seek(telem.TimeStamp(50 * time.Second))).To(BeTrue())
 					Expect(iter.Valid()).To(BeFalse())
 					Expect(iter.Error()).ToNot(HaveOccurred())
@@ -128,7 +128,7 @@ var _ = Describe("Iterator", func() {
 			})
 
 			Describe("Next", func() {
-				It("Should return the segment that contains the position", func() {
+				It("Should return the segment that contains the view", func() {
 					Expect(iter.Seek(telem.TimeStamp(50 * time.Second))).To(BeTrue())
 					Expect(iter.Next()).To(BeTrue())
 					Expect(iter.Value().Headers[0].Start).To(Equal(telem.TimeStamp(0 * time.Second)))
@@ -144,7 +144,7 @@ var _ = Describe("Iterator", func() {
 					Expect(iter.SeekFirst()).To(BeTrue())
 					Expect(iter.Next()).To(BeTrue())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: 0,
 						End:   telem.TimeStamp(100 * time.Second),
 					}))
@@ -176,7 +176,7 @@ var _ = Describe("Iterator", func() {
 					Expect(iter.SeekLast()).To(BeTrue())
 					Expect(iter.Prev()).To(BeTrue())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: telem.TimeStamp(100 * time.Second),
 						End:   telem.TimeStamp(200 * time.Second),
 					}))
@@ -231,12 +231,12 @@ var _ = Describe("Iterator", func() {
 					Expect(iter.First()).To(BeTrue())
 					Expect(iter.Valid()).To(BeTrue())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: telem.TimeStamp(10 * time.Second),
 						End:   telem.TimeStamp(110 * time.Second),
 					}))
 					Expect(iter.Value().Headers).To(HaveLen(1))
-					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Range()).To(Equal(iter.View()))
 					Expect(iter.Close()).To(Succeed())
 				})
 			})
@@ -246,31 +246,31 @@ var _ = Describe("Iterator", func() {
 					Expect(iter.Last()).To(BeTrue())
 					Expect(iter.Valid()).To(BeTrue())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: telem.TimeStamp(110 * time.Second),
 						End:   telem.TimeStamp(200 * time.Second),
 					}))
-					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Range()).To(Equal(iter.View()))
 				})
 			})
 
 			Describe("SeekTo", func() {
-				It("Should seek to the correct position", func() {
+				It("Should seek to the correct view", func() {
 					Expect(iter.SeekFirst()).To(BeTrue())
 					Expect(iter.Valid()).To(BeFalse())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeStamp(10 * time.Second).SpanRange(0)))
+					Expect(iter.View()).To(Equal(telem.TimeStamp(10 * time.Second).SpanRange(0)))
 				})
 
 				It("Should return the correct next segment", func() {
 					Expect(iter.SeekFirst()).To(BeTrue())
 					Expect(iter.Next()).To(BeTrue())
 					Expect(iter.Value().Headers).To(HaveLen(1))
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: telem.TimeStamp(10 * time.Second),
 						End:   telem.TimeStamp(110 * time.Second),
 					}))
-					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Range()).To(Equal(iter.View()))
 				})
 			})
 
@@ -344,11 +344,11 @@ var _ = Describe("Iterator", func() {
 					Expect(iter.NextSpan(100 * telem.Second)).To(BeTrue())
 					Expect(iter.Valid()).To(BeTrue())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: 0,
 						End:   telem.TimeStamp(100 * telem.Second),
 					}))
-					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Range()).To(Equal(iter.View()))
 					Expect(iter.Value().Headers).To(HaveLen(1))
 					Expect(iter.Close()).To(Succeed())
 				})
@@ -376,11 +376,11 @@ var _ = Describe("Iterator", func() {
 					Expect(iter.NextSpan(50 * telem.Second)).To(BeTrue())
 					Expect(iter.Valid()).To(BeTrue())
 					Expect(iter.Error()).ToNot(HaveOccurred())
-					Expect(iter.Position()).To(Equal(telem.TimeRange{
+					Expect(iter.View()).To(Equal(telem.TimeRange{
 						Start: 0,
 						End:   telem.TimeStamp(50 * telem.Second),
 					}))
-					Expect(iter.Value().Range()).To(Equal(iter.Position()))
+					Expect(iter.Value().Range()).To(Equal(iter.View()))
 					Expect(iter.Value().Headers).To(HaveLen(1))
 					Expect(iter.Value().Headers[0].Start).To(Equal(telem.TimeStamp(0)))
 					Expect(iter.Prev()).To(BeFalse())
@@ -415,14 +415,59 @@ var _ = Describe("Iterator", func() {
 				Expect(iter.SeekFirst()).To(BeTrue())
 				Expect(iter.NextSpan(200 * telem.Second)).To(BeTrue())
 				Expect(iter.Valid()).To(BeTrue())
-				Expect(iter.Position()).To(Equal(telem.TimeRange{
+				Expect(iter.View()).To(Equal(telem.TimeRange{
 					Start: 0,
 					End:   telem.TimeStamp(200 * time.Second),
 				}))
-				Expect(iter.Value().Range()).To(Equal(iter.Position()))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
 				Expect(iter.Value().Headers).To(HaveLen(2))
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
+		Context("Crossing the global range boundary", func() {
+			It("Should return a valid range of segments", func() {
+
+				Expect(headerKV.SetMultiple([]segment.Header{
+					{
+						ChannelKey: ch.Key,
+						Start:      0,
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(100 * telem.Second),
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(200 * time.Second),
+						Size:       100,
+					},
+				})).To(Succeed())
+				iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(300 * time.Second),
+				})
+				Expect(iter.Seek(telem.TimeStamp(50 * time.Second))).To(BeTrue())
+				Expect(iter.NextSpan(300 * telem.Second)).To(BeTrue())
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(50 * telem.Second),
+					End:   telem.TimeStamp(300 * telem.Second),
+				}))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
+				Expect(iter.Value().Headers).To(HaveLen(3))
+
+				By("Returning false on the next call to Next()")
+				Expect(iter.Next()).To(BeFalse())
+				Expect(iter.Valid()).To(BeFalse())
+
+				Expect(iter.NextSpan(30 * telem.Second)).To(BeFalse())
+				Expect(iter.Valid()).To(BeFalse())
+
+				Expect(iter.Close()).To(Succeed())
+			})
+		})
+
 	})
 })
