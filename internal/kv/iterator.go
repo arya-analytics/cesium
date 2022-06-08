@@ -111,8 +111,9 @@ func (i *Iterator) Next() bool {
 	i.resetValue()
 
 	// If we're at a zero position in the iterator, it means we just completed a seek operation. Instead, we
-	// just load the value at the current position and update our position to span it.
-	if !i.Position().IsZero() && !i.internal.Next() {
+	// just load the value at the current position and update our position to span it. BUT if we're at the
+	// end of the range, still call next to invalidate it.
+	if (!i.Position().IsZero() || i.Position().End == i.rng.End) && !i.internal.Next() {
 		return false
 	}
 
@@ -130,7 +131,7 @@ func (i *Iterator) Prev() bool {
 	}
 	i.resetValue()
 
-	if !i.Position().IsZero() && !i.internal.Prev() {
+	if (!i.Position().IsZero() || i.Position().Start == i.rng.Start) && !i.internal.Prev() {
 		return false
 	}
 
