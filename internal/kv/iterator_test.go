@@ -424,6 +424,7 @@ var _ = Describe("Iterator", func() {
 				Expect(iter.Close()).To(Succeed())
 			})
 		})
+
 		Context("Crossing the global range boundary", func() {
 			It("Should return a valid range of segments", func() {
 
@@ -466,6 +467,201 @@ var _ = Describe("Iterator", func() {
 				Expect(iter.Valid()).To(BeFalse())
 
 				Expect(iter.Close()).To(Succeed())
+			})
+		})
+
+		Context("Crossing the global range boundary twice", func() {
+			It("Should return false", func() {
+				Expect(headerKV.SetMultiple([]segment.Header{
+					{
+						ChannelKey: ch.Key,
+						Start:      0,
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(100 * telem.Second),
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(200 * time.Second),
+						Size:       100,
+					},
+				})).To(Succeed())
+				iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(300 * time.Second),
+				})
+				Expect(iter.Seek(telem.TimeStamp(50 * time.Second))).To(BeTrue())
+				Expect(iter.NextSpan(300 * telem.Second)).To(BeTrue())
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(50 * telem.Second),
+					End:   telem.TimeStamp(300 * telem.Second),
+				}))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
+				Expect(iter.Value().Headers).To(HaveLen(3))
+
+				Expect(iter.NextSpan(30 * telem.Second)).To(BeFalse())
+				Expect(iter.Valid()).To(BeFalse())
+
+				Expect(iter.Close()).To(Succeed())
+			})
+		})
+
+	})
+
+	Context("Sequences", func() {
+
+		Context("Contiguous, Even Range", func() {
+			It("Should move the iterator view correctly", func() {
+				Expect(headerKV.SetMultiple([]segment.Header{
+					{
+						ChannelKey: ch.Key,
+						Start:      0,
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(100 * telem.Second),
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(200 * time.Second),
+						Size:       100,
+					},
+				})).To(Succeed())
+				iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(300 * time.Second),
+				})
+
+				By("Moving to the first value")
+				Expect(iter.First()).To(BeTrue())
+
+				By("Moving over the next span")
+				Expect(iter.NextSpan(25 * telem.Second)).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(100 * telem.Second),
+					End:   telem.TimeStamp(125 * telem.Second),
+				}))
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.Value().Headers).To(HaveLen(1))
+				Expect(iter.Value().Headers[0].Start).To(Equal(telem.TimeStamp(100 * telem.Second)))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
+
+				By("Reversing over a span")
+				Expect(iter.PrevSpan(25 * telem.Second)).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(75 * telem.Second),
+					End:   telem.TimeStamp(100 * telem.Second),
+				}))
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.Value().Headers).To(HaveLen(1))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
+
+				By("Reversing over a span again")
+				Expect(iter.PrevSpan(25 * telem.Second)).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(50 * telem.Second),
+					End:   telem.TimeStamp(75 * telem.Second),
+				}))
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.Value().Headers).To(HaveLen(1))
+				Expect(iter.Value().Headers[0].Start).To(Equal(telem.TimeStamp(0)))
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
+
+				By("Reversing over the global range boundary")
+				Expect(iter.PrevSpan(100 * telem.Second)).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(0 * telem.Second),
+					End:   telem.TimeStamp(50 * telem.Second),
+				}))
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.Value().Headers).To(HaveLen(1))
+
+				By("Reversing over the global range boundary again")
+				Expect(iter.PrevSpan(100 * telem.Second)).To(BeFalse())
+				Expect(iter.Valid()).To(BeFalse())
+
+				By("Moving forward over the next span")
+				Expect(iter.NextSpan(100 * telem.Second)).To(BeTrue())
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(50 * telem.Second),
+					End:   telem.TimeStamp(150 * telem.Second),
+				}))
+				Expect(iter.Value().Headers).To(HaveLen(2))
+				Expect(iter.Valid()).To(BeTrue())
+
+				By("Seeking over a range")
+				nextRange := telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(50 * telem.Second),
+				}
+				Expect(iter.NextRange(nextRange)).To(BeTrue())
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.View()).To(Equal(nextRange))
+				Expect(iter.Value().Range()).To(Equal(nextRange))
+				Expect(iter.Close()).To(Succeed())
+			})
+
+		})
+
+		Context("Non-Contiguous, Uneven Range", func() {
+			It("Should move the iterator view correctly", func() {
+				Expect(headerKV.SetMultiple([]segment.Header{
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(10 * telem.Second),
+						Size:       20,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(50 * telem.Second),
+						Size:       100,
+					},
+					{
+						ChannelKey: ch.Key,
+						Start:      telem.TimeStamp(150 * telem.Second),
+						Size:       100,
+					},
+				}))
+
+				iter := kv.NewIterator(kve, ch.Key, telem.TimeRange{
+					Start: 0,
+					End:   telem.TimeStamp(300 * telem.Second),
+				})
+
+				By("Moving to the last value")
+				Expect(iter.Last()).To(BeTrue())
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(150 * telem.Second),
+					End:   telem.TimeStamp(250 * telem.Second),
+				}))
+
+				By("Moving to an empty section of data")
+				Expect(iter.NextRange(telem.TimeRange{
+					Start: telem.TimeStamp(30 * telem.Second),
+					End:   telem.TimeStamp(50 * telem.Second),
+				}))
+				Expect(iter.Valid()).To(BeFalse())
+				Expect(iter.Value().Range().Span().IsZero()).To(BeTrue())
+
+				By("Moving to the next span")
+				Expect(iter.NextSpan(50 * telem.Second)).To(BeTrue())
+				Expect(iter.View()).To(Equal(telem.TimeRange{
+					Start: telem.TimeStamp(50 * telem.Second),
+					End:   telem.TimeStamp(100 * telem.Second),
+				}))
+				Expect(iter.Valid()).To(BeTrue())
+				Expect(iter.Value().Range()).To(Equal(iter.View()))
+
+				Expect(iter.Close()).To(Succeed())
+
 			})
 		})
 

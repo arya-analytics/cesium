@@ -9,10 +9,10 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// Iterator is used to iterate over a channel's segment. Iterator stores its values as a bounded range of segments.
+// Iterator is used to iterate over a channel's data. Iterator stores its values as a bounded range of segment headers.
 // Iterator is not goroutine safe, but it is safe to open several iterators over the same data. Iterator segment metadata
 // is NOT guaranteed to be contiguous (i.e. there may be a gap occupying a particular sub-range), but it is guaranteed
-// to be sequential.
+// to be sequential. In the case of backwards iteration, loaded segments are in rever
 type Iterator struct {
 	internal *gorp.KVIterator[segment.Header]
 	// view represents the iterators current 'view' of the time range (i.e. what sub-range will calls to Value return).
@@ -50,10 +50,10 @@ func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Itera
 	}
 
 	if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().OverlapsWith(rng) {
-		iter.loadValue()
+		iter.appendValue()
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
 	} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
-		iter.loadValue()
+		iter.appendValue()
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
 	} else {
 		iter.setError(errors.New("[cesium.kv] - range has no data"))
@@ -77,9 +77,9 @@ func (i *Iterator) First() bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.Value().UnboundedRange())
-	i.boundValueToPosition()
+	i.boundValueToView()
 	return true
 }
 
@@ -94,9 +94,9 @@ func (i *Iterator) Last() bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.Value().UnboundedRange())
-	i.boundValueToPosition()
+	i.boundValueToView()
 	return true
 }
 
@@ -116,9 +116,9 @@ func (i *Iterator) Next() bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.value.UnboundedRange())
-	i.boundValueToPosition()
+	i.boundValueToView()
 	return true
 }
 
@@ -135,9 +135,9 @@ func (i *Iterator) Prev() bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.value.UnboundedRange())
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -156,26 +156,67 @@ func (i *Iterator) NextSpan(span telem.TimeSpan) bool {
 
 	// If the last segment from the previous value had relevant data, we need to load it back in.
 	if rng.OverlapsWith(prevRange) {
-		i.loadValue()
+		i.appendValue()
 	}
 
 	// If the current value can't satisfy the range, we need to continue loading in segments until it does.
 	if !i.Value().UnboundedRange().End.After(rng.End) {
 		for i.internal.Next(); i.Value().UnboundedRange().End.Before(rng.End) && i.internal.Valid(); i.internal.Next() {
-			i.loadValue()
+			i.appendValue()
 		}
 	}
 
 	i.updateView(rng)
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	// In the edge case that we're crossing over the global range boundary, we need to run some special logic ->
 	// If we don't have a non-internal-iter error, we weren't already at the end before this call, and we have
 	// a valid value otherwise, then we need to force the internal kv.Iterator to be valid until the next movement
 	// call.
 	if rng.End.After(i.rng.End) &&
-		i.error() == nil &&
+		i.Error() == nil &&
 		prevRange.End != i.rng.End &&
+		!i.Value().Empty() {
+		i.forceInternalValid()
+	}
+
+	return !i.Value().Empty()
+}
+
+// PrevSpan moves the iterator backwards across the provided span, loading any segments encountered. Returns true if ANY
+// valid data within the span is encountered. The segments don't have to be contiguous for PrevSpan to return true.
+func (i *Iterator) PrevSpan(span telem.TimeSpan) bool {
+	if i.error() != nil {
+		return false
+	}
+	i.resetForceInternalValid()
+	i.resetValue()
+
+	rng := i.View().Start.SpanRange(-span)
+	prevView := i.View()
+
+	if !i.SeekLT(i.View().Start) {
+		return false
+	}
+
+	if !i.Value().UnboundedRange().OverlapsWith(rng) {
+		i.resetValue()
+	}
+
+	if !i.Value().UnboundedRange().Start.After(rng.Start) {
+		for i.internal.Prev(); i.Value().UnboundedRange().Start.After(rng.Start) && i.internal.Valid(); i.internal.Prev() {
+			i.prependValue()
+		}
+	}
+
+	i.updateView(rng)
+	i.boundValueToView()
+
+	// If our iterator isn't valid, it means we've reached the first segment in the global range. If our unbounded
+	// view from the previous iteration ISN'T already at the start, we need to force the iterator to be valid.
+	if !i.internal.Valid() &&
+		i.Error() == nil &&
+		prevView.Start != i.rng.Start &&
 		!i.Value().Empty() {
 		i.forceInternalValid()
 	}
@@ -200,18 +241,15 @@ func (i *Iterator) NextRange(tr telem.TimeRange) bool {
 		return false
 	}
 
-	i.loadValue()
-
 	// If the range of the value we found doesn't overlap with the range we're
 	// looking for then we return false.
 	if !i.value.UnboundedRange().OverlapsWith(tr) {
 		return false
 	}
 
-	i.resetValue()
 	i.NextSpan(telem.TimeRange{Start: i.View().Start, End: tr.End}.Span())
 	i.updateView(tr)
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -229,9 +267,9 @@ func (i *Iterator) SeekFirst() bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.value.UnboundedRange().Start.SpanRange(0))
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -249,9 +287,9 @@ func (i *Iterator) SeekLast() bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.value.UnboundedRange().End.SpanRange(0))
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -274,9 +312,9 @@ func (i *Iterator) SeekLT(stamp telem.TimeStamp) bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.value.UnboundedRange().Start.SpanRange(0))
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -299,9 +337,9 @@ func (i *Iterator) SeekGE(stamp telem.TimeStamp) bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 	i.updateView(i.value.UnboundedRange().Start.SpanRange(0))
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -317,7 +355,7 @@ func (i *Iterator) Seek(stamp telem.TimeStamp) bool {
 		return false
 	}
 
-	i.loadValue()
+	i.appendValue()
 
 	// If the range of the value we looked for doesn't contain our stamp, it means a segment with data at that timestamp
 	// doesn't exist, so we return false.
@@ -326,7 +364,7 @@ func (i *Iterator) Seek(stamp telem.TimeStamp) bool {
 	}
 
 	i.updateView(stamp.SpanRange(0))
-	i.boundValueToPosition()
+	i.boundValueToView()
 
 	return true
 }
@@ -365,9 +403,13 @@ func (i *Iterator) key(stamp telem.TimeStamp) segment.Key {
 
 func (i *Iterator) updateView(rng telem.TimeRange) { i.view = rng.BoundBy(i.rng) }
 
-func (i *Iterator) loadValue() { i.value.Headers = append(i.value.Headers, i.internal.Value()) }
+func (i *Iterator) appendValue() { i.value.Headers = append(i.value.Headers, i.internal.Value()) }
 
-func (i *Iterator) boundValueToPosition() { i.value.Bound = i.View() }
+func (i *Iterator) prependValue() {
+	i.value.Headers = append([]segment.Header{i.internal.Value()}, i.value.Headers...)
+}
+
+func (i *Iterator) boundValueToView() { i.value.Bound = i.View() }
 
 func (i *Iterator) resetValue() {
 	i.value = new(segment.Range)
