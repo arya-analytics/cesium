@@ -50,10 +50,8 @@ func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Itera
 	}
 
 	if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().OverlapsWith(rng) {
-		iter.appendValue()
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
 	} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
-		iter.appendValue()
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
 	} else {
 		iter.setError(errors.New("[cesium.kv] - range has no data"))
@@ -387,6 +385,7 @@ func (i *Iterator) Error() error {
 	return i.internal.Error()
 }
 
+// Valid returns true if the iterator View is looking at valid segments. Will return false after any seek operations.
 func (i *Iterator) Valid() bool {
 	if i.error() != nil || i.View().IsZero() {
 		return false
@@ -395,6 +394,12 @@ func (i *Iterator) Valid() bool {
 		return true
 	}
 	return i.internal.Valid()
+}
+
+// Close closes the iterator.
+func (i *Iterator) Close() error {
+	i.resetValue()
+	return i.internal.Close()
 }
 
 func (i *Iterator) key(stamp telem.TimeStamp) segment.Key {
@@ -425,11 +430,6 @@ func (i *Iterator) setError(err error) {
 	if err != nil {
 		i._error = err
 	}
-}
-
-func (i *Iterator) Close() error {
-	i.resetValue()
-	return i.internal.Close()
 }
 
 func (i *Iterator) resetError() { i._error = nil }
