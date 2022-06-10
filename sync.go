@@ -11,7 +11,7 @@ func createSync(ctx context.Context, c Create, segments *[]Segment) error {
 	}
 	req <- CreateRequest{Segments: *segments}
 	close(req)
-	return (<-res).Err
+	return (<-res).Error
 }
 
 func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
@@ -20,8 +20,8 @@ func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
 		return err
 	}
 	for resV := range res {
-		if resV.Err != nil {
-			return resV.Err
+		if resV.Error != nil {
+			return resV.Error
 		}
 		*segments = append(*segments, resV.Segments...)
 	}

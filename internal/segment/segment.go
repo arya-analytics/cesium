@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"github.com/arya-analytics/cesium/internal/channel"
 	"github.com/arya-analytics/cesium/internal/core"
-	xbinary "github.com/arya-analytics/x/binary"
-	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/telem"
 )
 
@@ -15,13 +13,17 @@ type Segment struct {
 	Data       []byte
 }
 
+func (s Segment) Sugar(ch channel.Channel) *Sugared { return &Sugared{segment: s, channel: ch} }
+
 type Header struct {
 	ChannelKey channel.Key
 	Start      telem.TimeStamp
 	FileKey    core.FileKey
-	Offset     uint64
-	Size       uint64
+	Offset     telem.Offset
+	Size       telem.Size
 }
+
+func (h Header) Sugar(ch channel.Channel) *Sugared { return &Sugared{header: h, channel: ch} }
 
 func (h Header) Key() Key { return NewKey(h.ChannelKey, h.Start) }
 
@@ -32,7 +34,7 @@ func (h Header) GorpKey() interface{} { return h.Key().Bytes() }
 func (h Header) SetOptions() (opts []interface{}) { return opts }
 
 func (h Header) End(dr telem.DataRate, dt telem.DataType) telem.TimeStamp {
-	return h.Start.Add(dr.SizeSpan(telem.Size(h.Size), dt))
+	return h.Start.Add(dr.SizeSpan(h.Size, dt))
 }
 
 const prefix = 's'
@@ -73,13 +75,4 @@ func (r *Range) UnboundedRange() telem.TimeRange {
 		Start: r.Headers[0].Start,
 		End:   r.Headers[len(r.Headers)-1].End(r.Channel.DataRate, r.Channel.DataType),
 	}
-}
-
-type HeaderWriter struct {
-	KV      kv.Writer
-	Encoder xbinary.Encoder
-}
-
-func (hw *HeaderWriter) Write(h Header) error {
-	return hw.KV.Set(h.Key().Bytes(), hw.Encoder.EncodeStatic(h))
 }

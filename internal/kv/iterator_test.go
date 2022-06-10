@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var _ = Describe("Iterator", func() {
+var _ = Describe("Iterate", func() {
 	var (
 		kve      kvx.KV
 		ch       channel.Channel
@@ -29,7 +29,7 @@ var _ = Describe("Iterator", func() {
 
 	AfterEach(func() { Expect(kve.Close()).To(Succeed()) })
 
-	Describe("Even Range", func() {
+	Describe("Even BoundedRange", func() {
 		var iter *kv.Iterator
 		BeforeEach(func() {
 			Expect(headerKV.SetMultiple([]segment.Header{
@@ -103,7 +103,7 @@ var _ = Describe("Iterator", func() {
 
 		Describe("Seek", func() {
 
-			Context("Within Range", func() {
+			Context("Within BoundedRange", func() {
 				It("Should seek the correct view", func() {
 					Expect(iter.Seek(telem.TimeStamp(50 * time.Second))).To(BeTrue())
 					Expect(iter.Valid()).To(BeFalse())
@@ -111,7 +111,7 @@ var _ = Describe("Iterator", func() {
 				})
 			})
 
-			Context("Before Range", func() {
+			Context("Before BoundedRange", func() {
 				It("Should return false", func() {
 					Expect(iter.Seek(telem.TimeStamp(-5 * time.Second))).To(BeFalse())
 					Expect(iter.Valid()).To(BeFalse())
@@ -119,7 +119,7 @@ var _ = Describe("Iterator", func() {
 				})
 			})
 
-			Context("After Range", func() {
+			Context("After BoundedRange", func() {
 				It("Should return true", func() {
 					Expect(iter.Seek(telem.TimeStamp(500 * time.Second))).To(BeFalse())
 					Expect(iter.Valid()).To(BeFalse())
@@ -202,8 +202,8 @@ var _ = Describe("Iterator", func() {
 
 	})
 
-	Context("Uneven Range", func() {
-		Context("First Range Starts After, Last Range Ends After", func() {
+	Context("Uneven BoundedRange", func() {
+		Context("First BoundedRange Starts After, Last BoundedRange Ends After", func() {
 
 			var iter *kv.Iterator
 			BeforeEach(func() {
@@ -277,7 +277,7 @@ var _ = Describe("Iterator", func() {
 		})
 	})
 
-	Context("Invalid Range", func() {
+	Context("Invalid BoundedRange", func() {
 		var iter *kv.Iterator
 		BeforeEach(func() {
 			Expect(headerKV.SetMultiple([]segment.Header{
@@ -514,7 +514,7 @@ var _ = Describe("Iterator", func() {
 
 	Context("Sequences", func() {
 
-		Context("Contiguous, Even Range", func() {
+		Context("Contiguous, Even BoundedRange", func() {
 			It("Should move the iterator view correctly", func() {
 				Expect(headerKV.SetMultiple([]segment.Header{
 					{
@@ -610,7 +610,7 @@ var _ = Describe("Iterator", func() {
 
 		})
 
-		Context("Non-Contiguous, Uneven Range", func() {
+		Context("Non-Contiguous, Uneven BoundedRange", func() {
 			It("Should move the iterator view correctly", func() {
 				Expect(headerKV.SetMultiple([]segment.Header{
 					{

@@ -72,7 +72,7 @@ func (d *Device) writeSegments(c cesium.Channel) error {
 			case <-ctx.Done():
 				return
 			case resV := <-res:
-				if resV.Err != nil {
+				if resV.Error != nil {
 					log.Error(err)
 				}
 			case <-t.C:
@@ -87,9 +87,9 @@ func (d *Device) writeSegments(c cesium.Channel) error {
 func (d *Device) Stop() error {
 	d.cancelFlush()
 	resV := <-d.res
-	if resV.Err == io.EOF {
+	if resV.Error == io.EOF {
 		return nil
 	}
-	return resV.Err
+	return resV.Error
 
 }

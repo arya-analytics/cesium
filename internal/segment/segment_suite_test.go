@@ -9,5 +9,5 @@ import (
 
 func TestSegment(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Segment Suite")
+	RunSpecs(t, "segment Suite")
 }

@@ -31,7 +31,7 @@ var _ = Describe("Seg", func() {
 			})
 		})
 	})
-	Describe("Segment Factories", func() {
+	Describe("segment Factories", func() {
 		Describe("new", func() {
 			It("Should create a new segment correctly", func() {
 				c := cesium.Channel{Key: 1, DataRate: 1, DataType: cesium.Float64}

@@ -143,6 +143,9 @@ func (i *Iterator) Prev() bool {
 // NextSpan moves the iterator across the provided span, loading any segments in encountered. Returns true if ANY valid
 // data within the span is encountered. The data doesn't have to be contiguous for NextSpan to return true.
 func (i *Iterator) NextSpan(span telem.TimeSpan) bool {
+	if span < 0 {
+		return i.PrevSpan(-1 * span)
+	}
 	if i.error() != nil {
 		return false
 	}
@@ -169,7 +172,7 @@ func (i *Iterator) NextSpan(span telem.TimeSpan) bool {
 
 	// In the edge case that we're crossing over the global range boundary, we need to run some special logic ->
 	// If we don't have a non-internal-iter error, we weren't already at the end before this call, and we have
-	// a valid value otherwise, then we need to force the internal kv.Iterator to be valid until the next movement
+	// a valid value otherwise, then we need to force the internal kv.Iterate to be valid until the next movement
 	// call.
 	if rng.End.After(i.rng.End) &&
 		i.Error() == nil &&
@@ -184,6 +187,9 @@ func (i *Iterator) NextSpan(span telem.TimeSpan) bool {
 // PrevSpan moves the iterator backwards across the provided span, loading any segments encountered. Returns true if ANY
 // valid data within the span is encountered. The segments don't have to be contiguous for PrevSpan to return true.
 func (i *Iterator) PrevSpan(span telem.TimeSpan) bool {
+	if span < 0 {
+		return i.NextSpan(-1 * span)
+	}
 	if i.error() != nil {
 		return false
 	}
@@ -367,10 +373,10 @@ func (i *Iterator) Seek(stamp telem.TimeStamp) bool {
 	return true
 }
 
-// Value returns the current Range stored in the iterator. The Range is not guaranteed to be continuous, but it is
-// guaranteed to be sequential. It's important to note that the TimeRange returned by Value().Range() will either be
+// Value returns the current BoundedRange stored in the iterator. The BoundedRange is not guaranteed to be continuous, but it is
+// guaranteed to be sequential. It's important to note that the TimeRange returned by Value().BoundedRange() will either be
 // equal to or be a sub-range of the current View(). On the other hand, the TimeRange returned by Value().UnboundedRange()
-// is either equal to or a super-range of Value().Range() (meaning it can be larger than the current View()).
+// is either equal to or a super-range of Value().BoundedRange() (meaning it can be larger than the current View()).
 func (i *Iterator) Value() *segment.Range { return i.value }
 
 // View returns a TimeRange representing the iterators current 'view' of the data i.e. what is the potential range of

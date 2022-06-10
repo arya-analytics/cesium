@@ -173,7 +173,7 @@ func (sc *StreamCreate) CreateCRequestsOfN(c, n int) []cesium.CreateRequest {
 func (sc *StreamCreate) CloseAndWait() error {
 	close(sc.Req)
 	for resV := range sc.Res {
-		return resV.Err
+		return resV.Error
 	}
 	return nil
 }
@@ -187,11 +187,11 @@ type StreamRetrieve struct {
 func (sr StreamRetrieve) All() ([]cesium.Segment, error) {
 	var s []cesium.Segment
 	for resV := range sr.Res {
-		if resV.Err == io.EOF {
+		if resV.Error == io.EOF {
 			return s, nil
 		}
-		if resV.Err != nil {
-			return nil, resV.Err
+		if resV.Error != nil {
+			return nil, resV.Error
 		}
 		s = append(s, resV.Segments...)
 	}

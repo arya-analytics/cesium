@@ -117,7 +117,7 @@ const channelCounterKey = "cs-nc"
 
 func startChannel(kve kv.KV) (query.Factory[CreateChannel], query.Factory[RetrieveChannel], error) {
 	// a kv persisted counter that tracks the number of channels that a DB has created.
-	// this is used to autogenerate unique keys for a Channel.
+	// this is used to autogenerate unique keys for a channel.
 	cCount, err := kv.NewPersistedCounter(kve, []byte(channelCounterKey))
 	if err != nil {
 		return nil, nil, err

@@ -11,7 +11,7 @@ import (
 )
 
 var _ = Describe("Retrieve", func() {
-	Context("Single Channel", func() {
+	Context("Single channel", func() {
 		var (
 			db  cesium.DB
 			cpk int16
@@ -73,7 +73,7 @@ var _ = Describe("Retrieve", func() {
 			wg.Wait()
 		})
 	})
-	Context("Multi Channel", func() {
+	Context("Multi channel", func() {
 		var (
 			db           cesium.DB
 			channels     []cesium.Channel

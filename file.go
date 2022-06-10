@@ -2,14 +2,8 @@ package cesium
 
 import (
 	"github.com/arya-analytics/cesium/internal/allocate"
-	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/cesium/internal/core"
 	"github.com/arya-analytics/x/kv"
-)
-
-type (
-	fileKey    int16
-	fileSystem = kfs.FS[fileKey]
-	file       = kfs.File[fileKey]
 )
 
 const (
@@ -34,10 +28,10 @@ func newFileCounter(kve kv.KV, key []byte) (*fileCounter, error) {
 }
 
 // Next implements allocate.NextDescriptor.
-func (f *fileCounter) Next() fileKey {
+func (f *fileCounter) Next() core.FileKey {
 	v, err := f.Increment()
 	if err != nil {
 		panic(err)
 	}
-	return fileKey(v)
+	return core.FileKey(v)
 }

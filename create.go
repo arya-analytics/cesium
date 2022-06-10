@@ -3,19 +3,18 @@ package cesium
 import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/allocate"
+	"github.com/arya-analytics/cesium/internal/channel"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
-	"github.com/arya-analytics/cesium/internal/query"
+	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
 	"github.com/arya-analytics/x/confluence"
-	"github.com/arya-analytics/x/errutil"
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/lock"
+	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
 	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
-	"io"
-	"sync"
 	"time"
 )
 
@@ -33,44 +32,30 @@ type createOperationSet struct {
 
 func (c createOperationSet) Size() int { return c.Set[0].Size() }
 
-func (c createOperationSet) SetFileKey(key fileKey) createOperation {
-	panic("unimplemented")
-}
-
-func (c createOperationSet) Key() ChannelKey { return c.Set[0].Key() }
+func (c createOperationSet) Key() channel.Key { return c.Set[0].Key() }
 
 // |||||| ALLOCATOR ||||||
 
 // |||||| STREAM ||||||
 
-// CreateRequest is a request containing a set of segments (Segment) to write to the DB.
+// CreateRequest is a request containing a set of segments (segment) to write to the DB.
 type CreateRequest struct {
-	Segments []Segment
+	Segments []segment.Segment
 }
 
 // CreateResponse contains any errors that occurred during the execution of the Create Query.
 type CreateResponse struct {
-	Err error
-}
-
-// Error implements the query.Response interface.
-func (r CreateResponse) Error() error {
-	return r.Err
+	Error error
 }
 
 // |||||| QUERY ||||||
 
-type Create struct {
-	query.Query
-}
+type Create struct{ query.Query }
 
 // WhereChannels sets the channels to acquire a lock on for creation.
-// The request stream will only accept segmentKV bound to Channel with the given primary keys.
+// The request stream will only accept segmentKV bound to channel with the given primary keys.
 // If no keys are provided, will return an ErrInvalidQuery error.
-func (c Create) WhereChannels(keys ...ChannelKey) Create {
-	setChannelKeys(c, keys...)
-	return c
-}
+func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, keys...); return c }
 
 // Stream opens a stream
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
@@ -91,92 +76,6 @@ func (c createFactory) New() Create {
 }
 
 // |||||| OPERATION ||||||
-
-type createOperation interface {
-	operation.Operation[fileKey]
-	allocate.Item[ChannelKey]
-	SetFileKey(key fileKey) createOperation
-}
-
-type unaryCreateOperation struct {
-	fileKey    fileKey
-	channelKey ChannelKey
-	segments   []Segment
-	segmentKV  segmentKV
-	stream     createStream
-	ctx        context.Context
-	logger     *zap.Logger
-	metrics    createMetrics
-	wg         *sync.WaitGroup
-}
-
-// Context implements createOperation.
-func (cr unaryCreateOperation) Context() context.Context { return cr.ctx }
-
-// FileKey implements createOperation.
-func (cr unaryCreateOperation) FileKey() fileKey { return cr.fileKey }
-
-// WriteError implements createOperation.
-func (cr unaryCreateOperation) WriteError(err error) { cr.stream.Responses <- CreateResponse{Err: err} }
-
-// Key implements allocate.Item.
-func (cr unaryCreateOperation) Key() ChannelKey { return cr.channelKey }
-
-func (cr unaryCreateOperation) SetFileKey(key fileKey) createOperation {
-	cr.fileKey = key
-	return cr
-}
-
-func (cr unaryCreateOperation) Size() int {
-	size := 0
-	for _, seg := range cr.segments {
-		size += seg.Size()
-	}
-	return size
-
-}
-
-// Exec implements persist.Operation.
-func (cr unaryCreateOperation) Exec(f file) {
-	tft := cr.metrics.totalFlush.Stopwatch()
-	tft.Start()
-	c := errutil.NewCatchReadWriteSeek(f, errutil.WithHooks(cr.WriteError))
-	c.Seek(0, io.SeekEnd)
-	for _, s := range cr.segments {
-		s.fileKey = f.Key()
-		s.ChannelKey = cr.channelKey
-		s.size = Size(s.Size())
-		s.offset = c.Seek(0, io.SeekCurrent)
-		c.Exec(func() error {
-			fs := cr.metrics.dataFlush.Stopwatch()
-			fs.Start()
-			err := s.flushData(f)
-			fs.Stop()
-			return err
-		})
-		c.Exec(func() error {
-			ks := cr.metrics.kvFlush.Stopwatch()
-			ks.Start()
-			err := cr.segmentKV.set(s)
-			ks.Stop()
-			return err
-		})
-	}
-	cr.wg.Done()
-	d := tft.Stop()
-	last := cr.segments[len(cr.segments)-1]
-	cr.logger.Debug(
-		"completed create operation",
-		zap.Any("file", f.Key()),
-		zap.Time("start", cr.segments[0].Start.Time()),
-		zap.Binary("key", cr.segments[0].KVKey()),
-		zap.Time("end", last.Start.Time()),
-		zap.Duration("duration", d),
-	)
-}
-
-// ChannelKey implements batch.CreateOperation.
-func (cr unaryCreateOperation) ChannelKey() ChannelKey { return cr.channelKey }
 
 // |||||| PARSER ||||||
 
@@ -253,7 +152,7 @@ func (cp *createIterator) Next(request CreateRequest) (last bool) {
 	stream := query.GetStream[CreateRequest, CreateResponse](cp.Query)
 	ops, err := cp.Parser.Parse(cp.Query, request)
 	if err != nil {
-		stream.Responses <- CreateResponse{Err: err}
+		stream.Responses <- CreateResponse{Error: err}
 	}
 	cp.WaitGroup.Add(len(ops))
 	cp.queue <- ops
@@ -271,7 +170,7 @@ func (b *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]cr
 	for _, op := range ops {
 		files[op.FileKey()] = append(files[op.FileKey()], op)
 	}
-	channels := make(map[ChannelKey]createOperationSet)
+	channels := make(map[channel.Key]createOperationSet)
 	for _, op := range ops {
 		channels[op.Key()] = createOperationSet{Set: append(channels[op.Key()].Set, op)}
 	}
@@ -292,9 +191,9 @@ func newCreateBatch() createSegment {
 
 // createMetrics is a collection of metrics tracking the performance and health of a Create query.
 type createMetrics struct {
-	// dataFlush tracks the duration it takes to flush Segment data to disk.
+	// dataFlush tracks the duration it takes to flush segment data to disk.
 	dataFlush alamos.Duration
-	// kvFlush tracks the duration it takes to flush Segment kv data.
+	// kvFlush tracks the duration it takes to flush segment kv data.
 	kvFlush alamos.Duration
 	// totalFlush tracks the duration it takes all the operations to disk.
 	// (dataFlush,kvFlush,seeks, etc.)
@@ -305,7 +204,7 @@ type createMetrics struct {
 	// lockRelease tracks the duration it takes to release the lock on the channels
 	// that are being written to.
 	lockRelease alamos.Duration
-	// segSize tracks the Size of each Segment created.
+	// segSize tracks the Size of each segment created.
 	segSize alamos.Metric[int]
 	// request tracks the total duration that the Create query is open i.e. from
 	// calling Create.Stream(ctx) to the close(res) call.
@@ -337,21 +236,21 @@ const fileCounterKey = "cs-nf"
 type createConfig struct {
 	// exp is used to track metrics for the Create query. See createMetrics for all the recorded values.
 	exp alamos.Experiment
-	// fs is the file system for writing Segment data to.
+	// fs is the file system for writing segment data to.
 	fs fileSystem
-	// kv is the key-value store for writing Segment metadata to.
+	// kv is the key-value store for writing segment metadata to.
 	kv kv.KV
 	// shutdown is used to gracefully shutdown down create operations.
-	// create releases the shutdown when all Segment data has persisted to disk.
+	// create releases the shutdown when all segment data has persisted to disk.
 	shutdown shutdown.Shutdown
 	// logger is where create operations will log their progress.
 	logger *zap.Logger
-	// allocate is used for setting the parameters for allocating a Segment to  afile.
+	// allocate is used for setting the parameters for allocating a segment to  afile.
 	// This setting is particularly useful in environments where the maximum number of
 	// file descriptors must be limited.
 	allocate allocate.Config
 	// persist is used for setting the parameters for persist.Persist that writes
-	// Segment data to disk.
+	// segment data to disk.
 	persist persist.Config
 	// debounce sets the debounce parameters for create operations.
 	// this is mostly here for optimizing performance under varied conditions.
@@ -440,12 +339,12 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	}
 
 	// acquires and releases the locks on channels. Acquiring locks on channels simplifies
-	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same Channel
+	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same channel
 	// from different goroutines.
 	channelLock := lock.NewMap[ChannelKey]()
 
 	strategy.Hooks.PreAssembly = []query.Hook{
-		// validates that all Channel keys provided to the Create query are valid.
+		// validates that all channel keys provided to the Create query are valid.
 		validateChannelKeysHook{ckv: ckv},
 		// acquires the locks on the channels that are being written to.
 		lockAcquireHook{lock: channelLock, metric: metrics.lockAcquire},
@@ -454,8 +353,8 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	strategy.Hooks.PostExecution = []query.Hook{
 		// releases the locks on the channels that are being written to.
 		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
-		// closes the stream response Channel for the query, which signals to the caller that the
-		// query has completed, and the Header writes are durable.
+		// closes the stream response channel for the query, which signals to the caller that the
+		// query has completed, and the header writes are durable.
 		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
 	}
 

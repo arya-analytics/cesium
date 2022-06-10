@@ -44,6 +44,12 @@ func (s Set[F, T]) WriteError(err error) {
 	}
 }
 
+func (s Set[F, T]) BindWaitGroup(wg *sync.WaitGroup) {
+	for _, op := range s {
+		op.BindWaitGroup(wg)
+	}
+}
+
 // Parser is an entity that parses segment ranges into operations executable on disk.
 type Parser[F comparable, O Operation[F]] interface {
 	Parse(p *segment.Range) ([]O, error)

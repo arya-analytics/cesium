@@ -179,7 +179,4 @@ type NextDescriptorInt struct {
 	v int
 }
 
-func (n *NextDescriptorInt) Next() int {
-	n.v++
-	return n.v
-}
+func (n *NextDescriptorInt) Next() int { n.v++; return n.v }

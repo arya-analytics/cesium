@@ -22,7 +22,7 @@ func TestCaesium(t *testing.T) {
 
 // |||||| CREATE ||||||
 
-// A simple query to write a segment of data to a Channel.
+// A simple query to write a segment of data to a channel.
 func ExampleDB_NewCreate_simple() {
 	ctx := context.Background()
 
@@ -32,7 +32,7 @@ func ExampleDB_NewCreate_simple() {
 		log.Fatal(err)
 	}
 
-	// Create a new Channel.
+	// Create a new channel.
 	ch, err := db.NewCreateChannel().
 		WithType(cesium.Float64).
 		WithRate(5 * cesium.Hz).
@@ -59,7 +59,7 @@ func ExampleDB_NewCreate_simple() {
 	}
 }
 
-// A query that writes multiple segmentKV of data through a Channel.
+// A query that writes multiple segmentKV of data through a channel.
 func ExampleDB_NewCreate_multiSegment() {
 	ctx := context.Background()
 
@@ -69,7 +69,7 @@ func ExampleDB_NewCreate_multiSegment() {
 		log.Fatal(err)
 	}
 
-	// Create a new Channel.
+	// Create a new channel.
 	ch, err := db.NewCreateChannel().
 		WithType(cesium.Float64).
 		WithRate(5 * cesium.Hz).
@@ -85,11 +85,11 @@ func ExampleDB_NewCreate_multiSegment() {
 		defer wg.Done()
 		for resV := range res {
 			// An eof error indicates the query has persisted all segmentKV t0 disk.
-			if resV.Err == io.EOF {
+			if resV.Error == io.EOF {
 				return
 			}
 			// Any other error indicates the query has failed.
-			log.Fatal(resV.Err)
+			log.Fatal(resV.Error)
 		}
 	}()
 
@@ -155,15 +155,15 @@ func ExampleDB_NewCreate_multiChannel() {
 		defer wg.Done()
 		for resV := range res {
 			// An eof error indicates the query has persisted all segmentKV t0 disk.
-			if resV.Err == io.EOF {
+			if resV.Error == io.EOF {
 				return
 			}
 			// Any other error indicates the query has failed.
-			log.Fatal(resV.Err)
+			log.Fatal(resV.Error)
 		}
 	}()
 
-	// Write 5 segmentKV for each Channel.
+	// Write 5 segmentKV for each channel.
 	const nSegments = 5
 	t0 := cesium.Now()
 	for i := 0; i < nSegments; i++ {
@@ -203,7 +203,7 @@ func ExampleDB_NewRetrieve_simple() {
 		log.Fatal(err)
 	}
 
-	// Create a new Channel.
+	// Create a new channel.
 	ch, err := db.NewCreateChannel().
 		WithType(cesium.Float64).
 		WithRate(5 * cesium.Hz).

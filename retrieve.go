@@ -2,100 +2,77 @@ package cesium
 
 import (
 	"context"
+	"github.com/arya-analytics/cesium/internal/channel"
+	ckv "github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
-	"github.com/arya-analytics/cesium/internal/query"
+	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
 	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
 	"github.com/arya-analytics/x/shutdown"
-	"github.com/arya-analytics/x/telem"
 	"go.uber.org/zap"
-	"io"
 	"sort"
-	"sync"
 	"time"
 )
 
-type retrieveSegment = confluence.Segment[[]retrieveOperation]
-
-type retrieveOperation interface {
-	operation.Operation[fileKey]
-	Offset() int64
-}
-
-type retrieveOperationSet struct {
-	operation.Set[fileKey, retrieveOperation]
-}
-
-func (s retrieveOperationSet) Offset() int64 { return s.Set[0].Offset() }
+type (
+	retrieveSegment = confluence.Segment[[]retrieveOperation]
+)
 
 // |||||| STREAM ||||||
 
 // RetrieveResponse is a response containing segments satisfying a Retrieve Query as well as any errors
 // encountered during the retrieval.
 type RetrieveResponse struct {
-	Err      error
-	Segments []Segment
+	Error    error
+	Segments []segment.Segment
 }
-
-// Error implements the query.Response interface.
-func (r RetrieveResponse) Error() error { return r.Err }
 
 // |||||| QUERY ||||||
 
 type Retrieve struct {
 	query.Query
-	ops     confluence.Inlet[[]retrieveOperation]
-	kve     kv.KV
-	rng     telem.TimeRange
-	channel Channel
-	ckv     channelKV
+	kve kv.KV
+	ops confluence.Inlet[[]retrieveOperation]
 }
 
 // WhereChannels sets the channels to retrieve data for.
 // If no keys are provided, will return an ErrInvalidQuery error.
-func (r Retrieve) WhereChannels(keys ...ChannelKey) Retrieve {
-	setChannelKeys(r, keys...)
-	return r
-}
+func (r Retrieve) WhereChannels(keys ...channel.Key) Retrieve { channel.SetKeys(r, keys...); return r }
 
 // WhereTimeRange sets the time range to retrieve data from.
-func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve {
-	setTimeRange(r, tr)
-	return r
-}
+func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); return r }
 
+// Stream streams all segments from the iterator out to the channel. Errors encountered
+// during stream construction are returned immediately. Errors encountered during
+// segment reads are returns as part of RetrieveResponse.
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	stream := confluence.NewStream[RetrieveResponse](10)
-	iter, err := r.NewIter()
+	iter, err := r.Iterate()
 	if err != nil {
 		return nil, err
 	}
 	iter.OutTo(stream)
 	iter.First()
 	go func() {
-		iter.Exhaust()
+		iter.Exhaust(ctx)
 		if err := iter.Close(); err != nil {
 			panic(err)
 		}
 	}()
-
 	return stream.Outlet(), nil
 }
 
-func (r Retrieve) NewIter() (StreamIterator, error) {
-	ck := channelKeys(r)
-	c, err := r.ckv.get(ck[0])
-	if err != nil {
-		return nil, err
+func (r Retrieve) Iterate() (StreamIterator, error) {
+	ck := channel.GetKeys(r)
+	iter := &streamIterator{
+		internal: ckv.NewIterator(r.kve, ck[0], timeRange(r)),
+		executor: r.ops,
 	}
-	return &streamIterator{
-		kvIterator: *newSegmentKVIterator(c, timeRange(r), r.kve),
-		ops:        r.ops,
-		wg:         &sync.WaitGroup{},
-	}, nil
+	return iter, iter.error()
 }
 
 // |||||| OPTIONS ||||||
@@ -121,56 +98,13 @@ func timeRange(q query.Query) TimeRange {
 type retrieveFactory struct {
 	ops confluence.Inlet[[]retrieveOperation]
 	kve kv.KV
-	ckv channelKV
 }
 
 type nilExecutor struct{ query.Executor }
 
 func (r retrieveFactory) New() Retrieve {
-	return Retrieve{Query: query.New(nilExecutor{}), ops: r.ops, kve: r.kve, ckv: r.ckv}
+	return Retrieve{Query: query.New(), ops: r.ops, kve: r.kve, ckv: r.ckv}
 }
-
-// |||||| OPERATION ||||||
-
-type unaryRetrieveOperation struct {
-	seg      SugaredSegment
-	outlet   confluence.Inlet[RetrieveResponse]
-	dataRead alamos.Duration
-	wg       *sync.WaitGroup
-	ctx      context.Context
-}
-
-// Context implements persist.Operation.
-func (ro unaryRetrieveOperation) Context() context.Context { return ro.ctx }
-
-// FileKey implements persist.Operation.
-func (ro unaryRetrieveOperation) FileKey() fileKey {
-	return ro.seg.fileKey
-}
-
-// WriteError implements persist.Operation.
-func (ro unaryRetrieveOperation) WriteError(err error) {
-	ro.outlet.Inlet() <- RetrieveResponse{Err: err}
-}
-
-// Exec implements persist.Operation.
-func (ro unaryRetrieveOperation) Exec(f file) {
-	if ro.wg != nil {
-		defer ro.wg.Done()
-	}
-	//s := ro.dataRead.Stopwatch()
-	//s.Start()
-	b := make([]byte, ro.seg.Size())
-	_, err := f.ReadAt(b, ro.seg.Offset())
-	if err == io.EOF {
-		panic("retrieve operation: encountered unexpected EOF. this is a bug.")
-	}
-	ro.seg.Data = b
-	ro.outlet.Inlet() <- RetrieveResponse{Segments: []Segment{ro.seg.Segment}, Err: err}
-}
-
-// Offset implements batch.RetrieveOperation.
-func (ro unaryRetrieveOperation) Offset() int64 { return ro.seg.Offset() }
 
 // ||||||| BATCH |||||||
 
@@ -206,11 +140,11 @@ func (r *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) (
 // |||||| METRICS ||||||
 
 type retrieveMetrics struct {
-	// kvRetrieve is the time spent retrieving Segment metadata from key-value storage.
+	// kvRetrieve is the time spent retrieving segment metadata from key-value storage.
 	kvRetrieve alamos.Duration
-	// dataRead is the duration spent reading Segment data from disk.
+	// dataRead is the duration spent reading segment data from disk.
 	dataRead alamos.Duration
-	// segSize tracks the Size of each Segment retrieved.
+	// segSize tracks the Size of each segment retrieved.
 	segSize alamos.Metric[int]
 	// segCount tracks the number of segments retrieved.
 	segCount alamos.Metric[int]
@@ -238,9 +172,9 @@ func newRetrieveMetrics(exp alamos.Experiment) retrieveMetrics {
 type retrieveConfig struct {
 	// exp is used to track metrics for the Retrieve query. See retrieveMetrics for more.
 	exp alamos.Experiment
-	// fs is the file system for reading Segment data from.
+	// fs is the file system for reading segment data from.
 	fs fileSystem
-	// kv is the key-value store for reading Segment metadata from.
+	// kv is the key-value store for reading segment metadata from.
 	kv kv.KV
 	// shutdown is used to gracefully shutdown down retrieve operations.
 	// retrieve releases the shutdown when all queries have been served.

@@ -25,13 +25,13 @@ var _ = Describe("Create", func() {
 
 	Describe("Basic Functionality", func() {
 
-		Context("Single Channel", func() {
+		Context("Single channel", func() {
 
-			Context("Single Segment", func() {
+			Context("Single segment", func() {
 
 				It("Should write the segment correctly", func() {
 
-					By("Creating a new Channel")
+					By("Creating a new channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -58,7 +58,7 @@ var _ = Describe("Create", func() {
 
 					By("Not returning any errors")
 					for resV := range res {
-						Expect(resV.Err).ToNot(HaveOccurred())
+						Expect(resV.Error).ToNot(HaveOccurred())
 					}
 
 					logrus.Info("made it here")
@@ -71,10 +71,10 @@ var _ = Describe("Create", func() {
 				})
 			})
 
-			Context("Multi Segment", func() {
+			Context("Multi segment", func() {
 
 				It("Should write the segments correctly", func() {
-					By("Creating a new Channel")
+					By("Creating a new channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -106,7 +106,7 @@ var _ = Describe("Create", func() {
 
 					By("Not returning any errors")
 					for resV := range res {
-						Expect(resV.Err).ToNot(HaveOccurred())
+						Expect(resV.Error).ToNot(HaveOccurred())
 					}
 
 					By("Retrieving the segments afterwards")
@@ -122,7 +122,7 @@ var _ = Describe("Create", func() {
 			Context("Multi Request", func() {
 
 				It("Should write the segments correctly", func() {
-					By("Creating a new Channel")
+					By("Creating a new channel")
 					ch, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
 					Expect(err).ToNot(HaveOccurred())
 
@@ -159,7 +159,7 @@ var _ = Describe("Create", func() {
 
 					By("Not returning any errors")
 					for resV := range res {
-						Expect(resV.Err).ToNot(HaveOccurred())
+						Expect(resV.Error).ToNot(HaveOccurred())
 					}
 
 					By("Retrieving the segments afterwards")
@@ -180,11 +180,11 @@ var _ = Describe("Create", func() {
 
 	})
 
-	Describe("Channel Validation", func() {
+	Describe("channel Validation", func() {
 
 	})
 
-	Describe("Segment Validation", func() {
+	Describe("segment Validation", func() {
 
 	})
 

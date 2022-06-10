@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Segment", func() {
+var _ = Describe("segment", func() {
 	Describe("Key", func() {
 		It("Should generate the segments key correctly", func() {
 			k := segment.NewKey(channel.Key(1), telem.TimeStampMax)
