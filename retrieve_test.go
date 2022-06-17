@@ -19,20 +19,22 @@ var _ = Describe("Retrieve", func() {
 		)
 		BeforeEach(func() {
 			var err error
-			log, _ = zap.NewDevelopment()
-			db, err = cesium.Open("testdata", cesium.MemBacked(), cesium.WithLogger(log))
+			log = zap.NewNop()
+			db, err = cesium.Open("testdata", cesium.MemBacked(),
+				cesium.WithLogger(log))
 			Expect(err).ToNot(HaveOccurred())
 			c = cesium.Channel{
 				DataRate: 1 * cesium.Hz,
 				DataType: cesium.Float64,
 			}
 			cpk, err = db.CreateChannel(c)
+			c.Key = cpk
 			Expect(err).ToNot(HaveOccurred())
 		})
 		AfterEach(func() {
 			Expect(db.Close()).To(Succeed())
 		})
-		It("Should read the segmentKV correctly", func() {
+		It("Should read the segments correctly", func() {
 			req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
 			stc := &seg.StreamCreate{
 				Req:               req,
@@ -63,12 +65,20 @@ var _ = Describe("Retrieve", func() {
 			wg.Add(nRequests)
 			for i := 0; i < nRequests; i++ {
 				go func() {
-					rResV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
+					defer GinkgoRecover()
+					defer wg.Done()
+					rResV, err := db.NewRetrieve().
+						WhereChannels(cpk).
+						WhereTimeRange(cesium.TimeRangeMax).
+						Stream(ctx)
 					Expect(err).ToNot(HaveOccurred())
+					if err != nil {
+						return
+
+					}
 					segments, err := seg.StreamRetrieve{Res: rResV}.All()
 					Expect(err).ToNot(HaveOccurred())
 					Expect(segments).To(HaveLen(20))
-					wg.Done()
 				}()
 			}
 			wg.Wait()
@@ -89,7 +99,8 @@ var _ = Describe("Retrieve", func() {
 					DataRate: 1 * cesium.Hz,
 					DataType: cesium.Float64,
 				}
-				_, err := db.CreateChannel(c)
+				k, err := db.CreateChannel(c)
+				c.Key = k
 				Expect(err).ToNot(HaveOccurred())
 				channels = append(channels, c)
 			}

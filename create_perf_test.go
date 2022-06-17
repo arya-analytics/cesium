@@ -101,7 +101,8 @@ var _ = Describe("Create", func() {
 		config := &createConfig{vars: progressiveCreate}
 		p := alamos.NewParametrize[createVars](config)
 		p.Template(func(i int, values createVars) {
-			It(fmt.Sprintf("Should write data to %v channels in different goroutines correctly", values.nChannels), func() {
+			It(fmt.Sprintf("Should write data to %v channels in different goroutines"+
+				" correctly", values.nChannels), func() {
 				var (
 					channels []cesium.Channel
 				)
@@ -110,8 +111,9 @@ var _ = Describe("Create", func() {
 						DataRate: values.dataRate,
 						DataType: values.dataType,
 					}
-					_, err := db.CreateChannel(ch)
+					key, err := db.CreateChannel(ch)
 					Expect(err).ToNot(HaveOccurred())
+					ch.Key = key
 					channels = append(channels, ch)
 				}
 				Expect(channels).To(HaveLen(values.nChannels))

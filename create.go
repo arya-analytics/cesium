@@ -72,6 +72,11 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 		return nil, nil, NotFound
 	}
 
+	chanMap := make(map[channel.Key]channel.Channel)
+	for _, ch := range channels {
+		chanMap[ch.Key] = ch
+	}
+
 	requests := confluence.NewStream[CreateRequest](10)
 	responses := confluence.NewStream[CreateResponse](10)
 
@@ -95,7 +100,7 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 				for _, seg := range req.Segments {
 					op := createOperationUnary{
 						ctx:     ctx,
-						seg:     seg.Sugar(channels[0]),
+						seg:     seg.Sugar(chanMap[seg.ChannelKey]),
 						logger:  c.logger,
 						kv:      header,
 						metrics: c.metrics,
@@ -250,7 +255,7 @@ const (
 	createPersistMaxRoutines = persist.DefaultNumWorkers
 	// createDebounceFlushInterval is the interval at which create debounce queue will flush if the number of
 	// create operations is below the threshold.
-	createDebounceFlushInterval = 100 * time.Millisecond
+	createDebounceFlushInterval = 10 * time.Millisecond
 	// createDebounceFlushThreshold is the number of requests that must be queued before create debounce queue
 	// will flush.
 	createDebounceFlushThreshold = 100

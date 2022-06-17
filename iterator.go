@@ -55,7 +55,7 @@ type StreamIterator interface {
 type streamIterator struct {
 	// internal is the iterator that traverses segment metadata in key-value storage. It's essentially the 'brains'
 	// behind the operations.
-	internal *kv.Iterator
+	internal kv.Iterator
 	// UnarySource is where values from the iterator will be piped.
 	confluence.UnarySource[RetrieveResponse]
 	// parser converts segment metadata into executable operations on disk.
@@ -169,7 +169,7 @@ func (i *streamIterator) Close() error {
 }
 
 func (i *streamIterator) pipeOperations() {
-	ops, err := i.parser.Parse(i.UnarySource, i.wg, i.internal.Value())
+	ops, err := i.parser.Parse(i.UnarySource, i.wg, i.internal.Values())
 	i.updateError(err)
 	if len(ops) == 0 {
 		return

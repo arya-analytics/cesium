@@ -68,9 +68,8 @@ func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 }
 
 func (r Retrieve) Iterate() (StreamIterator, error) {
-	ck := channel.GetKeys(r)
 	iter := &streamIterator{
-		internal: ckv.NewIterator(r.kve, ck[0], timeRange(r)),
+		internal: ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...),
 		executor: r.ops,
 		parser:   r.parser,
 		wg:       &sync.WaitGroup{},
@@ -210,21 +209,23 @@ type retrieveParser struct {
 func (r *retrieveParser) Parse(
 	source confluence.UnarySource[RetrieveResponse],
 	wg *sync.WaitGroup,
-	rng *segment.Range,
+	ranges []*segment.Range,
 ) ([]retrieveOperation, error) {
 	var ops []retrieveOperation
-	wg.Add(len(rng.Headers))
-	for _, header := range rng.Headers {
-		seg := header.Sugar(rng.Channel)
-		seg.SetBounds(rng.Bound)
-		ops = append(ops, retrieveOperationUnary{
-			seg:         seg,
-			ctx:         context.Background(),
-			dataRead:    r.metrics.dataRead,
-			wg:          wg,
-			logger:      r.logger,
-			UnarySource: source,
-		})
+	for _, rng := range ranges {
+		wg.Add(len(rng.Headers))
+		for _, header := range rng.Headers {
+			seg := header.Sugar(rng.Channel)
+			seg.SetBounds(rng.Bound)
+			ops = append(ops, retrieveOperationUnary{
+				seg:         seg,
+				ctx:         context.Background(),
+				dataRead:    r.metrics.dataRead,
+				wg:          wg,
+				logger:      r.logger,
+				UnarySource: source,
+			})
+		}
 	}
 	return ops, nil
 }

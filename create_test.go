@@ -13,7 +13,7 @@ var _ = Describe("Create", func() {
 	)
 	BeforeEach(func() {
 		var err error
-		log, _ := zap.NewDevelopment()
+		log := zap.NewNop()
 		db, err = cesium.Open("", cesium.MemBacked(), cesium.WithLogger(log))
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -121,8 +121,10 @@ var _ = Describe("Create", func() {
 					err = db.Sync(ctx, db.NewRetrieve().WhereChannels(key).WhereTimeRange(cesium.TimeRangeMax), &resSeg)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resSeg).To(HaveLen(2))
-					Expect(resSeg[0].Start).To(Equal(cReq.Segments[0].Start))
-					Expect(resSeg[1].Start).To(Equal(cReq.Segments[1].Start))
+					Expect(resSeg[0].Start).To(BeElementOf([]cesium.TimeStamp{cReq.
+						Segments[0].Start, cReq.Segments[1].Start}))
+					Expect(resSeg[1].Start).To(BeElementOf([]cesium.TimeStamp{cReq.
+						Segments[0].Start, cReq.Segments[1].Start}))
 				})
 			})
 
