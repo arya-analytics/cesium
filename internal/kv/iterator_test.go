@@ -29,7 +29,7 @@ var _ = Describe("Iterate", func() {
 
 	AfterEach(func() { Expect(kve.Close()).To(Succeed()) })
 
-	Describe("Even BoundedRange", func() {
+	Context("Even Bounded Range", func() {
 		var iter *kv.Iterator
 		BeforeEach(func() {
 			Expect(headerKV.SetMultiple([]segment.Header{
@@ -318,6 +318,52 @@ var _ = Describe("Iterate", func() {
 			})
 		})
 
+	})
+
+	Context("Current Timestamp", func() {
+		var (
+			iter *kv.Iterator
+			ts   telem.TimeStamp
+		)
+		BeforeEach(func() {
+			ts = telem.Now()
+			Expect(headerKV.SetMultiple([]segment.Header{
+				{
+					ChannelKey: ch.Key,
+					Start:      ts,
+					Size:       1,
+				},
+				{
+					ChannelKey: ch.Key,
+					Start:      ts.Add(1 * telem.Second),
+					Size:       1,
+				},
+			})).To(Succeed())
+			iter = kv.NewIterator(kve, ch.Key, telem.TimeRange{
+				Start: telem.Now().Sub(10 * telem.Second),
+				End:   telem.Now().Add(10 * telem.Second),
+			})
+		})
+		AfterEach(func() { Expect(iter.Close()).To(Succeed()) })
+		It("Should open the iterator without error", func() {
+			Expect(iter.Error()).To(BeNil())
+		})
+		It("Should return the correct segments", func() {
+			Expect(iter.First()).To(BeTrue())
+			Expect(iter.Valid()).To(BeTrue())
+			Expect(iter.Error()).ToNot(HaveOccurred())
+			Expect(iter.Value().Headers).To(HaveLen(1))
+			Expect(iter.Value().Range()).To(Equal(telem.TimeRange{
+				Start: ts,
+				End:   ts.Add(1 * telem.Second),
+			}))
+			Expect(iter.Next()).To(BeTrue())
+			Expect(iter.Valid()).To(BeTrue())
+			Expect(iter.View()).To(Equal(telem.TimeRange{
+				Start: ts.Add(1 * telem.Second),
+				End:   ts.Add(2 * telem.Second),
+			}))
+		})
 	})
 
 	Describe("NextSpan", func() {

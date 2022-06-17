@@ -3,8 +3,8 @@ package cesium
 import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/channel"
+	"github.com/arya-analytics/cesium/internal/core"
 	ckv "github.com/arya-analytics/cesium/internal/kv"
-	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
 	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
@@ -14,7 +14,7 @@ import (
 	"github.com/arya-analytics/x/queue"
 	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
-	"sort"
+	"sync"
 	"time"
 )
 
@@ -35,13 +35,14 @@ type RetrieveResponse struct {
 
 type Retrieve struct {
 	query.Query
-	kve kv.KV
-	ops confluence.Inlet[[]retrieveOperation]
+	kve    kv.KV
+	ops    confluence.Inlet[[]retrieveOperation]
+	parser *retrieveParser
 }
 
 // WhereChannels sets the channels to retrieve data for.
 // If no keys are provided, will return an ErrInvalidQuery error.
-func (r Retrieve) WhereChannels(keys ...channel.Key) Retrieve { channel.SetKeys(r, keys...); return r }
+func (r Retrieve) WhereChannels(keys ...ChannelKey) Retrieve { channel.SetKeys(r, keys...); return r }
 
 // WhereTimeRange sets the time range to retrieve data from.
 func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); return r }
@@ -71,6 +72,8 @@ func (r Retrieve) Iterate() (StreamIterator, error) {
 	iter := &streamIterator{
 		internal: ckv.NewIterator(r.kve, ck[0], timeRange(r)),
 		executor: r.ops,
+		parser:   r.parser,
+		wg:       &sync.WaitGroup{},
 	}
 	return iter, iter.error()
 }
@@ -96,46 +99,21 @@ func timeRange(q query.Query) TimeRange {
 // |||||| QUERY FACTORY ||||||
 
 type retrieveFactory struct {
-	ops confluence.Inlet[[]retrieveOperation]
-	kve kv.KV
+	ops    confluence.Inlet[[]retrieveOperation]
+	kve    kv.KV
+	parser *retrieveParser
 }
 
-type nilExecutor struct{ query.Executor }
-
 func (r retrieveFactory) New() Retrieve {
-	return Retrieve{Query: query.New(), ops: r.ops, kve: r.kve, ckv: r.ckv}
+	return Retrieve{
+		Query:  query.New(),
+		ops:    r.ops,
+		kve:    r.kve,
+		parser: r.parser,
+	}
 }
 
 // ||||||| BATCH |||||||
-
-type retrieveBatch struct {
-	confluence.Transform[[]retrieveOperation]
-}
-
-func newRetrieveBatch() retrieveSegment {
-	rb := &retrieveBatch{}
-	rb.Transform.Transform = rb.batch
-	return rb
-}
-
-func (r *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) ([]retrieveOperation, bool) {
-	if len(ops) == 0 {
-		return nil, false
-	}
-	files := make(map[fileKey][]retrieveOperation)
-	for _, op := range ops {
-		if op == nil {
-			continue
-		}
-		files[op.FileKey()] = append(files[op.FileKey()], op)
-	}
-	sets := make([]retrieveOperation, 0, len(files))
-	for _, ops := range files {
-		sort.Slice(ops, func(i, j int) bool { return ops[i].Offset() < ops[j].Offset() })
-		sets = append(sets, retrieveOperationSet{Set: operation.Set[fileKey, retrieveOperation](ops)})
-	}
-	return sets, true
-}
 
 // |||||| METRICS ||||||
 
@@ -173,7 +151,7 @@ type retrieveConfig struct {
 	// exp is used to track metrics for the Retrieve query. See retrieveMetrics for more.
 	exp alamos.Experiment
 	// fs is the file system for reading segment data from.
-	fs fileSystem
+	fs core.FS
 	// kv is the key-value store for reading segment metadata from.
 	kv kv.KV
 	// shutdown is used to gracefully shutdown down retrieve operations.
@@ -218,18 +196,45 @@ const (
 	retrievePersistMaxRoutines = persist.DefaultNumWorkers
 	// retrieveDebounceFlushInterval is the interval at which retrieve debounce queue will flush if the number of
 	// retrieve operations is below the threshold.
-	retrieveDebounceFlushInterval = 100 * time.Millisecond
+	retrieveDebounceFlushInterval = 10 * time.Millisecond
 	// retrieveDebounceFlushThreshold is the number of retrieve operations that must be in the debounce queue before
 	// it flushes
 	retrieveDebounceFlushThreshold = 10
 )
+
+type retrieveParser struct {
+	logger  *zap.Logger
+	metrics retrieveMetrics
+}
+
+func (r *retrieveParser) Parse(
+	source confluence.UnarySource[RetrieveResponse],
+	wg *sync.WaitGroup,
+	rng *segment.Range,
+) ([]retrieveOperation, error) {
+	var ops []retrieveOperation
+	wg.Add(len(rng.Headers))
+	for _, header := range rng.Headers {
+		seg := header.Sugar(rng.Channel)
+		seg.SetBounds(rng.Bound)
+		ops = append(ops, retrieveOperationUnary{
+			seg:         seg,
+			ctx:         context.Background(),
+			dataRead:    r.metrics.dataRead,
+			wg:          wg,
+			logger:      r.logger,
+			UnarySource: source,
+		})
+	}
+	return ops, nil
+}
 
 func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 	mergeRetrieveConfigDefaults(&cfg)
 	pipeline := confluence.NewPipeline[[]retrieveOperation]()
 	pipeline.Segment("queue", &queue.Debounce[retrieveOperation]{DebounceConfig: cfg.debounce})
 	pipeline.Segment("batch", newRetrieveBatch())
-	pipeline.Segment("persist", persist.New[fileKey, retrieveOperation](cfg.fs, cfg.persist))
+	pipeline.Segment("persist", persist.New[core.FileKey, retrieveOperation](cfg.fs, cfg.persist))
 	rb := pipeline.NewRouteBuilder()
 	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{FromAddr: "queue", ToAddr: "batch", Capacity: 10})
 	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{FromAddr: "batch", ToAddr: "persist", Capacity: 10})
@@ -239,5 +244,9 @@ func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 	ctx := confluence.DefaultContext()
 	ctx.Shutdown = cfg.shutdown
 	pipeline.Flow(ctx)
-	return retrieveFactory{ops: inlet, kve: cfg.kv, ckv: channelKV{kv: cfg.kv}}, rb.Error()
+	return retrieveFactory{
+		ops:    inlet,
+		kve:    cfg.kv,
+		parser: &retrieveParser{metrics: newRetrieveMetrics(cfg.exp), logger: cfg.logger},
+	}, rb.Error()
 }

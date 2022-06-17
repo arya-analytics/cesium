@@ -28,7 +28,7 @@ func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
 	return nil
 }
 
-func syncExec(ctx context.Context, query Query, seg *[]Segment) error {
+func syncExec(ctx context.Context, query interface{}, seg *[]Segment) error {
 	switch query.(type) {
 	case Create:
 		return createSync(ctx, query.(Create), seg)

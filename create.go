@@ -4,37 +4,26 @@ import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/allocate"
 	"github.com/arya-analytics/cesium/internal/channel"
-	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/cesium/internal/core"
+	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/persist"
 	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
 	"github.com/arya-analytics/x/confluence"
-	"github.com/arya-analytics/x/kv"
+	kvx "github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/lock"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
 	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
+	"sync"
 	"time"
 )
 
 type (
 	createSegment    = confluence.Segment[[]createOperation]
-	createStream     = query.Stream[CreateRequest, CreateResponse]
-	segmentAllocator = allocate.Allocator[ChannelKey, fileKey, Segment]
-	createStrategy   = query.Strategy[fileKey, createOperation, CreateRequest, CreateResponse]
-	createContext    = query.Context[fileKey, createOperation, CreateRequest]
+	segmentAllocator = allocate.Allocator[channel.Key, core.FileKey, createOperation]
 )
-
-type createOperationSet struct {
-	operation.Set[fileKey, createOperation]
-}
-
-func (c createOperationSet) Size() int { return c.Set[0].Size() }
-
-func (c createOperationSet) Key() channel.Key { return c.Set[0].Key() }
-
-// |||||| ALLOCATOR ||||||
 
 // |||||| STREAM ||||||
 
@@ -50,7 +39,15 @@ type CreateResponse struct {
 
 // |||||| QUERY ||||||
 
-type Create struct{ query.Query }
+type Create struct {
+	query.Query
+	ops       confluence.Inlet[[]createOperation]
+	lock      lock.Map[channel.Key]
+	allocator segmentAllocator
+	kv        kvx.KV
+	logger    *zap.Logger
+	metrics   createMetrics
+}
 
 // WhereChannels sets the channels to acquire a lock on for creation.
 // The request stream will only accept segmentKV bound to channel with the given primary keys.
@@ -60,131 +57,89 @@ func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, k
 // Stream opens a stream
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
 	query.SetContext(c, ctx)
-	s := createStream{Requests: make(chan CreateRequest), Responses: make(chan CreateResponse)}
-	query.SetStream[CreateRequest, CreateResponse](c, s)
-	return s.Requests, s.Responses, c.Query.QExec()
+	keys := channel.GetKeys(c)
+	if err := c.lock.Acquire(keys...); err != nil {
+		return nil, nil, err
+	}
+	defer c.lock.Release(keys...)
+
+	channels, err := kv.NewChannel(c.kv).Get(keys...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(channels) != len(keys) {
+		return nil, nil, NotFound
+	}
+
+	requests := confluence.NewStream[CreateRequest](10)
+	responses := confluence.NewStream[CreateResponse](10)
+
+	header := kv.NewHeader(c.kv)
+
+	go func() {
+		wg := &sync.WaitGroup{}
+		defer func() {
+			wg.Wait()
+			close(responses.Inlet())
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case req, ok := <-requests.Outlet():
+				if !ok {
+					return
+				}
+				var ops []createOperation
+				for _, seg := range req.Segments {
+					op := createOperationUnary{
+						ctx:     ctx,
+						seg:     seg.Sugar(channels[0]),
+						logger:  c.logger,
+						kv:      header,
+						metrics: c.metrics,
+						wg:      wg,
+					}
+					op.OutTo(responses)
+					op.BindWaitGroup(wg)
+					ops = append(ops, op)
+				}
+				fileKeys := c.allocator.Allocate(ops...)
+				for i, op := range ops {
+					op.SetFileKey(fileKeys[i])
+				}
+				wg.Add(len(ops))
+				c.ops.Inlet() <- ops
+			}
+		}
+	}()
+	return requests.Inlet(), responses.Outlet(), nil
 }
 
 // |||||| QUERY FACTORY ||||||
 
 type createFactory struct {
-	exec query.Executor
-}
-
-func (c createFactory) New() Create {
-	return Create{Query: query.New(c.exec)}
-}
-
-// |||||| OPERATION ||||||
-
-// |||||| PARSER ||||||
-
-type createParser struct {
-	skv       segmentKV
+	lock      lock.Map[channel.Key]
 	allocator segmentAllocator
-	metrics   createMetrics
+	kv        kvx.KV
 	logger    *zap.Logger
+	header    *kv.Header
+	metrics   createMetrics
+	ops       confluence.Inlet[[]createOperation]
 }
 
-func (cp *createParser) Parse(q query.Query, req CreateRequest) (ops []createOperation, err error) {
-	fileKeys := cp.allocator.Allocate(req.Segments...)
-	stream := query.GetStream[CreateRequest, CreateResponse](q)
-	for i, seg := range req.Segments {
-		cp.metrics.segSize.Record(seg.Size())
-		ops = append(ops, unaryCreateOperation{
-			fileKey:    fileKeys[i],
-			channelKey: seg.ChannelKey,
-			segments:   []Segment{seg},
-			segmentKV:  cp.skv,
-			stream:     stream,
-			ctx:        q.Context(),
-			logger:     cp.logger,
-			metrics:    cp.metrics,
-			wg:         query.WaitGroup(q),
-		})
+// New implements the query.Factory interface.
+func (c createFactory) New() Create {
+	return Create{
+		Query:     query.New(),
+		allocator: c.allocator,
+		kv:        c.kv,
+		logger:    c.logger,
+		metrics:   c.metrics,
+		ops:       c.ops,
+		lock:      c.lock,
 	}
-	return ops, nil
-}
-
-// |||||| HOOKS ||||||
-
-type lockAcquireHook struct {
-	lock   lock.Map[ChannelKey]
-	metric alamos.Duration
-}
-
-func (l lockAcquireHook) Exec(query query.Query) error {
-	s := l.metric.Stopwatch()
-	s.Start()
-	defer s.Stop()
-	return l.lock.Acquire(channelKeys(query)...)
-}
-
-type lockReleaseHook struct {
-	lock   lock.Map[ChannelKey]
-	metric alamos.Duration
-}
-
-func (l lockReleaseHook) Exec(query query.Query) error {
-	s := l.metric.Stopwatch()
-	s.Start()
-	defer s.Stop()
-	l.lock.Release(channelKeys(query)...)
-	return nil
-}
-
-// |||||| ITERATOR ||||||
-
-type createIterFactory struct {
-	queue chan<- []createOperation
-}
-
-func (cf *createIterFactory) New(ctx createContext) (query.Iterator[CreateRequest], error) {
-	return &createIterator{ctx, cf}, nil
-}
-
-type createIterator struct {
-	createContext
-	*createIterFactory
-}
-
-func (cp *createIterator) Next(request CreateRequest) (last bool) {
-	stream := query.GetStream[CreateRequest, CreateResponse](cp.Query)
-	ops, err := cp.Parser.Parse(cp.Query, request)
-	if err != nil {
-		stream.Responses <- CreateResponse{Error: err}
-	}
-	cp.WaitGroup.Add(len(ops))
-	cp.queue <- ops
-	return false
-}
-
-// |||||| BATCH ||||||
-
-type createBatch struct {
-	confluence.Transform[[]createOperation]
-}
-
-func (b *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]createOperation, bool) {
-	files := make(map[fileKey][]createOperation)
-	for _, op := range ops {
-		files[op.FileKey()] = append(files[op.FileKey()], op)
-	}
-	channels := make(map[channel.Key]createOperationSet)
-	for _, op := range ops {
-		channels[op.Key()] = createOperationSet{Set: append(channels[op.Key()].Set, op)}
-	}
-	sets := make([]createOperation, 0, len(channels))
-	for _, opSet := range channels {
-		sets = append(sets, opSet)
-	}
-	return sets, true
-}
-
-func newCreateBatch() createSegment {
-	b := &createBatch{}
-	b.Transform.Transform = b.batch
-	return b
 }
 
 // |||||| METRICS ||||||
@@ -237,9 +192,9 @@ type createConfig struct {
 	// exp is used to track metrics for the Create query. See createMetrics for all the recorded values.
 	exp alamos.Experiment
 	// fs is the file system for writing segment data to.
-	fs fileSystem
+	fs core.FS
 	// kv is the key-value store for writing segment metadata to.
-	kv kv.KV
+	kv kvx.KV
 	// shutdown is used to gracefully shutdown down create operations.
 	// create releases the shutdown when all segment data has persisted to disk.
 	shutdown shutdown.Shutdown
@@ -305,19 +260,6 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 
 	mergeCreateConfigDefaults(&cfg)
 
-	// strategy represents a general strategy for executing a Create query.
-	// The elements of the strategy are intended to be modular and swappable
-	// for the purposes of experimentation. All components of the strategy
-	// must follow the interface laid out in the query.Strategy interface.
-	strategy := new(createStrategy)
-
-	metrics := newCreateMetrics(cfg.exp)
-	strategy.Metrics.Request = metrics.request
-
-	ckv, skv := channelKV{kv: cfg.kv}, segmentKV{kv: cfg.kv}
-
-	strategy.Shutdown = cfg.shutdown
-
 	// a kv persisted counter that tracks the number of files that a DB has created.
 	// The segment allocator uses it to determine the next file to open.
 	fCount, err := newFileCounter(cfg.kv, []byte(fileCounterKey))
@@ -326,46 +268,20 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	}
 
 	// allocator is responsible for allocating new Segments to files.
-	allocator := allocate.New[ChannelKey, fileKey, Segment](fCount, allocate.Config{
+	allocator := allocate.New[channel.Key, core.FileKey, createOperation](fCount, allocate.Config{
 		MaxDescriptors: 10,
 		MaxSize:        1e9,
 	})
 
-	strategy.Parser = &createParser{
-		skv:       skv,
-		allocator: allocator,
-		logger:    cfg.logger,
-		metrics:   metrics,
-	}
-
 	// acquires and releases the locks on channels. Acquiring locks on channels simplifies
 	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same channel
 	// from different goroutines.
-	channelLock := lock.NewMap[ChannelKey]()
+	channelLock := lock.NewMap[channel.Key]()
 
-	strategy.Hooks.PreAssembly = []query.Hook{
-		// validates that all channel keys provided to the Create query are valid.
-		validateChannelKeysHook{ckv: ckv},
-		// acquires the locks on the channels that are being written to.
-		lockAcquireHook{lock: channelLock, metric: metrics.lockAcquire},
-	}
-
-	strategy.Hooks.PostExecution = []query.Hook{
-		// releases the locks on the channels that are being written to.
-		lockReleaseHook{lock: channelLock, metric: metrics.lockRelease},
-		// closes the stream response channel for the query, which signals to the caller that the
-		// query has completed, and the header writes are durable.
-		query.CloseStreamResponseHook[CreateRequest, CreateResponse]{},
-	}
-
-	// executes the operations generated by strategy.Parser, persisting them to disk.
-
-	// 'debounces' the execution of operations generated by strategy.Parser in order to allow for more
-	// efficient batching.
 	pipeline := confluence.NewPipeline[[]createOperation]()
 	pipeline.Segment("queue", &queue.Debounce[createOperation]{DebounceConfig: cfg.debounce})
 	pipeline.Segment("batch", newCreateBatch())
-	pipeline.Segment("persist", persist.New[fileKey, createOperation](cfg.fs, cfg.persist))
+	pipeline.Segment("persist", persist.New[core.FileKey, createOperation](cfg.fs, cfg.persist))
 
 	rb := pipeline.NewRouteBuilder()
 	rb.Route(confluence.UnaryRouter[[]createOperation]{FromAddr: "queue", ToAddr: "batch", Capacity: 10})
@@ -376,7 +292,13 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	ctx := confluence.DefaultContext()
 	ctx.Shutdown = cfg.shutdown
 	pipeline.Flow(ctx)
-	strategy.IterFactory = &createIterFactory{queue: inlet.Inlet()}
 
-	return createFactory{exec: strategy}, nil
+	return createFactory{
+		lock:      channelLock,
+		allocator: allocator,
+		kv:        cfg.kv,
+		logger:    cfg.logger,
+		metrics:   newCreateMetrics(cfg.exp),
+		ops:       inlet,
+	}, nil
 }

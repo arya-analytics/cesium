@@ -5,7 +5,6 @@ import (
 	"github.com/arya-analytics/cesium/internal/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"sync"
 )
@@ -14,18 +13,21 @@ var _ = Describe("Retrieve", func() {
 	Context("Single channel", func() {
 		var (
 			db  cesium.DB
-			cpk int16
+			cpk cesium.ChannelKey
 			c   cesium.Channel
 			log *zap.Logger
 		)
 		BeforeEach(func() {
 			var err error
-			log = zap.NewNop()
+			log, _ = zap.NewDevelopment()
 			db, err = cesium.Open("testdata", cesium.MemBacked(), cesium.WithLogger(log))
 			Expect(err).ToNot(HaveOccurred())
-			c, err = db.NewCreateChannel().WithRate(cesium.Hz).WithType(cesium.Float64).Exec(ctx)
+			c = cesium.Channel{
+				DataRate: 1 * cesium.Hz,
+				DataType: cesium.Float64,
+			}
+			cpk, err = db.CreateChannel(c)
 			Expect(err).ToNot(HaveOccurred())
-			cpk = c.Key
 		})
 		AfterEach(func() {
 			Expect(db.Close()).To(Succeed())
@@ -40,7 +42,6 @@ var _ = Describe("Retrieve", func() {
 			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
-			logrus.Info("Made it here")
 			resV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			segments, err := seg.StreamRetrieve{Res: resV}.All()
@@ -84,7 +85,11 @@ var _ = Describe("Retrieve", func() {
 			db, err = cesium.Open("testdata", cesium.MemBacked())
 			Expect(err).ToNot(HaveOccurred())
 			for i := 0; i < channelCount; i++ {
-				c, err := db.NewCreateChannel().WithRate(1 * cesium.Hz).WithType(cesium.Float64).Exec(ctx)
+				c := cesium.Channel{
+					DataRate: 1 * cesium.Hz,
+					DataType: cesium.Float64,
+				}
+				_, err := db.CreateChannel(c)
 				Expect(err).ToNot(HaveOccurred())
 				channels = append(channels, c)
 			}
@@ -104,7 +109,7 @@ var _ = Describe("Retrieve", func() {
 				stc.CreateCRequestsOfN(10, 2)
 				Expect(stc.CloseAndWait()).To(Succeed())
 			}
-			var cPKs []int16
+			var cPKs []cesium.ChannelKey
 			for _, c := range channels {
 				cPKs = append(cPKs, c.Key)
 			}

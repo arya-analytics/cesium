@@ -102,15 +102,22 @@ var _ = Describe("Create", func() {
 		p := alamos.NewParametrize[createVars](config)
 		p.Template(func(i int, values createVars) {
 			It(fmt.Sprintf("Should write data to %v channels in different goroutines correctly", values.nChannels), func() {
-				chs, err := db.NewCreateChannel().
-					WithRate(values.dataRate).
-					WithType(values.dataType).
-					ExecN(ctx, values.nChannels)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(chs).To(HaveLen(values.nChannels))
+				var (
+					channels []cesium.Channel
+				)
+				for i := 0; i < values.nChannels; i++ {
+					ch := cesium.Channel{
+						DataRate: values.dataRate,
+						DataType: values.dataType,
+					}
+					_, err := db.CreateChannel(ch)
+					Expect(err).ToNot(HaveOccurred())
+					channels = append(channels, ch)
+				}
+				Expect(channels).To(HaveLen(values.nChannels))
 				wg := &sync.WaitGroup{}
 				wg.Add(values.nChannels)
-				for _, ch := range chs {
+				for _, ch := range channels {
 					go func(ch cesium.Channel) {
 						defer GinkgoRecover()
 						req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
@@ -135,17 +142,27 @@ var _ = Describe("Create", func() {
 		p := alamos.NewParametrize[createVars](config)
 		p.Template(func(i int, values createVars) {
 			It(fmt.Sprintf("Should write to %v channels in a single goroutine corectly", values.nChannels), func() {
-				chs, err := db.NewCreateChannel().
-					WithRate(values.dataRate).
-					WithType(values.dataType).
-					ExecN(ctx, values.nChannels)
+				var (
+					channels []cesium.Channel
+					keys     []cesium.ChannelKey
+				)
+				for i := 0; i < values.nChannels; i++ {
+					ch := cesium.Channel{
+						DataRate: values.dataRate,
+						DataType: values.dataType,
+					}
+					key, err := db.CreateChannel(ch)
+					Expect(err).ToNot(HaveOccurred())
+					channels = append(channels, ch)
+					keys = append(keys, key)
+				}
+				Expect(channels).To(HaveLen(values.nChannels))
+				req, res, err := db.NewCreate().WhereChannels(keys...).Stream(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(chs).To(HaveLen(values.nChannels))
-				req, res, err := db.NewCreate().WhereChannels(cesium.ChannelKeys(chs)...).Stream(ctx)
 				stc := &seg.StreamCreate{
 					Req:               req,
 					Res:               res,
-					SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, chs...),
+					SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, channels...),
 				}
 				stc.CreateCRequestsOfN(1, 1)
 				Expect(stc.CloseAndWait()).To(Succeed())

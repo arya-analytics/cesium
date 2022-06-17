@@ -1,6 +1,6 @@
 package channel
 
-import "github.com/arya-analytics/cesium/internal/query"
+import "github.com/arya-analytics/x/query"
 
 const keysOptKey query.OptionKey = "cks"
 

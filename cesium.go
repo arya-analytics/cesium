@@ -2,17 +2,18 @@ package cesium
 
 import (
 	"context"
-	"github.com/arya-analytics/cesium/internal/query"
-	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/cesium/internal/channel"
+	"github.com/arya-analytics/cesium/internal/kv"
+	"github.com/arya-analytics/cesium/internal/segment"
+	kvx "github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/shutdown"
+	"github.com/cockroachdb/errors"
 )
 
 var (
-	ErrNotFound = query.ErrNotFound
-)
-
-type (
-	Query = query.Query
+	NotFound        = errors.New("[cesium] - not found")
+	UniqueViolation = errors.New("[cesium] - unique violation")
 )
 
 type DB interface {
@@ -25,7 +26,7 @@ type DB interface {
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
 	//      // Create a new channel
-	//      ch, err := cesium.NewCreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).QExec(ctx)
+	//      ch, err := cesium.CreateChannel().WithType(cesium.Float64).WithRate(5 * cesium.Hz).QExec(ctx)
 	//		if err != nil {
 	// 	    	 logger.Fatal(err)
 	//		}
@@ -107,7 +108,7 @@ type DB interface {
 	// 		and ALL segment B will be returned (meaning the time range is 0 to 12).
 	//		Changes are in progress to allow for partial segment returns.
 	//
-	// Retrieve will return cesium.ErrNotFound if the query returns no data.
+	// Retrieve will return cesium.NotFound if the query returns no data.
 	//
 	// Asynchronous Retrieve queries are the default in cesium. This allows for network optimization (i.e. send the data
 	// across the network as you read more data from IO). However, they are a more complex to write.
@@ -131,7 +132,7 @@ type DB interface {
 	//      // do what you want with the data, just remember to close the database when done.
 	NewRetrieve() Retrieve
 
-	// NewCreateChannel opens a new CreateChannel query that is used for creating a new channel in the DB.
+	// CreateChannel opens a new CreateChannel query that is used for creating a new channel in the DB.
 	// Creating a channel is simple:
 	//
 	//		// Open the DB
@@ -139,7 +140,7 @@ type DB interface {
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
 	//		// Create a channel
-	//		ch, err := cesium.NewCreateChannel().
+	//		ch, err := cesium.CreateChannel().
 	//				WithType(cesium.Float64).
 	//				WithRate(5 * cesium.Hz).
 	//				QExec(ctx)
@@ -152,32 +153,32 @@ type DB interface {
 	//
 	// See the channel documentation for details on what a channel is, and the CreateChannel documentation
 	// for available options for creating a channel.
-	NewCreateChannel() CreateChannel
+	CreateChannel(ch Channel) (ChannelKey, error)
 
-	// NewRetrieveChannel opens a new RetrieveChannel query that is used for retrieving information about a channel
+	// RetrieveChannel opens a new RetrieveChannel query that is used for retrieving information about a channel
 	// from the DB. Retrieving a channel is simple:
 	//
-	// 		// Assuming DB is opened and a channel with Key 1 has been created. See NewCreateChannel for details.
+	// 		// Assuming DB is opened and a channel with Key 1 has been created. See CreateChannel for details.
 	//
 	//		// Retrieve the channel.
-	//		ch, err := cesium.NewRetrieveChannel().WhereKey(1).QExec(ctx)
+	//		ch, err := cesium.RetrieveChannel().WhereKey(1).QExec(ctx)
 	//		if err != nil {
 	//			logger.Fatal(err)
 	//		}
 	//		fmt.Println(ch.Key)
 	//		// output:
 	//		//  1
-	NewRetrieveChannel() RetrieveChannel
+	RetrieveChannel(keys ...ChannelKey) ([]Channel, error)
 
 	// Sync is a utility that executes a query synchronously. It is useful for operations that require all data to be
 	// returned	before continuing.
 	//
-	// Sync only supports Create and Retrieve queries, as CreateChannel and RetrieveChannel are already synchronous.
+	// Sync only supports Create and Retrieve queries, and will panic if any other value is passed.
 	// In the case of a Create query, the 'segments' arg represents the data to write to the DB. A Retrieve query
 	// will do the reverse, binding returned data to the 'segments' arg.
 	//
 	// For examples on how to use Sync, see the documentation for NewCreate and NewRetrieve.
-	Sync(ctx context.Context, query Query, segments *[]Segment) error
+	Sync(ctx context.Context, query interface{}, segments *[]Segment) error
 
 	// Close closes the DB. Close ensures that all queries are complete and all data is flushed to disk.
 	// Close will block until all queries are finished, so make sure to stop any running queries
@@ -185,37 +186,54 @@ type DB interface {
 	Close() error
 }
 
+type (
+	Channel    = channel.Channel
+	ChannelKey = channel.Key
+	Segment    = segment.Segment
+)
+
 type db struct {
-	kv              kv.KV
-	shutdown        *shutdown.Group
-	create          query.Factory[Create]
-	retrieve        query.Factory[Retrieve]
-	createChannel   query.Factory[CreateChannel]
-	retrieveChannel query.Factory[RetrieveChannel]
+	kv                kvx.KV
+	shutdown          *shutdown.Group
+	create            query.Factory[Create]
+	retrieve          query.Factory[Retrieve]
+	channelKeyCounter *kvx.PersistedCounter
 }
 
 // NewCreate implements DB.
-func (d *db) NewCreate() Create {
-	return d.create.New()
-}
+func (d *db) NewCreate() Create { return d.create.New() }
 
 // NewRetrieve implements DB.
-func (d *db) NewRetrieve() Retrieve {
-	return d.retrieve.New()
+func (d *db) NewRetrieve() Retrieve { return d.retrieve.New() }
+
+// CreateChannel implements DB.
+func (d *db) CreateChannel(ch Channel) (ChannelKey, error) {
+	channelKV := kv.NewChannel(d.kv)
+	if ch.Key != 0 {
+		exists, err := channelKV.Exists(ch.Key)
+		if err != nil {
+			return 0, err
+		}
+		if exists {
+			return 0, UniqueViolation
+		}
+	} else {
+		key, err := d.channelKeyCounter.Increment()
+		if err != nil {
+			return 0, err
+		}
+		ch.Key = ChannelKey(key)
+	}
+	return ch.Key, channelKV.Set(ch)
 }
 
-// NewCreateChannel implements DB.
-func (d *db) NewCreateChannel() CreateChannel {
-	return d.createChannel.New()
-}
-
-// NewRetrieveChannel implements DB.
-func (d *db) NewRetrieveChannel() RetrieveChannel {
-	return d.retrieveChannel.New()
+// RetrieveChannel implements DB.
+func (d *db) RetrieveChannel(keys ...ChannelKey) ([]Channel, error) {
+	return kv.NewChannel(d.kv).Get(keys...)
 }
 
 // Sync implements DB.
-func (d *db) Sync(ctx context.Context, query Query, seg *[]Segment) error {
+func (d *db) Sync(ctx context.Context, query interface{}, seg *[]Segment) error {
 	return syncExec(ctx, query, seg)
 }
 

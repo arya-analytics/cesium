@@ -30,17 +30,23 @@ type Iterator struct {
 func NewIterator(kve kv.KV, chKey channel.Key, rng telem.TimeRange) (iter *Iterator) {
 	iter = &Iterator{rng: telem.TimeRangeMax}
 
-	var err error
-	iter.channel, err = NewChannel(kve).Get(chKey)
+	chs, err := NewChannel(kve).Get(chKey)
 	if err != nil {
 		iter.setError(err)
 		return iter
 	}
+	iter.channel = chs[0]
 
 	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterPrefix(segment.NewKeyPrefix(chKey)))
 
 	start, end := iter.key(rng.Start).Bytes(), iter.key(rng.End).Bytes()
 
+	// Seek to the first segment that starts before the start of the range. If the
+	// segment range overlaps with our desired range, we'll use it as the starting
+	// point for the iterator. Otherwise, we'll seek to the first segment that starts
+	// after the start of the range. If this value overlaps with our desired range,
+	// we'll use it as the starting point for the iterator. Otherwise, set an error
+	// on the iterator/
 	if iter.SeekLT(rng.Start) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
 		start = iter.key(iter.Value().UnboundedRange().Start).Bytes()
 	} else if iter.SeekGE(rng.Start) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
@@ -78,6 +84,7 @@ func (i *Iterator) First() bool {
 	i.appendValue()
 	i.updateView(i.Value().UnboundedRange())
 	i.boundValueToView()
+
 	return true
 }
 
@@ -305,10 +312,6 @@ func (i *Iterator) SeekLast() bool {
 func (i *Iterator) SeekLT(stamp telem.TimeStamp) bool {
 	i.resetError()
 	i.resetForceInternalValid()
-	if !i.rng.ContainsStamp(stamp) {
-		i.updateView(stamp.SpanRange(0))
-		return false
-	}
 
 	i.resetValue()
 
@@ -330,10 +333,6 @@ func (i *Iterator) SeekLT(stamp telem.TimeStamp) bool {
 func (i *Iterator) SeekGE(stamp telem.TimeStamp) bool {
 	i.resetError()
 	i.resetForceInternalValid()
-	if !i.rng.ContainsStamp(stamp) {
-		i.updateView(stamp.SpanRange(0))
-		return true
-	}
 
 	i.resetValue()
 

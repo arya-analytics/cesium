@@ -35,7 +35,7 @@ type Device struct {
 }
 
 func (d *Device) createChannel() (cesium.Channel, error) {
-	return d.DB.NewCreateChannel().
+	return d.DB.CreateChannel().
 		WithRate(d.DataRate).
 		WithType(d.DataType).
 		Exec(d.Ctx)

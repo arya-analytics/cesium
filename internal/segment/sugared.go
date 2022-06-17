@@ -3,7 +3,6 @@ package segment
 import (
 	"github.com/arya-analytics/cesium/internal/channel"
 	"github.com/arya-analytics/cesium/internal/core"
-	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/x/telem"
 	"io"
 )
@@ -37,6 +36,8 @@ func (s Sugared) UnboundedRange() telem.TimeRange {
 // FileKey returns the key of the file the segment belongs to.
 func (s Sugared) FileKey() core.FileKey { return s.header.FileKey }
 
+func (s *Sugared) SetFileKey(fk core.FileKey) { s.header.FileKey = fk }
+
 // ChannelKey returns the key of the channel the segment belongs to.
 func (s Sugared) ChannelKey() channel.Key {
 	if s.channel.Key != 0 {
@@ -64,7 +65,7 @@ func (s Sugared) BoundedSize() telem.Size {
 // BoundedOffset returns the file offset of the underlying segment after being restricted by the bounds set in
 // SetBounds.
 func (s Sugared) BoundedOffset() telem.Offset {
-	return telem.TimeSpan(s.BoundedRange().End-s.header.Start).ByteSize(s.channel.DataRate, s.channel.DataType)
+	return telem.TimeSpan(s.BoundedRange().Start-s.header.Start).ByteSize(s.channel.DataRate, s.channel.DataType)
 }
 
 // ReadDataFrom reads data from the reader into the underlying segment.
@@ -77,12 +78,13 @@ func (s *Sugared) ReadDataFrom(r io.ReaderAt) error {
 // WriteDataTo writes the segment's data to the writer.
 func (s *Sugared) WriteDataTo(w io.WriteSeeker) error {
 	off, err := w.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
 	s.header.Offset = telem.Offset(off)
+	_, err = w.Write(s.segment.Data)
 	return err
 }
-
-// WriteMetaDataTo writes the segment's metadata to the provided key-value store.
-func (s *Sugared) WriteMetaDataTo(w *kv.Header) error { return w.Set(s.Header()) }
 
 // SetBounds restricts the segment to a particular time range. This is particularly useful for enabling partial segment
 // reads.

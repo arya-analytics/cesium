@@ -11,7 +11,7 @@ type Channel struct {
 }
 
 // GorpKey implements the gorp.Entry interface.
-func (c Channel) GorpKey() interface{} { return c.Key }
+func (c Channel) GorpKey() Key { return c.Key }
 
 // SetOptions implements the gorp.Entry interface.
 func (c Channel) SetOptions() (opts []interface{}) { return opts }

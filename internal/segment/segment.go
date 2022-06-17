@@ -28,7 +28,7 @@ func (h Header) Sugar(ch channel.Channel) *Sugared { return &Sugared{header: h, 
 func (h Header) Key() Key { return NewKey(h.ChannelKey, h.Start) }
 
 // GorpKey implements the gorp.Entry interface.
-func (h Header) GorpKey() interface{} { return h.Key().Bytes() }
+func (h Header) GorpKey() []byte { return h.Key().Bytes() }
 
 // SetOptions implements the gorp.Entry interface.
 func (h Header) SetOptions() (opts []interface{}) { return opts }
@@ -39,12 +39,12 @@ func (h Header) End(dr telem.DataRate, dt telem.DataType) telem.TimeStamp {
 
 const prefix = 's'
 
-type Key [13]byte
+type Key [11]byte
 
 func (k Key) Bytes() []byte { return k[:] }
 
 func NewKeyPrefix(channelKey channel.Key) []byte {
-	keyPrefix := make([]byte, 6)
+	keyPrefix := make([]byte, 3)
 	keyPrefix[0] = prefix
 	binary.BigEndian.PutUint16(keyPrefix[1:], uint16(channelKey))
 	return keyPrefix
@@ -52,8 +52,8 @@ func NewKeyPrefix(channelKey channel.Key) []byte {
 
 func NewKey(channelKey channel.Key, stamp telem.TimeStamp) (key Key) {
 	key[0] = prefix
-	binary.BigEndian.PutUint16(key[1:5], uint16(channelKey))
-	binary.BigEndian.PutUint64(key[5:13], uint64(stamp))
+	binary.BigEndian.PutUint16(key[1:3], uint16(channelKey))
+	binary.BigEndian.PutUint64(key[3:], uint64(stamp))
 	return key
 }
 

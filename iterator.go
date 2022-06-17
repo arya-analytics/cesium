@@ -3,16 +3,15 @@ package cesium
 import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/kv"
-	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/telem"
 	"sync"
 )
 
 type StreamIterator interface {
-	// Source is the outlet for the StreamIterator values. All segments read from disk are piped
-	// to the Source outlet. Iterate should be the ONLY entity writing to the Source outlet
-	// (Iterate.Close will close the Source outlet).
+	// Source is the outlet for the StreamIterator values. All segments read from disk
+	// are piped to the Source outlet. Iterate should be the ONLY entity writing to the
+	// Source outlet (StreamIterator.Close will close the Source outlet).
 	confluence.Source[RetrieveResponse]
 	// Next pipes the next segment in the StreamIterator to the Source outlet.
 	// It returns true if the StreamIterator is pointing to a valid segment.
@@ -23,9 +22,10 @@ type StreamIterator interface {
 	// Last seeks to the last segment in the StreamIterator. Returns true
 	// if the streamIterator is pointing to a valid segment.
 	Last() bool
-	// NextSpan pipes all segments in the StreamIterator from the current position to the end of the span.
-	// It returns true if the streamIterator is pointing to a valid segment. If span is TimeSpanMax, it will exhaust
-	// the streamIterator. If span is TimeSpanZero, it won't do anything.
+	// NextSpan pipes all segments in the StreamIterator from the current position to
+	// the end of the span. It returns true if the streamIterator is pointing to a
+	// valid segment. If span is TimeSpanMax, it will exhaust the streamIterator. If
+	// span is TimeSpanZero, it won't do anything.
 	NextSpan(span TimeSpan) bool
 	// PrevSpan pipes all segments in the StreamIterator from the current
 	PrevSpan(span TimeSpan) bool
@@ -59,7 +59,7 @@ type streamIterator struct {
 	// UnarySource is where values from the iterator will be piped.
 	confluence.UnarySource[RetrieveResponse]
 	// parser converts segment metadata into executable operations on disk.
-	parser operation.Parser[fileKey, retrieveOperation]
+	parser *retrieveParser
 	// executor is an Outlet where generated operations are piped for execution.
 	executor confluence.Inlet[[]retrieveOperation]
 	// wg is used to track the completion status of the latest operations in the iterator.
@@ -147,11 +147,16 @@ func (i *streamIterator) Exhaust(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			i.Out.Inlet() <- RetrieveResponse{Error: ctx.Err()}
-		}
-		if !i.Next() {
-			i.pipeOperations()
 			break
 		}
+		if !i.Next() {
+			break
+		}
+		if i.Error() != nil {
+			i.Out.Inlet() <- RetrieveResponse{Error: i.Error()}
+			break
+		}
+		i.pipeOperations()
 	}
 }
 
@@ -159,14 +164,12 @@ func (i *streamIterator) Exhaust(ctx context.Context) {
 func (i *streamIterator) Close() error {
 	i.updateError(i.internal.Close())
 	i.wg.Wait()
+	close(i.Out.Inlet())
 	return i.error()
 }
 
 func (i *streamIterator) pipeOperations() {
-	ops, err := i.parser.Parse(i.internal.Value())
-	for _, op := range ops {
-		op.BindWaitGroup(i.wg)
-	}
+	ops, err := i.parser.Parse(i.UnarySource, i.wg, i.internal.Value())
 	i.updateError(err)
 	if len(ops) == 0 {
 		return
