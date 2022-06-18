@@ -18,9 +18,7 @@ const (
 	kvDirectory = "kv"
 )
 
-type fileCounter struct {
-	kv.PersistedCounter
-}
+type fileCounter struct{ kv.PersistedCounter }
 
 func newFileCounter(kve kv.KV, key []byte) (*fileCounter, error) {
 	counter, err := kv.NewPersistedCounter(kve, key)
