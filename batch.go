@@ -8,17 +8,19 @@ import (
 
 // |||||| RETRIEVE ||||||
 
-type retrieveBatch confluence.Transform[[]retrieveOperation]
+type retrieveBatch struct {
+	confluence.Transform[[]retrieveOperation]
+}
 
 func newRetrieveBatch() retrieveSegment {
 	rb := &retrieveBatch{}
-	rb.Transform = rb.batch
+	rb.Transform.Transform = rb.batch
 	return rb
 }
 
 func (rb *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) ([]retrieveOperation, bool) {
 	if len(ops) == 0 {
-		return nil, false
+		return []retrieveOperation{}, false
 	}
 	// group the operations by file key.
 	files := make(map[core.FileKey]retrieveOperationSet)
@@ -29,27 +31,31 @@ func (rb *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) 
 		}
 	}
 	// order the operations by their offset in the file,
-	oOps := make([]retrieveOperation, len(files))
-	for i, opSet := range files {
-		sort.Slice(opSet, func(i, j int) bool { return opSet.Set[i].Offset() < opSet.Set[j].Offset() })
-		oOps[i] = opSet
+	oOps := make([]retrieveOperation, 0, len(files))
+	for _, opSet := range files {
+		sort.Slice(opSet.Set, func(i, j int) bool {
+			return opSet.Set[i].Offset() < opSet.Set[j].Offset()
+		})
+		oOps = append(oOps, opSet)
 	}
 	return oOps, true
 }
 
 // |||||| CREATE ||||||
 
-type createBatch confluence.Transform[[]createOperation]
+type createBatch struct {
+	confluence.Transform[[]createOperation]
+}
 
 func newCreateBatch() createSegment {
 	cb := &createBatch{}
-	cb.Transform = cb.batch
+	cb.Transform.Transform = cb.batch
 	return cb
 }
 
 func (cb *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]createOperation, bool) {
 	if len(ops) == 0 {
-		return nil, false
+		return []createOperation{}, false
 	}
 	// group the operations by file key.
 	files := make(map[core.FileKey]createOperationSet)
@@ -57,12 +63,13 @@ func (cb *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]c
 		files[op.FileKey()] = createOperationSet{Set: append(files[op.FileKey()].Set, op)}
 	}
 	// order the operations by their channel key.
-	for _, ops := range files {
-		sort.Slice(ops, func(i, j int) bool { return ops.Set[i].ChannelKey() > ops.Set[j].ChannelKey() })
-	}
-	oOps := make([]createOperation, len(ops))
-	for i, opSet := range files {
-		oOps[i] = opSet
+	oOps := make([]createOperation, 0, len(files))
+	for _, fileOps := range files {
+		sort.Slice(fileOps.Set, func(j, k int) bool {
+			return fileOps.Set[j].
+				ChannelKey() > fileOps.Set[k].ChannelKey()
+		})
+		oOps = append(oOps, fileOps)
 	}
 	return oOps, true
 }

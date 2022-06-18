@@ -107,7 +107,6 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 						wg:      wg,
 					}
 					op.OutTo(responses)
-					op.BindWaitGroup(wg)
 					ops = append(ops, op)
 				}
 				fileKeys := c.allocator.Allocate(ops...)
@@ -273,29 +272,49 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	}
 
 	// allocator is responsible for allocating new Segments to files.
-	allocator := allocate.New[channel.Key, core.FileKey, createOperation](fCount, allocate.Config{
-		MaxDescriptors: 10,
-		MaxSize:        1e9,
-	})
+	allocator := allocate.New[channel.Key, core.FileKey, createOperation](fCount, cfg.allocate)
 
 	// acquires and releases the locks on channels. Acquiring locks on channels simplifies
-	// the implementation of the database significantly, as we can avoid needing to serialize writes to the same channel
-	// from different goroutines.
+	// the implementation of the database significantly, as we can avoid needing to
+	// serialize writes to the same channel from different goroutines.
 	channelLock := lock.NewMap[channel.Key]()
 
 	pipeline := confluence.NewPipeline[[]createOperation]()
+
+	// queue 'debounces' operations so that they can be flushed to disk in efficient
+	// batches.
 	pipeline.Segment("queue", &queue.Debounce[createOperation]{DebounceConfig: cfg.debounce})
+
+	// batch groups operations into batches that are more efficient upon retrieval.
 	pipeline.Segment("batch", newCreateBatch())
+
+	// persist executes batched operations to disk.
 	pipeline.Segment("persist", persist.New[core.FileKey, createOperation](cfg.fs, cfg.persist))
 
 	rb := pipeline.NewRouteBuilder()
-	rb.Route(confluence.UnaryRouter[[]createOperation]{FromAddr: "queue", ToAddr: "batch", Capacity: 10})
-	rb.Route(confluence.UnaryRouter[[]createOperation]{FromAddr: "batch", ToAddr: "persist", Capacity: 10})
+
+	rb.Route(confluence.UnaryRouter[[]createOperation]{
+		FromAddr: "queue",
+		ToAddr:   "batch",
+		Capacity: 1,
+	})
+
+	rb.Route(confluence.UnaryRouter[[]createOperation]{
+		FromAddr: "batch",
+		ToAddr:   "persist",
+		Capacity: 1,
+	})
+
 	rb.RouteInletTo("queue")
-	inlet := confluence.NewStream[[]createOperation](10)
+
+	// inlet is the inlet for all create operations that executed on disk.
+	inlet := confluence.NewStream[[]createOperation](1)
+
 	pipeline.InFrom(inlet)
+
 	ctx := confluence.DefaultContext()
 	ctx.Shutdown = cfg.shutdown
+
 	pipeline.Flow(ctx)
 
 	return createFactory{
@@ -305,5 +324,5 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 		logger:    cfg.logger,
 		metrics:   newCreateMetrics(cfg.exp),
 		ops:       inlet,
-	}, nil
+	}, rb.Error()
 }

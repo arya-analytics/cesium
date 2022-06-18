@@ -8,10 +8,10 @@ import (
 
 const (
 	// maxFileSize is the default maximum Size of a cesium file.
-	maxFileSize = allocate.DefaultMaxDescriptors
+	maxFileSize = allocate.DefaultMaxSize
 	// maxFileDescriptors is the default maximum number of file descriptors
 	// cesium can open at a time.
-	maxFileDescriptors = allocate.DefaultMaxSize
+	maxFileDescriptors = allocate.DefaultMaxDescriptors
 	// cesiumDirectory is the directory in which cesium files are stored.
 	cesiumDirectory = "cesium"
 	// kvDirectory is the directory in which kv files are stored.

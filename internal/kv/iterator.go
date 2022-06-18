@@ -5,6 +5,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/gorp"
 	"github.com/arya-analytics/x/kv"
+	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/telem"
 	"github.com/cockroachdb/errors"
 )
@@ -148,6 +149,11 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 		iter.setError(err)
 		return iter
 	}
+	if len(chs) == 0 {
+		iter.setError(query.NotFound)
+		return iter
+	}
+
 	iter.channel = chs[0]
 
 	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterPrefix(segment.NewKeyPrefix(key)))
@@ -169,13 +175,13 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 		iter.setError(errors.New("[cesium.kv] - range has no data"))
 	}
 
-	//if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().OverlapsWith(rng) {
-	//	end = iter.key(iter.Value().UnboundedRange().End).Bytes()
-	//} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
-	//	end = iter.key(iter.Value().UnboundedRange().End).Bytes()
-	//} else {
-	//	iter.setError(errors.New("[cesium.kv] - range has no data"))
-	//}
+	if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().OverlapsWith(rng) {
+		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
+	} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
+		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
+	} else {
+		iter.setError(errors.New("[cesium.kv] - range has no data"))
+	}
 
 	iter.rng = rng
 	iter.setError(iter.internal.Close())

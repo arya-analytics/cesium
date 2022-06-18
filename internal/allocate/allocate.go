@@ -128,7 +128,7 @@ func (d *defaultAlloc[K, D, I]) allocate(item I) D {
 	}
 	size, ok := d.descriptorSizes[key]
 	if !ok {
-		panic("alloc: descriptor not found")
+		panic("[cesium.allocate] - descriptor not found")
 	}
 	// If the descriptor is too large, allocate a new descriptor.
 	if (size + item.Size()) > d.config.MaxSize {
