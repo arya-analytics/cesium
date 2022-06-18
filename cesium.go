@@ -8,12 +8,13 @@ import (
 	kvx "github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/shutdown"
-	"github.com/cockroachdb/errors"
 )
 
 var (
-	NotFound        = errors.New("[cesium] - not found")
-	UniqueViolation = errors.New("[cesium] - unique violation")
+	// NotFound is returned when a channel or a range of data cannot be found in the DB.
+	NotFound = query.NotFound
+	// UniqueViolation is returned when a provided channel key already exists in the DB.
+	UniqueViolation = query.UniqueViolation
 )
 
 type DB interface {
@@ -21,7 +22,7 @@ type DB interface {
 	// NewCreate opens a new Create query that is used for writing data to the DB.
 	// A simple, synchronous create query looks is the following:
 	//
-	//      // Open the DB
+	//      // Open a DB with a memory backed file system.
 	//		db := cesium.Open("", cesium.MemBacked())
 	//
 	//      // Create a new channel that samples five float64 values per second. Cesium
@@ -56,7 +57,6 @@ type DB interface {
 	// The Create query acquires a write lock on the channels provided to the query
 	// (in create.WhereChannels). No other goroutines can write to the locked channels
 	// until the query completed.
-	//
 	//
 	// Asynchronous Create queries are default in cesium to allow for network
 	// optimization and multi-segment write locks. They are a bit more complex to
@@ -208,8 +208,8 @@ type DB interface {
 	//
 	NewRetrieve() Retrieve
 
-	// CreateChannel opens a new CreateChannel query that is used for creating a new channel in the DB.
-	// Creating a channel is simple:
+	// CreateChannel opens a new CreateChannel query that is used for creating a
+	// new channel in the DB. Creating a channel is simple:
 	//
 	//		// Open the DB
 	//		ctx := context.Background()

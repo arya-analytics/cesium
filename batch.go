@@ -8,6 +8,13 @@ import (
 
 // |||||| RETRIEVE ||||||
 
+// retrieveBatch implements a simple batching algorithm that optimizes disk IO for a
+// set of retrieve operations (reads). The algorithm works as follows:
+//
+//  	1. Batch the operations by the file they belong to.
+//		2. Sort the operations by their offset in the file.
+//
+// The intent is to maximize sequential IO for a given set of operations.
 type retrieveBatch struct {
 	confluence.Transform[[]retrieveOperation]
 }
@@ -22,27 +29,32 @@ func (rb *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) 
 	if len(ops) == 0 {
 		return []retrieveOperation{}, false
 	}
-	// group the operations by file key.
-	files := make(map[core.FileKey]retrieveOperationSet)
+	fileGrouped := make(map[core.FileKey]retrieveOperationSet)
 	for _, op := range ops {
-
-		files[op.FileKey()] = retrieveOperationSet{
-			Set: append(files[op.FileKey()].Set, op),
-		}
+		fileGrouped[op.FileKey()] = retrieveOperationSet{Set: append(fileGrouped[op.FileKey()].Set, op)}
 	}
-	// order the operations by their offset in the file,
-	oOps := make([]retrieveOperation, 0, len(files))
-	for _, opSet := range files {
+	channelSorted := make([]retrieveOperation, 0, len(fileGrouped))
+	for _, opSet := range fileGrouped {
 		sort.Slice(opSet.Set, func(i, j int) bool {
 			return opSet.Set[i].Offset() < opSet.Set[j].Offset()
 		})
-		oOps = append(oOps, opSet)
+		channelSorted = append(channelSorted, opSet)
 	}
-	return oOps, true
+	return channelSorted, true
 }
 
 // |||||| CREATE ||||||
 
+// createBatch implements a simple batching algorithm that optimizes disk IO for a
+// set of create operations (writes). The algorithm works as follows:
+//
+// 		1. Batch the operations by the file they belong to. The batching algorithm
+// 		has no influence on the files segments are allocated to. This is handled
+// 		by allocate.Allocator.
+//		2. Sort the operations by their channel key. It's common to retrieve large,
+//		contiguous ranges of data from an individual channel. By keeping segments
+// 		of the same channel together, we can minimize the number of disk seeks.
+//
 type createBatch struct {
 	confluence.Transform[[]createOperation]
 }
@@ -57,20 +69,17 @@ func (cb *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]c
 	if len(ops) == 0 {
 		return []createOperation{}, false
 	}
-	// group the operations by file key.
-	files := make(map[core.FileKey]createOperationSet)
+	fileGrouped := make(map[core.FileKey]createOperationSet)
 	for _, op := range ops {
-		files[op.FileKey()] = createOperationSet{Set: append(files[op.FileKey()].Set, op)}
+		fileGrouped[op.FileKey()] = createOperationSet{Set: append(fileGrouped[op.FileKey()].Set, op)}
 	}
-	// order the operations by their channel key.
-	oOps := make([]createOperation, 0, len(files))
-	for _, fileOps := range files {
+	channelSorted := make([]createOperation, 0, len(fileGrouped))
+	for _, fileOps := range fileGrouped {
 		sort.Slice(fileOps.Set, func(j, k int) bool {
 			return fileOps.Set[j].
 				ChannelKey() > fileOps.Set[k].ChannelKey()
 		})
-		oOps = append(oOps, fileOps)
+		channelSorted = append(channelSorted, fileOps)
 	}
-	return oOps, true
-	return ops, true
+	return channelSorted, true
 }
