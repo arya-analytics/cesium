@@ -18,102 +18,20 @@ import (
 	"time"
 )
 
-type (
-	retrieveSegment = confluence.Segment[[]retrieveOperation]
+type retrieveSegment = confluence.Segment[[]retrieveOperation]
+
+// |||||| CONFIGURATION ||||||
+
+const (
+	// retrievePersistMaxRoutines is the maximum number of goroutines the retrieve query persist.Persist can use.
+	retrievePersistMaxRoutines = persist.DefaultNumWorkers
+	// retrieveDebounceFlushInterval is the interval at which retrieve debounce queue will flush if the number of
+	// retrieve operations is below the threshold.
+	retrieveDebounceFlushInterval = 10 * time.Millisecond
+	// retrieveDebounceFlushThreshold is the number of retrieve operations that must be in the debounce queue before
+	// it flushes
+	retrieveDebounceFlushThreshold = 10
 )
-
-// |||||| STREAM ||||||
-
-// RetrieveResponse is a response containing segments satisfying a Retrieve Query as well as any errors
-// encountered during the retrieval.
-type RetrieveResponse struct {
-	Error    error
-	Segments []segment.Segment
-}
-
-// |||||| QUERY ||||||
-
-type Retrieve struct {
-	query.Query
-	kve    kv.KV
-	ops    confluence.Inlet[[]retrieveOperation]
-	parser *retrieveParser
-}
-
-// WhereChannels sets the channels to retrieve data for.
-// If no keys are provided, will return an ErrInvalidQuery error.
-func (r Retrieve) WhereChannels(keys ...ChannelKey) Retrieve { channel.SetKeys(r, keys...); return r }
-
-// WhereTimeRange sets the time range to retrieve data from.
-func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); return r }
-
-// Stream streams all segments from the iterator out to the channel. Errors encountered
-// during stream construction are returned immediately. Errors encountered during
-// segment reads are returns as part of RetrieveResponse.
-func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
-	stream := confluence.NewStream[RetrieveResponse](10)
-	iter := r.Iterate()
-	if err := iter.Error(); err != nil {
-		return nil, err
-	}
-	iter.OutTo(stream)
-	iter.First()
-	go func() {
-		iter.Exhaust(ctx)
-		if err := iter.Close(); err != nil {
-			panic(err)
-		}
-	}()
-	return stream.Outlet(), nil
-}
-
-func (r Retrieve) Iterate() StreamIterator {
-	return &streamIterator{
-		internal: ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...),
-		executor: r.ops,
-		parser:   r.parser,
-		wg:       &sync.WaitGroup{},
-	}
-}
-
-// |||||| OPTIONS ||||||
-
-// |||| TIME RANGE ||||
-
-const timeRangeOptKey query.OptionKey = "tr"
-
-func setTimeRange(q query.Query, tr TimeRange) {
-	q.Set(timeRangeOptKey, tr)
-}
-
-func timeRange(q query.Query) TimeRange {
-	tr, ok := q.Get(timeRangeOptKey)
-	if !ok {
-		return TimeRangeMax
-	}
-	return tr.(TimeRange)
-}
-
-// |||||| QUERY FACTORY ||||||
-
-type retrieveFactory struct {
-	ops    confluence.Inlet[[]retrieveOperation]
-	kve    kv.KV
-	parser *retrieveParser
-}
-
-func (r retrieveFactory) New() Retrieve {
-	return Retrieve{
-		Query:  query.New(),
-		ops:    r.ops,
-		kve:    r.kve,
-		parser: r.parser,
-	}
-}
-
-// ||||||| BATCH |||||||
-
-// |||||| METRICS ||||||
 
 type retrieveConfig struct {
 	// exp is used to track metrics for the Retrieve query. See retrieveMetrics for more.
@@ -159,64 +77,181 @@ func mergeRetrieveConfigDefaults(cfg *retrieveConfig) {
 	}
 }
 
-const (
-	// retrievePersistMaxRoutines is the maximum number of goroutines the retrieve query persist.Persist can use.
-	retrievePersistMaxRoutines = persist.DefaultNumWorkers
-	// retrieveDebounceFlushInterval is the interval at which retrieve debounce queue will flush if the number of
-	// retrieve operations is below the threshold.
-	retrieveDebounceFlushInterval = 10 * time.Millisecond
-	// retrieveDebounceFlushThreshold is the number of retrieve operations that must be in the debounce queue before
-	// it flushes
-	retrieveDebounceFlushThreshold = 10
-)
+// |||||| STREAM ||||||
 
-type retrieveParser struct {
+// RetrieveResponse is a response containing segments satisfying a Retrieve Query as well as any errors
+// encountered during the retrieval.
+type RetrieveResponse struct {
+	Error    error
+	Segments []segment.Segment
+}
+
+// |||||| QUERY ||||||
+
+type Retrieve struct {
+	query.Query
+	kve     kv.KV
+	ops     confluence.Inlet[[]retrieveOperation]
+	metrics retrieveMetrics
+	logger  *zap.Logger
+}
+
+// WhereChannels sets the channels to retrieve data for.
+// If no keys are provided, will return an ErrInvalidQuery error.
+func (r Retrieve) WhereChannels(keys ...ChannelKey) Retrieve { channel.SetKeys(r, keys...); return r }
+
+// WhereTimeRange sets the time range to retrieve data from.
+func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); return r }
+
+// Stream streams all segments from the iterator out to the channel. Errors encountered
+// during stream construction are returned immediately. Errors encountered during
+// segment reads are returns as part of RetrieveResponse.
+func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
+	stream := confluence.NewStream[RetrieveResponse](10)
+	iter := r.Iterate(ctx)
+	if err := iter.Error(); err != nil {
+		return nil, err
+	}
+	iter.OutTo(stream)
+	iter.First()
+	go func() {
+		iter.Exhaust(ctx)
+		if err := iter.Close(); err != nil {
+			panic(err)
+		}
+	}()
+	return stream.Outlet(), nil
+}
+
+func (r Retrieve) Iterate(ctx context.Context) StreamIterator {
+	responses := &confluence.UnarySource[RetrieveResponse]{}
+	wg := &sync.WaitGroup{}
+	return &streamIterator{
+		internal: ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...),
+		executor: r.ops,
+		parser: &retrieveParser{
+			ctx:       ctx,
+			logger:    r.logger,
+			responses: responses,
+			wg:        wg,
+			metrics:   r.metrics,
+		},
+		wg:          wg,
+		UnarySource: responses,
+	}
+}
+
+// |||||| OPTIONS ||||||
+
+// |||| TIME RANGE ||||
+
+const timeRangeOptKey query.OptionKey = "tr"
+
+func setTimeRange(q query.Query, tr TimeRange) {
+	q.Set(timeRangeOptKey, tr)
+}
+
+func timeRange(q query.Query) TimeRange {
+	tr, ok := q.Get(timeRangeOptKey)
+	if !ok {
+		return TimeRangeMax
+	}
+	return tr.(TimeRange)
+}
+
+// |||||| QUERY FACTORY ||||||
+
+type retrieveFactory struct {
+	ops     confluence.Inlet[[]retrieveOperation]
+	kve     kv.KV
 	logger  *zap.Logger
 	metrics retrieveMetrics
 }
 
-func (r *retrieveParser) Parse(
-	source confluence.UnarySource[RetrieveResponse],
-	wg *sync.WaitGroup,
-	ranges []*segment.Range,
-) ([]retrieveOperation, error) {
+func (r retrieveFactory) New() Retrieve {
+	return Retrieve{
+		Query:   query.New(),
+		ops:     r.ops,
+		kve:     r.kve,
+		logger:  r.logger,
+		metrics: r.metrics,
+	}
+}
+
+// |||||| PARSER ||||||
+
+type retrieveParser struct {
+	ctx       context.Context
+	responses *confluence.UnarySource[RetrieveResponse]
+	logger    *zap.Logger
+	metrics   retrieveMetrics
+	wg        *sync.WaitGroup
+}
+
+func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
 	var ops []retrieveOperation
 	for _, rng := range ranges {
-		wg.Add(len(rng.Headers))
 		for _, header := range rng.Headers {
 			seg := header.Sugar(rng.Channel)
 			seg.SetBounds(rng.Bound)
 			ops = append(ops, retrieveOperationUnary{
+				ctx:         r.ctx,
 				seg:         seg,
-				ctx:         context.Background(),
 				dataRead:    r.metrics.dataRead,
-				wg:          wg,
+				wg:          r.wg,
 				logger:      r.logger,
-				UnarySource: source,
+				UnarySource: r.responses,
 			})
 		}
 	}
-	return ops, nil
+	return ops
 }
 
 func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 	mergeRetrieveConfigDefaults(&cfg)
+
 	pipeline := confluence.NewPipeline[[]retrieveOperation]()
+
+	// queue 'debounces' operations so that they can be flushed to disk in efficient
+	// batches.
 	pipeline.Segment("queue", &queue.Debounce[retrieveOperation]{DebounceConfig: cfg.debounce})
+
+	// batch groups operations into batches that optimize sequential IO.
 	pipeline.Segment("batch", newRetrieveBatch())
+
+	// persist executeds batched operations on disk.
 	pipeline.Segment("persist", persist.New[core.FileKey, retrieveOperation](cfg.fs, cfg.persist))
+
 	rb := pipeline.NewRouteBuilder()
-	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{FromAddr: "queue", ToAddr: "batch", Capacity: 10})
-	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{FromAddr: "batch", ToAddr: "persist", Capacity: 10})
+
+	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{
+		FromAddr: "queue",
+		ToAddr:   "batch",
+		Capacity: 10,
+	})
+
+	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{
+		FromAddr: "batch",
+		ToAddr:   "persist",
+		Capacity: 10,
+	})
+
 	rb.RouteInletTo("queue")
-	inlet := confluence.NewStream[[]retrieveOperation](10)
+
+	// inlet is the inlet for all retrieve operations to be executed on disk.
+	inlet := confluence.NewStream[[]retrieveOperation](1)
+
 	pipeline.InFrom(inlet)
+
 	ctx := confluence.DefaultContext()
 	ctx.Shutdown = cfg.shutdown
+
 	pipeline.Flow(ctx)
+
 	return retrieveFactory{
-		ops:    inlet,
-		kve:    cfg.kv,
-		parser: &retrieveParser{metrics: newRetrieveMetrics(cfg.exp), logger: cfg.logger},
+		ops:     inlet,
+		kve:     cfg.kv,
+		metrics: newRetrieveMetrics(cfg.exp),
+		logger:  cfg.logger,
 	}, rb.Error()
 }

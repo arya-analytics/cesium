@@ -22,124 +22,22 @@ import (
 
 type createSegment = confluence.Segment[[]createOperation]
 
-// |||||| STREAM ||||||
+// |||||| CONFIGURATION ||||||
 
-// CreateRequest is a request containing a set of segments (segment) to write to the DB.
-type CreateRequest struct {
-	Segments []segment.Segment
-}
-
-// CreateResponse contains any errors that occurred during the execution of the Create Query.
-type CreateResponse struct {
-	Error error
-}
-
-// |||||| QUERY ||||||
-
-type Create struct {
-	query.Query
-	ops     confluence.Inlet[[]createOperation]
-	lock    lock.Map[channel.Key]
-	kv      kvx.KV
-	logger  *zap.Logger
-	metrics createMetrics
-}
-
-// WhereChannels sets the channels to acquire a lock on for creation.
-// The request stream will only accept segmentKV bound to channel with the given primary keys.
-// If no keys are provided, will return an ErrInvalidQuery error.
-func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, keys...); return c }
-
-// Stream opens a stream
-func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
-	query.SetContext(c, ctx)
-	keys := channel.GetKeys(c)
-	if err := c.lock.Acquire(keys...); err != nil {
-		return nil, nil, err
-	}
-	defer c.lock.Release(keys...)
-
-	channels, err := kv.NewChannel(c.kv).Get(keys...)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if len(channels) != len(keys) {
-		return nil, nil, NotFound
-	}
-
-	chanMap := make(map[channel.Key]channel.Channel)
-	for _, ch := range channels {
-		chanMap[ch.Key] = ch
-	}
-
-	requests := confluence.NewStream[CreateRequest](10)
-	responses := confluence.NewStream[CreateResponse](10)
-	header := kv.NewHeader(c.kv)
-
-	go func() {
-		requestDur := c.metrics.request.Stopwatch()
-		requestDur.Start()
-		wg := &sync.WaitGroup{}
-		defer func() {
-			wg.Wait()
-			close(responses.Inlet())
-			requestDur.Stop()
-		}()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case req, ok := <-requests.Outlet():
-				if !ok {
-					return
-				}
-				var ops []createOperation
-				for _, seg := range req.Segments {
-					op := createOperationUnary{
-						ctx:     ctx,
-						seg:     seg.Sugar(chanMap[seg.ChannelKey]),
-						logger:  c.logger,
-						kv:      header,
-						metrics: c.metrics,
-						wg:      wg,
-					}
-					c.metrics.segSize.Record(int(op.seg.UnboundedSize()))
-					op.OutTo(responses)
-					ops = append(ops, op)
-				}
-				wg.Add(len(ops))
-				c.ops.Inlet() <- ops
-			}
-		}
-	}()
-	return requests.Inlet(), responses.Outlet(), nil
-}
-
-// |||||| QUERY FACTORY ||||||
-
-type createFactory struct {
-	lock    lock.Map[channel.Key]
-	kv      kvx.KV
-	logger  *zap.Logger
-	header  *kv.Header
-	metrics createMetrics
-	ops     confluence.Inlet[[]createOperation]
-}
-
-// New implements the query.Factory interface.
-func (c createFactory) New() Create {
-	return Create{
-		Query:   query.New(),
-		kv:      c.kv,
-		logger:  c.logger,
-		metrics: c.metrics,
-		ops:     c.ops,
-		lock:    c.lock,
-	}
-}
-
-// |||||| START UP |||||||
+const (
+	// createPersistMaxRoutines is the maximum number of goroutines the create
+	// query persist.Persist can use.
+	createPersistMaxRoutines = persist.DefaultNumWorkers
+	// createDebounceFlushInterval is the interval at which create debounce
+	// queue will flush if the number of create operations is below the threshold.
+	createDebounceFlushInterval = 100 * time.Millisecond
+	// createDebounceFlushThreshold is the number of operations that must be queued
+	//before create debounce queue will flush.
+	createDebounceFlushThreshold = 100
+	// fileCounterKey is the key for the counter that keeps track of the number of files
+	// the DB has created.
+	fileCounterKey = "cesium.nextFile"
+)
 
 type createConfig struct {
 	// exp is used to track metrics for the Create query. See createMetrics for all the recorded values.
@@ -198,20 +96,154 @@ func mergeCreateConfigDefaults(cfg *createConfig) {
 	}
 }
 
-const (
-	// createPersistMaxRoutines is the maximum number of goroutines the create
-	// query persist.Persist can use.
-	createPersistMaxRoutines = persist.DefaultNumWorkers
-	// createDebounceFlushInterval is the interval at which create debounce
-	// queue will flush if the number of create operations is below the threshold.
-	createDebounceFlushInterval = 100 * time.Millisecond
-	// createDebounceFlushThreshold is the number of operations that must be queued
-	//before create debounce queue will flush.
-	createDebounceFlushThreshold = 100
-	// fileCounterKey is the key for the counter that keeps track of the number of files
-	// the DB has created.
-	fileCounterKey = "cesium.nextFile"
-)
+// |||||| STREAM ||||||
+
+// CreateRequest is a request containing a set of segments (segment) to write to the DB.
+type CreateRequest struct {
+	Segments []segment.Segment
+}
+
+// CreateResponse contains any errors that occurred during the execution of the Create Query.
+type CreateResponse struct {
+	Error error
+}
+
+// |||||| QUERY ||||||
+
+type Create struct {
+	query.Query
+	ops     confluence.Inlet[[]createOperation]
+	lock    lock.Map[channel.Key]
+	kv      kvx.KV
+	logger  *zap.Logger
+	metrics createMetrics
+}
+
+// WhereChannels sets the channels to acquire a lock on for creation.
+// The request stream will only accept segmentKV bound to channel with the given primary keys.
+// If no keys are provided, will return an ErrInvalidQuery error.
+func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, keys...); return c }
+
+// Stream opens a stream
+func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
+	query.SetContext(c, ctx)
+	keys := channel.GetKeys(c)
+	if err := c.lock.Acquire(keys...); err != nil {
+		return nil, nil, err
+	}
+	defer c.lock.Release(keys...)
+
+	_channels, err := kv.NewChannel(c.kv).Get(keys...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(_channels) != len(keys) {
+		return nil, nil, NotFound
+	}
+
+	channels := make(map[channel.Key]channel.Channel)
+	for _, ch := range _channels {
+		channels[ch.Key] = ch
+	}
+
+	requests := confluence.NewStream[CreateRequest](10)
+	responses := confluence.NewStream[CreateResponse](10)
+
+	responseSource := confluence.UnarySource[CreateResponse]{}
+	responseSource.OutTo(responses)
+
+	wg := &sync.WaitGroup{}
+
+	parser := &createParser{
+		ctx:       ctx,
+		logger:    c.logger,
+		metrics:   c.metrics,
+		header:    kv.NewHeader(c.kv),
+		channels:  channels,
+		responses: responseSource,
+		wg:        wg,
+	}
+
+	go func() {
+		requestDur := c.metrics.request.Stopwatch()
+		requestDur.Start()
+		defer func() {
+			wg.Wait()
+			close(responseSource.Out.Inlet())
+			requestDur.Stop()
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case req, ok := <-requests.Outlet():
+				if !ok {
+					return
+				}
+				ops := parser.parse(req.Segments)
+				wg.Add(len(ops))
+				c.ops.Inlet() <- ops
+			}
+		}
+	}()
+	return requests.Inlet(), responses.Outlet(), nil
+}
+
+// |||||| QUERY FACTORY ||||||
+
+type createFactory struct {
+	lock    lock.Map[channel.Key]
+	kv      kvx.KV
+	logger  *zap.Logger
+	header  *kv.Header
+	metrics createMetrics
+	ops     confluence.Inlet[[]createOperation]
+}
+
+// New implements the query.Factory interface.
+func (c createFactory) New() Create {
+	return Create{
+		Query:   query.New(),
+		kv:      c.kv,
+		logger:  c.logger,
+		metrics: c.metrics,
+		ops:     c.ops,
+		lock:    c.lock,
+	}
+}
+
+// |||||| PARSER |||||||
+
+type createParser struct {
+	ctx       context.Context
+	logger    *zap.Logger
+	metrics   createMetrics
+	wg        *sync.WaitGroup
+	responses confluence.UnarySource[CreateResponse]
+	channels  map[channel.Key]channel.Channel
+	header    *kv.Header
+}
+
+func (c *createParser) parse(segments []Segment) []createOperation {
+	var ops []createOperation
+	for _, seg := range segments {
+		op := createOperationUnary{
+			ctx:         c.ctx,
+			seg:         seg.Sugar(c.channels[seg.ChannelKey]),
+			logger:      c.logger,
+			kv:          c.header,
+			metrics:     c.metrics,
+			wg:          c.wg,
+			UnarySource: c.responses,
+		}
+		c.metrics.segSize.Record(int(op.seg.UnboundedSize()))
+		ops = append(ops, op)
+	}
+	return ops
+}
+
+// |||||| START UP |||||||
 
 func startCreate(cfg createConfig) (query.Factory[Create], error) {
 
@@ -268,7 +300,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 
 	rb.RouteInletTo("allocator")
 
-	// inlet is the inlet for all create operations that executed on disk.
+	// inlet is the inlet for all create operations to be executed on disk.
 	inlet := confluence.NewStream[[]createOperation](1)
 
 	pipeline.InFrom(inlet)

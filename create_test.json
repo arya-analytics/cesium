@@ -2,20 +2,20 @@
  "cesium": {
   "create": {
    "dataWriteDuration": {
-    "avg": 4297616,
+    "avg": 3249992,
     "count": 10,
     "key": "dataWriteDuration",
-    "max": 23201470,
-    "min": 360032,
-    "value": 42976167
+    "max": 19368796,
+    "min": 505880,
+    "value": 32499926
    },
    "headerFlushDuration": {
-    "avg": 25915,
+    "avg": 36893,
     "count": 10,
     "key": "headerFlushDuration",
-    "max": 65765,
-    "min": 10280,
-    "value": 259155
+    "max": 85427,
+    "min": 15918,
+    "value": 368933
    },
    "lockAcquireDuration": {
     "avg": 0,
@@ -34,12 +34,12 @@
     "value": 0
    },
    "requestDuration": {
-    "avg": 139144773,
+    "avg": 131775057,
     "count": 1,
     "key": "requestDuration",
-    "max": 139144773,
-    "min": 139144773,
-    "value": 139144773
+    "max": 131775057,
+    "min": 131775057,
+    "value": 131775057
    },
    "segmentSize": {
     "avg": 2000000,
@@ -50,30 +50,30 @@
     "value": 20000000
    },
    "totalFlushDuration": {
-    "avg": 4326439,
+    "avg": 3290124,
     "count": 10,
     "key": "totalFlushDuration",
-    "max": 23275208,
-    "min": 371421,
-    "value": 43264390
+    "max": 19463490,
+    "min": 531832,
+    "value": 32901240
    }
   },
   "kfs.FS": {
    "Acquire": {
-    "avg": 177840,
+    "avg": 2719850,
     "count": 1,
     "key": "Acquire",
-    "max": 177840,
-    "min": 177840,
-    "value": 177840
+    "max": 2719850,
+    "min": 2719850,
+    "value": 2719850
    },
    "Release": {
-    "avg": 2474,
+    "avg": 1636,
     "count": 1,
     "key": "Release",
-    "max": 2474,
-    "min": 2474,
-    "value": 2474
+    "max": 1636,
+    "min": 1636,
+    "value": 1636
    },
    "Remove": {
     "avg": 0,

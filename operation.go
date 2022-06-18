@@ -30,7 +30,7 @@ type retrieveOperationUnary struct {
 	dataRead alamos.Duration
 	wg       *sync.WaitGroup
 	logger   *zap.Logger
-	confluence.UnarySource[RetrieveResponse]
+	*confluence.UnarySource[RetrieveResponse]
 }
 
 // Context implements retrieveOperation.

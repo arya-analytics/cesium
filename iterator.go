@@ -57,7 +57,7 @@ type streamIterator struct {
 	// behind the operations.
 	internal kv.Iterator
 	// UnarySource is where values from the iterator will be piped.
-	confluence.UnarySource[RetrieveResponse]
+	*confluence.UnarySource[RetrieveResponse]
 	// parser converts segment metadata into executable operations on disk.
 	parser *retrieveParser
 	// executor is an Outlet where generated operations are piped for execution.
@@ -82,7 +82,7 @@ func (i *streamIterator) First() bool {
 	if !i.internal.First() {
 		return false
 	}
-	i.pipeOperations()
+	i.pipeOperations(context.Background())
 	return true
 }
 
@@ -91,7 +91,7 @@ func (i *streamIterator) Last() bool {
 	if !i.internal.Last() {
 		return false
 	}
-	i.pipeOperations()
+	i.pipeOperations(context.Background())
 	return true
 }
 
@@ -100,7 +100,7 @@ func (i *streamIterator) NextSpan(span TimeSpan) bool {
 	if !i.internal.NextSpan(span) {
 		return false
 	}
-	i.pipeOperations()
+	i.pipeOperations(context.Background())
 	return true
 }
 
@@ -109,7 +109,7 @@ func (i *streamIterator) PrevSpan(span TimeSpan) bool {
 	if !i.internal.PrevSpan(span) {
 		return false
 	}
-	i.pipeOperations()
+	i.pipeOperations(context.Background())
 	return true
 }
 
@@ -118,7 +118,7 @@ func (i *streamIterator) NextRange(tr TimeRange) bool {
 	if !i.internal.NextRange(tr) {
 		return false
 	}
-	i.pipeOperations()
+	i.pipeOperations(context.Background())
 	return true
 }
 
@@ -156,7 +156,7 @@ func (i *streamIterator) Exhaust(ctx context.Context) {
 			i.Out.Inlet() <- RetrieveResponse{Error: i.Error()}
 			break
 		}
-		i.pipeOperations()
+		i.pipeOperations(ctx)
 	}
 }
 
@@ -168,12 +168,12 @@ func (i *streamIterator) Close() error {
 	return i.error()
 }
 
-func (i *streamIterator) pipeOperations() {
-	ops, err := i.parser.Parse(i.UnarySource, i.wg, i.internal.Values())
-	i.updateError(err)
+func (i *streamIterator) pipeOperations(ctx context.Context) {
+	ops := i.parser.parse(i.internal.Values())
 	if len(ops) == 0 {
 		return
 	}
+	i.wg.Add(len(ops))
 	i.executor.Inlet() <- ops
 }
 
