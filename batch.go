@@ -54,23 +54,23 @@ func newCreateBatch() createSegment {
 }
 
 func (cb *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]createOperation, bool) {
-	//if len(ops) == 0 {
-	//	return []createOperation{}, false
-	//}
-	//// group the operations by file key.
-	//files := make(map[core.FileKey]createOperationSet)
-	//for _, op := range ops {
-	//	files[op.FileKey()] = createOperationSet{Set: append(files[op.FileKey()].Set, op)}
-	//}
-	//// order the operations by their channel key.
-	//oOps := make([]createOperation, 0, len(files))
-	//for _, fileOps := range files {
-	//	sort.Slice(fileOps.Set, func(j, k int) bool {
-	//		return fileOps.Set[j].
-	//			ChannelKey() > fileOps.Set[k].ChannelKey()
-	//	})
-	//	oOps = append(oOps, fileOps)
-	//}
-	//return oOps, true
+	if len(ops) == 0 {
+		return []createOperation{}, false
+	}
+	// group the operations by file key.
+	files := make(map[core.FileKey]createOperationSet)
+	for _, op := range ops {
+		files[op.FileKey()] = createOperationSet{Set: append(files[op.FileKey()].Set, op)}
+	}
+	// order the operations by their channel key.
+	oOps := make([]createOperation, 0, len(files))
+	for _, fileOps := range files {
+		sort.Slice(fileOps.Set, func(j, k int) bool {
+			return fileOps.Set[j].
+				ChannelKey() > fileOps.Set[k].ChannelKey()
+		})
+		oOps = append(oOps, fileOps)
+	}
+	return oOps, true
 	return ops, true
 }
