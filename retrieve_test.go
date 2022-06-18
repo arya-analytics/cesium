@@ -12,10 +12,10 @@ import (
 var _ = Describe("Retrieve", func() {
 	Context("Single channel", func() {
 		var (
-			db  cesium.DB
-			cpk cesium.ChannelKey
-			c   cesium.Channel
-			log *zap.Logger
+			db      cesium.DB
+			key     cesium.ChannelKey
+			channel cesium.Channel
+			log     *zap.Logger
 		)
 		BeforeEach(func() {
 			var err error
@@ -23,44 +23,46 @@ var _ = Describe("Retrieve", func() {
 			db, err = cesium.Open("testdata", cesium.MemBacked(),
 				cesium.WithLogger(log))
 			Expect(err).ToNot(HaveOccurred())
-			c = cesium.Channel{
+			channel = cesium.Channel{
 				DataRate: 1 * cesium.Hz,
 				DataType: cesium.Float64,
 			}
-			cpk, err = db.CreateChannel(c)
-			c.Key = cpk
+			key, err = db.CreateChannel(channel)
+			channel.Key = key
 			Expect(err).ToNot(HaveOccurred())
 		})
 		AfterEach(func() {
 			Expect(db.Close()).To(Succeed())
 		})
 		It("Should read the segments correctly", func() {
-			req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
+			req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
 			stc := &seg.StreamCreate{
 				Req: req,
 				Res: res,
-				SequentialFactory: seg.NewSequentialFactory(&seg.
-					RandomFloat64Factory{}, 10*cesium.Second,
-					c),
+				SequentialFactory: seg.NewSequentialFactory(
+					&seg.RandomFloat64Factory{},
+					10*cesium.Second,
+					channel,
+				),
 			}
 			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
-			resV, err := db.NewRetrieve().WhereChannels(cpk).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
+			resV, err := db.NewRetrieve().WhereChannels(key).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			segments, err := seg.StreamRetrieve{Res: resV}.All()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(segments).To(HaveLen(20))
 		})
 		It("It should support multiple concurrent read requests", func() {
-			req, res, err := db.NewCreate().WhereChannels(cpk).Stream(ctx)
+			req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			stc := &seg.StreamCreate{
 				Req: req,
 				Res: res,
 				SequentialFactory: seg.NewSequentialFactory(&seg.
 					RandomFloat64Factory{}, 10*cesium.Second,
-					c),
+					channel),
 			}
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
@@ -72,7 +74,7 @@ var _ = Describe("Retrieve", func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					rResV, err := db.NewRetrieve().
-						WhereChannels(cpk).
+						WhereChannels(key).
 						WhereTimeRange(cesium.TimeRangeMax).
 						Stream(ctx)
 					Expect(err).ToNot(HaveOccurred())

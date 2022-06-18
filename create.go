@@ -124,7 +124,7 @@ type Create struct {
 // If no keys are provided, will return an ErrInvalidQuery error.
 func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, keys...); return c }
 
-// Stream opens a stream
+// Stream opens the stream.
 func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
 	query.SetContext(c, ctx)
 	keys := channel.GetKeys(c)

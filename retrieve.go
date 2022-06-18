@@ -115,7 +115,7 @@ func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	iter.OutTo(stream)
 	iter.First()
 	go func() {
-		iter.Exhaust(ctx)
+		iter.Exhaust()
 		if err := iter.Close(); err != nil {
 			panic(err)
 		}
@@ -127,6 +127,7 @@ func (r Retrieve) Iterate(ctx context.Context) StreamIterator {
 	responses := &confluence.UnarySource[RetrieveResponse]{}
 	wg := &sync.WaitGroup{}
 	return &streamIterator{
+		ctx:      ctx,
 		internal: ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...),
 		executor: r.ops,
 		parser: &retrieveParser{

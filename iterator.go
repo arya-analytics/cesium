@@ -33,6 +33,10 @@ type StreamIterator interface {
 	// to the Source outlet. It returns true if the streamIterator is pointing to a valid segment.
 	// If range is TimeRangeMax, exhausts the StreamIterator. If range is TimeRangeZero, it won't do anything.
 	NextRange(tr telem.TimeRange) bool
+	// SeekFirst seeks the iterator to the first segment in the range.
+	SeekFirst() bool
+	// SeekLast seeks the iterator to the last segment in the range.
+	SeekLast() bool
 	// SeekLT seeks the StreamIterator to the first segment with a timestamp less than the provided timestamp.
 	// It returns true if the StreamIterator is pointing to a valid segment.
 	SeekLT(time TimeStamp) bool
@@ -43,8 +47,7 @@ type StreamIterator interface {
 	// segments most recently returned to the caller.
 	View() TimeRange
 	// Exhaust exhausts the StreamIterator, piping all segments to the Source outlet.
-	// Cancelling the context results in an immediate abort of all ongoing operations.
-	Exhaust(ctx context.Context)
+	Exhaust()
 	// Error returns the error encountered during the last call to the StreamIterator.
 	// This value is reset after iteration.
 	Error() error
@@ -53,6 +56,7 @@ type StreamIterator interface {
 }
 
 type streamIterator struct {
+	ctx context.Context
 	// internal is the iterator that traverses segment metadata in key-value storage. It's essentially the 'brains'
 	// behind the operations.
 	internal kv.Iterator
@@ -82,7 +86,7 @@ func (i *streamIterator) First() bool {
 	if !i.internal.First() {
 		return false
 	}
-	i.pipeOperations(context.Background())
+	i.pipeOperations()
 	return true
 }
 
@@ -91,7 +95,7 @@ func (i *streamIterator) Last() bool {
 	if !i.internal.Last() {
 		return false
 	}
-	i.pipeOperations(context.Background())
+	i.pipeOperations()
 	return true
 }
 
@@ -100,7 +104,7 @@ func (i *streamIterator) NextSpan(span TimeSpan) bool {
 	if !i.internal.NextSpan(span) {
 		return false
 	}
-	i.pipeOperations(context.Background())
+	i.pipeOperations()
 	return true
 }
 
@@ -109,7 +113,7 @@ func (i *streamIterator) PrevSpan(span TimeSpan) bool {
 	if !i.internal.PrevSpan(span) {
 		return false
 	}
-	i.pipeOperations(context.Background())
+	i.pipeOperations()
 	return true
 }
 
@@ -118,9 +122,13 @@ func (i *streamIterator) NextRange(tr TimeRange) bool {
 	if !i.internal.NextRange(tr) {
 		return false
 	}
-	i.pipeOperations(context.Background())
+	i.pipeOperations()
 	return true
 }
+
+func (i *streamIterator) SeekFirst() bool { return i.internal.SeekFirst() }
+
+func (i *streamIterator) SeekLast() bool { return i.internal.SeekLast() }
 
 // SeekLT implements StreamIterator.
 func (i *streamIterator) SeekLT(stamp TimeStamp) bool { return i.internal.SeekLT(stamp) }
@@ -143,10 +151,10 @@ func (i *streamIterator) Error() error {
 }
 
 // Exhaust implements StreamIterator.
-func (i *streamIterator) Exhaust(ctx context.Context) {
+func (i *streamIterator) Exhaust() {
 	for {
-		if ctx.Err() != nil {
-			i.Out.Inlet() <- RetrieveResponse{Error: ctx.Err()}
+		if i.ctx.Err() != nil {
+			i.Out.Inlet() <- RetrieveResponse{Error: i.ctx.Err()}
 			break
 		}
 		if !i.Next() {
@@ -156,7 +164,7 @@ func (i *streamIterator) Exhaust(ctx context.Context) {
 			i.Out.Inlet() <- RetrieveResponse{Error: i.Error()}
 			break
 		}
-		i.pipeOperations(ctx)
+		i.pipeOperations()
 	}
 }
 
@@ -168,7 +176,7 @@ func (i *streamIterator) Close() error {
 	return i.error()
 }
 
-func (i *streamIterator) pipeOperations(ctx context.Context) {
+func (i *streamIterator) pipeOperations() {
 	ops := i.parser.parse(i.internal.Values())
 	if len(ops) == 0 {
 		return

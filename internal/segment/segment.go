@@ -13,7 +13,9 @@ type Segment struct {
 	Data       []byte
 }
 
-func (s Segment) Sugar(ch channel.Channel) *Sugared { return &Sugared{segment: s, channel: ch} }
+func (s Segment) Sugar(ch channel.Channel) *Sugared {
+	return &Sugared{segment: s, channel: ch, bound: telem.TimeRangeMax}
+}
 
 type Header struct {
 	ChannelKey channel.Key

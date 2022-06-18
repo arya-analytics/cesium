@@ -30,7 +30,14 @@ func (s Sugared) UnboundedSpan() telem.TimeSpan {
 
 // UnboundedRange returns the time range of the underlying segment. This value is not restricted by any bounds set.
 func (s Sugared) UnboundedRange() telem.TimeRange {
-	return s.header.Start.SpanRange(s.UnboundedSpan())
+	return s.Start().SpanRange(s.UnboundedSpan())
+}
+
+func (s Sugared) Start() telem.TimeStamp {
+	if s.segment.Start != 0 {
+		return s.segment.Start
+	}
+	return s.header.Start
 }
 
 // FileKey returns the key of the file the segment belongs to.
@@ -65,12 +72,14 @@ func (s Sugared) BoundedSize() telem.Size {
 // BoundedOffset returns the file offset of the underlying segment after being restricted by the bounds set in
 // SetBounds.
 func (s Sugared) BoundedOffset() telem.Offset {
-	return telem.TimeSpan(s.BoundedRange().Start-s.header.Start).ByteSize(s.channel.DataRate, s.channel.DataType)
+	return telem.TimeSpan(s.BoundedRange().Start-s.Start()).ByteSize(s.channel.
+		DataRate, s.channel.DataType)
 }
 
 // ReadDataFrom reads data from the reader into the underlying segment.
 func (s *Sugared) ReadDataFrom(r io.ReaderAt) error {
 	s.segment.Data = make([]byte, s.BoundedSize())
+	s.segment.Start = s.BoundedRange().Start
 	_, err := r.ReadAt(s.segment.Data, int64(s.BoundedOffset()))
 	return err
 }
@@ -104,7 +113,7 @@ func (s *Sugared) copyAttributesToHeader() {
 			s.header.ChannelKey = s.segment.ChannelKey
 		}
 	}
-	s.header.Start = s.segment.Start
+	s.header.Start = s.Start()
 	s.header.Size = telem.Size(len(s.segment.Data))
 }
 
@@ -115,5 +124,5 @@ func (s *Sugared) copyAttributesToSegment() {
 		}
 		s.segment.ChannelKey = s.header.ChannelKey
 	}
-	s.segment.Start = s.header.Start
+	s.segment.Start = s.Start()
 }
