@@ -20,10 +20,7 @@ import (
 	"time"
 )
 
-type (
-	createSegment    = confluence.Segment[[]createOperation]
-	segmentAllocator = allocate.Allocator[channel.Key, core.FileKey, createOperation]
-)
+type createSegment = confluence.Segment[[]createOperation]
 
 // |||||| STREAM ||||||
 
@@ -41,12 +38,11 @@ type CreateResponse struct {
 
 type Create struct {
 	query.Query
-	ops       confluence.Inlet[[]createOperation]
-	lock      lock.Map[channel.Key]
-	allocator segmentAllocator
-	kv        kvx.KV
-	logger    *zap.Logger
-	metrics   createMetrics
+	ops     confluence.Inlet[[]createOperation]
+	lock    lock.Map[channel.Key]
+	kv      kvx.KV
+	logger  *zap.Logger
+	metrics createMetrics
 }
 
 // WhereChannels sets the channels to acquire a lock on for creation.
@@ -79,7 +75,6 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 
 	requests := confluence.NewStream[CreateRequest](10)
 	responses := confluence.NewStream[CreateResponse](10)
-
 	header := kv.NewHeader(c.kv)
 
 	go func() {
@@ -113,10 +108,6 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 					op.OutTo(responses)
 					ops = append(ops, op)
 				}
-				fileKeys := c.allocator.Allocate(ops...)
-				for i, op := range ops {
-					op.SetFileKey(fileKeys[i])
-				}
 				wg.Add(len(ops))
 				c.ops.Inlet() <- ops
 			}
@@ -128,25 +119,23 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 // |||||| QUERY FACTORY ||||||
 
 type createFactory struct {
-	lock      lock.Map[channel.Key]
-	allocator segmentAllocator
-	kv        kvx.KV
-	logger    *zap.Logger
-	header    *kv.Header
-	metrics   createMetrics
-	ops       confluence.Inlet[[]createOperation]
+	lock    lock.Map[channel.Key]
+	kv      kvx.KV
+	logger  *zap.Logger
+	header  *kv.Header
+	metrics createMetrics
+	ops     confluence.Inlet[[]createOperation]
 }
 
 // New implements the query.Factory interface.
 func (c createFactory) New() Create {
 	return Create{
-		Query:     query.New(),
-		allocator: c.allocator,
-		kv:        c.kv,
-		logger:    c.logger,
-		metrics:   c.metrics,
-		ops:       c.ops,
-		lock:      c.lock,
+		Query:   query.New(),
+		kv:      c.kv,
+		logger:  c.logger,
+		metrics: c.metrics,
+		ops:     c.ops,
+		lock:    c.lock,
 	}
 }
 
@@ -275,15 +264,15 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 		return nil, err
 	}
 
-	// allocator is responsible for allocating new Segments to files.
-	allocator := allocate.New[channel.Key, core.FileKey, createOperation](fCount, cfg.allocate)
-
 	// acquires and releases the locks on channels. Acquiring locks on channels simplifies
 	// the implementation of the database significantly, as we can avoid needing to
 	// serialize writes to the same channel from different goroutines.
 	channelLock := lock.NewMap[channel.Key]()
 
 	pipeline := confluence.NewPipeline[[]createOperation]()
+
+	// allocator allocates segments to files.
+	pipeline.Segment("allocator", newAllocator(fCount, cfg.allocate))
 
 	// queue 'debounces' operations so that they can be flushed to disk in efficient
 	// batches.
@@ -298,6 +287,12 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	rb := pipeline.NewRouteBuilder()
 
 	rb.Route(confluence.UnaryRouter[[]createOperation]{
+		FromAddr: "allocator",
+		ToAddr:   "queue",
+		Capacity: 1,
+	})
+
+	rb.Route(confluence.UnaryRouter[[]createOperation]{
 		FromAddr: "queue",
 		ToAddr:   "batch",
 		Capacity: 1,
@@ -309,7 +304,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 		Capacity: 1,
 	})
 
-	rb.RouteInletTo("queue")
+	rb.RouteInletTo("allocator")
 
 	// inlet is the inlet for all create operations that executed on disk.
 	inlet := confluence.NewStream[[]createOperation](1)
@@ -322,11 +317,10 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	pipeline.Flow(ctx)
 
 	return createFactory{
-		lock:      channelLock,
-		allocator: allocator,
-		kv:        cfg.kv,
-		logger:    cfg.logger,
-		metrics:   newCreateMetrics(cfg.exp),
-		ops:       inlet,
+		lock:    channelLock,
+		kv:      cfg.kv,
+		logger:  cfg.logger,
+		metrics: newCreateMetrics(cfg.exp),
+		ops:     inlet,
 	}, rb.Error()
 }
