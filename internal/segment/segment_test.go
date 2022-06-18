@@ -32,5 +32,4 @@ var _ = Describe("segment", func() {
 			Expect(binary.BigEndian.Uint16(k[1:3])).To(Equal(uint16(1)))
 		})
 	})
-
 })

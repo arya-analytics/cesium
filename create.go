@@ -83,10 +83,13 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 	header := kv.NewHeader(c.kv)
 
 	go func() {
+		requestDur := c.metrics.request.Stopwatch()
+		requestDur.Start()
 		wg := &sync.WaitGroup{}
 		defer func() {
 			wg.Wait()
 			close(responses.Inlet())
+			requestDur.Stop()
 		}()
 		for {
 			select {
@@ -106,6 +109,7 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 						metrics: c.metrics,
 						wg:      wg,
 					}
+					c.metrics.segSize.Record(int(op.seg.UnboundedSize()))
 					op.OutTo(responses)
 					ops = append(ops, op)
 				}
@@ -254,7 +258,7 @@ const (
 	createPersistMaxRoutines = persist.DefaultNumWorkers
 	// createDebounceFlushInterval is the interval at which create debounce queue will flush if the number of
 	// create operations is below the threshold.
-	createDebounceFlushInterval = 10 * time.Millisecond
+	createDebounceFlushInterval = 100 * time.Millisecond
 	// createDebounceFlushThreshold is the number of requests that must be queued before create debounce queue
 	// will flush.
 	createDebounceFlushThreshold = 100

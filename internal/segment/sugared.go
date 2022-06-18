@@ -90,15 +90,11 @@ func (s *Sugared) WriteDataTo(w io.WriteSeeker) error {
 // reads.
 func (s *Sugared) SetBounds(bounds telem.TimeRange) { s.bound = bounds }
 
-func (s *Sugared) Header() Header {
-	s.copyAttributesToHeader()
-	return s.header
-}
+// Header returns the 'header' metadata for the segment.
+func (s *Sugared) Header() Header { s.copyAttributesToHeader(); return s.header }
 
-func (s *Sugared) Segment() Segment {
-	s.copyAttributesToSegment()
-	return s.segment
-}
+// Segment returns the underlying segment for the Sugared segment.
+func (s *Sugared) Segment() Segment { s.copyAttributesToSegment(); return s.segment }
 
 func (s *Sugared) copyAttributesToHeader() {
 	if s.header.ChannelKey == 0 {

@@ -36,6 +36,7 @@ const (
 	Minute       = telem.Minute
 	Hour         = telem.Hour
 	Hz           = telem.Hz
+	KHz          = telem.KHz
 )
 
 var (

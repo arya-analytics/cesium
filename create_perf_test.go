@@ -73,13 +73,19 @@ var progressiveCreate = []createVars{
 		dataRate:  20 * cesium.Hz,
 		dataType:  cesium.Float64,
 	},
+	{
+		nChannels: 10,
+		dataRate:  25 * cesium.KHz,
+		dataType:  cesium.Float64,
+	},
 }
 
 var _ = Describe("Create", func() {
 	var (
-		db  cesium.DB
-		log *zap.Logger
-		exp alamos.Experiment
+		db      cesium.DB
+		log     *zap.Logger
+		exp     alamos.Experiment
+		factory seg.DataFactory
 	)
 	BeforeEach(func() {
 		var err error
@@ -89,6 +95,7 @@ var _ = Describe("Create", func() {
 			cesium.WithLogger(log),
 			cesium.WithExperiment(exp),
 		)
+		factory = &seg.RandomFloat64Factory{Cache: true}
 		Expect(err).ToNot(HaveOccurred())
 	})
 	AfterEach(func() {
@@ -127,7 +134,7 @@ var _ = Describe("Create", func() {
 						stc := &seg.StreamCreate{
 							Req:               req,
 							Res:               res,
-							SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, ch),
+							SequentialFactory: seg.NewSequentialFactory(factory, 1*cesium.Second, ch),
 						}
 						stc.CreateCRequestsOfN(100, 1)
 						Expect(stc.CloseAndWait()).To(Succeed())
@@ -162,9 +169,13 @@ var _ = Describe("Create", func() {
 				req, res, err := db.NewCreate().WhereChannels(keys...).Stream(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				stc := &seg.StreamCreate{
-					Req:               req,
-					Res:               res,
-					SequentialFactory: seg.NewSequentialFactory(seg.RandFloat64, 10*cesium.Second, channels...),
+					Req: req,
+					Res: res,
+					SequentialFactory: seg.NewSequentialFactory(
+						factory,
+						10*cesium.Second,
+						channels...,
+					),
 				}
 				stc.CreateCRequestsOfN(1, 1)
 				Expect(stc.CloseAndWait()).To(Succeed())
