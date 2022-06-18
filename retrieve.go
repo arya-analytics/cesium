@@ -178,35 +178,6 @@ func (r retrieveFactory) New() Retrieve {
 	}
 }
 
-// |||||| PARSER ||||||
-
-type retrieveParser struct {
-	ctx       context.Context
-	responses *confluence.UnarySource[RetrieveResponse]
-	logger    *zap.Logger
-	metrics   retrieveMetrics
-	wg        *sync.WaitGroup
-}
-
-func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
-	var ops []retrieveOperation
-	for _, rng := range ranges {
-		for _, header := range rng.Headers {
-			seg := header.Sugar(rng.Channel)
-			seg.SetBounds(rng.Bound)
-			ops = append(ops, retrieveOperationUnary{
-				ctx:         r.ctx,
-				seg:         seg,
-				dataRead:    r.metrics.dataRead,
-				wg:          r.wg,
-				logger:      r.logger,
-				UnarySource: r.responses,
-			})
-		}
-	}
-	return ops
-}
-
 func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 	mergeRetrieveConfigDefaults(&cfg)
 

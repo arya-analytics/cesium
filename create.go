@@ -213,36 +213,6 @@ func (c createFactory) New() Create {
 	}
 }
 
-// |||||| PARSER |||||||
-
-type createParser struct {
-	ctx       context.Context
-	logger    *zap.Logger
-	metrics   createMetrics
-	wg        *sync.WaitGroup
-	responses confluence.UnarySource[CreateResponse]
-	channels  map[channel.Key]channel.Channel
-	header    *kv.Header
-}
-
-func (c *createParser) parse(segments []Segment) []createOperation {
-	var ops []createOperation
-	for _, seg := range segments {
-		op := createOperationUnary{
-			ctx:         c.ctx,
-			seg:         seg.Sugar(c.channels[seg.ChannelKey]),
-			logger:      c.logger,
-			kv:          c.header,
-			metrics:     c.metrics,
-			wg:          c.wg,
-			UnarySource: c.responses,
-		}
-		c.metrics.segSize.Record(int(op.seg.UnboundedSize()))
-		ops = append(ops, op)
-	}
-	return ops
-}
-
 // |||||| START UP |||||||
 
 func startCreate(cfg createConfig) (query.Factory[Create], error) {
