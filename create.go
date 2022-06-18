@@ -139,51 +139,7 @@ func (c createFactory) New() Create {
 	}
 }
 
-// |||||| METRICS ||||||
-
-// createMetrics is a collection of metrics tracking the performance and health of a Create query.
-type createMetrics struct {
-	// dataFlush tracks the duration it takes to flush segment data to disk.
-	dataFlush alamos.Duration
-	// kvFlush tracks the duration it takes to flush segment kv data.
-	kvFlush alamos.Duration
-	// totalFlush tracks the duration it takes all the operations to disk.
-	// (dataFlush,kvFlush,seeks, etc.)
-	totalFlush alamos.Duration
-	// lockAcquire tracks the duration it takes to acquire the lock on the channels
-	// that are being written to.
-	lockAcquire alamos.Duration
-	// lockRelease tracks the duration it takes to release the lock on the channels
-	// that are being written to.
-	lockRelease alamos.Duration
-	// segSize tracks the Size of each segment created.
-	segSize alamos.Metric[int]
-	// request tracks the total duration that the Create query is open i.e. from
-	// calling Create.Stream(ctx) to the close(res) call.
-	request alamos.Duration
-}
-
-const (
-	// createMetricsKey is the key used to store create metrics in cesium's alamos.Experiment.
-	createMetricsKey = "create"
-)
-
-func newCreateMetrics(exp alamos.Experiment) createMetrics {
-	sub := alamos.Sub(exp, createMetricsKey)
-	return createMetrics{
-		segSize:     alamos.NewGauge[int](sub, alamos.Debug, "segSize"),
-		lockAcquire: alamos.NewGaugeDuration(sub, alamos.Debug, "lockAcquireDur"),
-		lockRelease: alamos.NewGaugeDuration(sub, alamos.Debug, "lockReleaseDur"),
-		dataFlush:   alamos.NewGaugeDuration(sub, alamos.Debug, "dataFlushDur"),
-		kvFlush:     alamos.NewGaugeDuration(sub, alamos.Debug, "kvFlushDur"),
-		totalFlush:  alamos.NewGaugeDuration(sub, alamos.Debug, "totalFlushDur"),
-		request:     alamos.NewGaugeDuration(sub, alamos.Debug, "requestDur"),
-	}
-}
-
 // |||||| START UP |||||||
-
-const fileCounterKey = "cs-nf"
 
 type createConfig struct {
 	// exp is used to track metrics for the Create query. See createMetrics for all the recorded values.
@@ -243,14 +199,18 @@ func mergeCreateConfigDefaults(cfg *createConfig) {
 }
 
 const (
-	// createPersistMaxRoutines is the maximum number of goroutines the create query persist.Persist can use.
+	// createPersistMaxRoutines is the maximum number of goroutines the create
+	// query persist.Persist can use.
 	createPersistMaxRoutines = persist.DefaultNumWorkers
-	// createDebounceFlushInterval is the interval at which create debounce queue will flush if the number of
-	// create operations is below the threshold.
+	// createDebounceFlushInterval is the interval at which create debounce
+	// queue will flush if the number of create operations is below the threshold.
 	createDebounceFlushInterval = 100 * time.Millisecond
-	// createDebounceFlushThreshold is the number of requests that must be queued before create debounce queue
-	// will flush.
+	// createDebounceFlushThreshold is the number of operations that must be queued
+	//before create debounce queue will flush.
 	createDebounceFlushThreshold = 100
+	// fileCounterKey is the key for the counter that keeps track of the number of files
+	// the DB has created.
+	fileCounterKey = "cesium.nextFile"
 )
 
 func startCreate(cfg createConfig) (query.Factory[Create], error) {
@@ -276,7 +236,9 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 
 	// queue 'debounces' operations so that they can be flushed to disk in efficient
 	// batches.
-	pipeline.Segment("queue", &queue.Debounce[createOperation]{DebounceConfig: cfg.debounce})
+	pipeline.Segment("queue", &queue.Debounce[createOperation]{
+		DebounceConfig: cfg.debounce,
+	})
 
 	// batch groups operations into batches that are more efficient upon retrieval.
 	pipeline.Segment("batch", newCreateBatch())

@@ -115,36 +115,6 @@ func (r retrieveFactory) New() Retrieve {
 
 // |||||| METRICS ||||||
 
-type retrieveMetrics struct {
-	// kvRetrieve is the time spent retrieving segment metadata from key-value storage.
-	kvRetrieve alamos.Duration
-	// dataRead is the duration spent reading segment data from disk.
-	dataRead alamos.Duration
-	// segSize tracks the Size of each segment retrieved.
-	segSize alamos.Metric[int]
-	// segCount tracks the number of segments retrieved.
-	segCount alamos.Metric[int]
-	// request tracks the total duration that the Retrieve query is open i.e. from calling Retrieve.Stream(ctx) to
-	// an internal close(res) call that represents the query is complete.
-	request alamos.Duration
-}
-
-const (
-	// retrieveMetricsKey is the key used to store retrieve metrics in cesium's alamos.Experiment.
-	retrieveMetricsKey = "retrieve"
-)
-
-func newRetrieveMetrics(exp alamos.Experiment) retrieveMetrics {
-	sub := alamos.Sub(exp, retrieveMetricsKey)
-	return retrieveMetrics{
-		kvRetrieve: alamos.NewGaugeDuration(sub, alamos.Debug, "kvRetrieveDur"),
-		dataRead:   alamos.NewGaugeDuration(sub, alamos.Debug, "dataReadDur"),
-		segSize:    alamos.NewGauge[int](sub, alamos.Debug, "segSize"),
-		segCount:   alamos.NewGauge[int](sub, alamos.Debug, "segCount"),
-		request:    alamos.NewGaugeDuration(sub, alamos.Debug, "requestDur"),
-	}
-}
-
 type retrieveConfig struct {
 	// exp is used to track metrics for the Retrieve query. See retrieveMetrics for more.
 	exp alamos.Experiment

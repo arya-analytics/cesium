@@ -130,9 +130,9 @@ func (cou createOperationUnary) Exec(f core.File) {
 		cou.WriteError(err)
 		return
 	}
-	cou.metrics.dataFlush.Record(totalFlush.Elapsed())
+	cou.metrics.dataWrite.Record(totalFlush.Elapsed())
 
-	ks := cou.metrics.kvFlush.Stopwatch()
+	ks := cou.metrics.headerFlush.Stopwatch()
 	ks.Start()
 	if err := cou.kv.Set(cou.seg.Header()); err != nil {
 		cou.WriteError(err)
