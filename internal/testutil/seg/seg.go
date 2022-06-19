@@ -47,12 +47,12 @@ func randomFloat64(n int) []float64 {
 	return GenSlice[float64](n, func(i int) float64 { return rand.Float64() })
 }
 
-type SeqFloat64Factory struct {
+type SequentialFloat64Factory struct {
 	Cache  bool
 	values []byte
 }
 
-func (s *SeqFloat64Factory) Generate(n int) []byte {
+func (s *SequentialFloat64Factory) Generate(n int) []byte {
 	if s.Cache && len(s.values) >= n {
 		if len(s.values) == n {
 			return s.values
@@ -96,7 +96,7 @@ func generateSpan(c cesium.Channel, fac DataFactory, span cesium.TimeSpan) []byt
 }
 
 func DataTypeFactory(dt cesium.Density) DataFactory {
-	m := map[cesium.Density]DataFactory{cesium.Float64: &SeqFloat64Factory{}}
+	m := map[cesium.Density]DataFactory{cesium.Float64: &SequentialFloat64Factory{}}
 	return m[dt]
 }
 

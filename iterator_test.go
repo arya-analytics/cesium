@@ -46,7 +46,7 @@ var _ = Describe("Iterator", func() {
 				Req: req,
 				Res: res,
 				SequentialFactory: seg.NewSequentialFactory(
-					&seg.RandomFloat64Factory{},
+					&seg.SequentialFloat64Factory{},
 					10*cesium.Second,
 					channel,
 				),
