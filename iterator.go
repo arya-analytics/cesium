@@ -10,12 +10,15 @@ import (
 
 type StreamIterator interface {
 	// Source is the outlet for the StreamIterator values. All segments read from disk
-	// are piped to the Source outlet. Iterate should be the ONLY entity writing to the
-	// Source outlet (StreamIterator.Close will close the Source outlet).
+	// are piped to the Source outlet. StreamIterator should be the ONLY entity writing
+	// to the Source outlet (StreamIterator.Close will close the Source outlet).
 	confluence.Source[RetrieveResponse]
 	// Next pipes the next segment in the StreamIterator to the Source outlet.
 	// It returns true if the StreamIterator is pointing to a valid segment.
 	Next() bool
+	// Prev pipes the previous segment in the StreamIterator to the Source outlet.
+	// It returns true if the StreamIterator is pointing to a valid segment.
+	Prev() bool
 	// First seeks to the first segment in the StreamIterator. Returns true
 	// if the streamIterator is pointing to a valid segment.
 	First() bool
@@ -78,6 +81,7 @@ func (i *streamIterator) Next() bool {
 	if !i.internal.Next() {
 		return false
 	}
+	i.pipeOperations()
 	return true
 }
 
@@ -126,8 +130,10 @@ func (i *streamIterator) NextRange(tr TimeRange) bool {
 	return true
 }
 
+// SeekFirst implements StreamIterator.
 func (i *streamIterator) SeekFirst() bool { return i.internal.SeekFirst() }
 
+// SeekLast implements StreamIterator.
 func (i *streamIterator) SeekLast() bool { return i.internal.SeekLast() }
 
 // SeekLT implements StreamIterator.
@@ -164,7 +170,6 @@ func (i *streamIterator) Exhaust() {
 			i.Out.Inlet() <- RetrieveResponse{Error: i.Error()}
 			break
 		}
-		i.pipeOperations()
 	}
 }
 

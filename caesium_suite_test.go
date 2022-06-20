@@ -39,7 +39,7 @@ func TestCaesium(t *testing.T) {
 //
 //	// Define a new segment.
 //	seg := cesium.Segment{
-//		ChannelKey: ch.Key,
+//		CesiumKey: ch.Key,
 //		Start:      cesium.Now(),
 //		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //	}
@@ -96,7 +96,7 @@ func TestCaesium(t *testing.T) {
 //		// Define the segment.
 //		// It'stream important to notice that the start times do not overlap.
 //		seg := cesium.Segment{
-//			ChannelKey: ch.Key,
+//			CesiumKey: ch.Key,
 //			Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
 //			Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //		}
@@ -168,7 +168,7 @@ func TestCaesium(t *testing.T) {
 //		for j := 0; j < nChannels; j++ {
 //			// It'stream important to notice that the start times do not overlap.
 //			segs[j] = cesium.Segment{
-//				ChannelKey: channels[j].Key,
+//				CesiumKey: channels[j].Key,
 //				Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
 //				Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //			}
@@ -210,7 +210,7 @@ func TestCaesium(t *testing.T) {
 //
 //	// Define a new segment.
 //	seg := cesium.Segment{
-//		ChannelKey: ch.Key,
+//		CesiumKey: ch.Key,
 //		Start:      cesium.Now(),
 //		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //	}

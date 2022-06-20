@@ -19,7 +19,7 @@ package cesium_test
 //
 //			segments := []cesium.Segment{
 //				{
-//					ChannelKey: ch.Key,
+//					CesiumKey: ch.Key,
 //					Start:      cesium.Now(),
 //					Data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
 //				},
@@ -51,12 +51,12 @@ package cesium_test
 //
 //			segments := []cesium.Segment{
 //				{
-//					ChannelKey: ch.Key,
+//					CesiumKey: ch.Key,
 //					Start:      cesium.Now(),
 //					Data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
 //				},
 //				{
-//					ChannelKey: ch.Key,
+//					CesiumKey: ch.Key,
 //					Start:      cesium.Now().Add(3 * cesium.Second),
 //					Data:       cesium.MarshalFloat64([]float64{4, 5, 6}),
 //				},
