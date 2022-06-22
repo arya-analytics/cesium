@@ -7,7 +7,7 @@ package cesium_test
 //	BeforeEach(func() {
 //		var err error
 //		log := zap.NewNop()
-//		db, err = cesium.Open("", cesium.MemBacked(), cesium.WithLogger(log))
+//		db, err = cesium.RouteStream("", cesium.MemBacked(), cesium.WithLogger(log))
 //		Expect(err).ToNot(HaveOccurred())
 //	})
 //	Context("Create", func() {

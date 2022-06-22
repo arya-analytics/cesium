@@ -69,10 +69,10 @@ type DB interface {
 	//     // is a channel where segments are written. The second is a response channel
 	//      // containing any errors encountered during writes. The last value is an
 	//      // error value that is returned if the query fails to open properly.
-	//		// Stream for details on what each return value does.
-	//		req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
+	//		// RouteStream for details on what each return value does.
+	//		req, res, err := db.NewCreate().WhereChannels(key).RouteStream(ctx)
 	//
-	//		// Write the segment to the Create Request Stream.
+	//		// Write the segment to the Create Request RouteStream.
 	//      req <- cesium.CreateRequest{Segments: segments}
 	//
 	//		// Close the request stream. This lets the query know its safe to shut down
@@ -147,7 +147,7 @@ type DB interface {
 	//		res, err := db.NewRetrieve().
 	//						WhereTimeRange(cesium.TimeRangeMax).
 	//						WhereChannels(key).
-	//						Stream(ctx)
+	//						RouteStream(ctx)
 	//
 	//      var res []cesium.Segment
 	//

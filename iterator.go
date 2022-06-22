@@ -85,6 +85,15 @@ func (i *streamIterator) Next() bool {
 	return true
 }
 
+// Prev implements StreamIterator.
+func (i *streamIterator) Prev() bool {
+	if !i.internal.Prev() {
+		return false
+	}
+	i.pipeOperations()
+	return true
+}
+
 // First implements StreamIterator.
 func (i *streamIterator) First() bool {
 	if !i.internal.First() {

@@ -23,7 +23,7 @@ func TestCaesium(t *testing.T) {
 //	ctx := context.Background()
 //
 //	// New the database.
-//	db, err := cesium.Open("", cesium.MemBacked())
+//	db, err := cesium.RouteStream("", cesium.MemBacked())
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -60,7 +60,7 @@ func TestCaesium(t *testing.T) {
 //	ctx := context.Background()
 //
 //	// New the database.
-//	db, err := cesium.Open("", cesium.MemBacked())
+//	db, err := cesium.RouteStream("", cesium.MemBacked())
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -72,7 +72,7 @@ func TestCaesium(t *testing.T) {
 //		Exec(ctx)
 //
 //	// New the query.
-//	req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
+//	req, res, err := db.NewCreate().WhereChannels(ch.Key).RouteStream(ctx)
 //
 //	// Listen for errors.
 //	wg := sync.WaitGroup{}
@@ -119,7 +119,7 @@ func TestCaesium(t *testing.T) {
 //	ctx := context.Background()
 //
 //	// New the database.
-//	db, err := cesium.Open("", cesium.MemBacked())
+//	db, err := cesium.RouteStream("", cesium.MemBacked())
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -139,7 +139,7 @@ func TestCaesium(t *testing.T) {
 //	}
 //
 //	// New the query.
-//	req, res, err := db.NewCreate().WhereChannels(cPKs...).Stream(ctx)
+//	req, res, err := db.NewCreate().WhereChannels(cPKs...).RouteStream(ctx)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -194,7 +194,7 @@ func TestCaesium(t *testing.T) {
 //	ctx := context.Background()
 //
 //	// New the database.
-//	db, err := cesium.Open("", cesium.MemBacked())
+//	db, err := cesium.RouteStream("", cesium.MemBacked())
 //	if err != nil {
 //		log.Fatal(err)
 //	}
