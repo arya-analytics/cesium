@@ -57,13 +57,13 @@ var _ = Describe("Iterator", func() {
 		})
 		Describe("First", func() {
 			It("Should return the first segment in the iterator", func() {
-				iter := db.NewRetrieve().
+				iter, err := db.NewRetrieve().
 					WhereChannels(key).
 					WhereTimeRange(cesium.TimeRangeMax).
 					Iterate(ctx)
+				Expect(err).To(BeNil())
 				stream := confluence.NewStream[cesium.RetrieveResponse](1)
 				iter.OutTo(stream)
-				Expect(iter.Error()).To(BeNil())
 				Expect(iter.First()).To(BeTrue())
 				res := <-stream.Outlet()
 				Expect(res.Error).ToNot(HaveOccurred())
@@ -83,15 +83,15 @@ var _ = Describe("Iterator", func() {
 		})
 		Describe("NextSpan", func() {
 			It("Should return the correct span in the iterator", func() {
-				iter := db.NewRetrieve().
+				iter, err := db.NewRetrieve().
 					WhereChannels(key).
 					WhereTimeRange(cesium.TimeRange{
 						Start: telem.TimeStamp(5 * cesium.Second),
 						End:   telem.TimeStampMax,
 					}).Iterate(ctx)
+				Expect(err).ToNot(HaveOccurred())
 				stream := confluence.NewStream[cesium.RetrieveResponse](1)
 				iter.OutTo(stream)
-				Expect(iter.Error()).To(BeNil())
 				Expect(iter.SeekFirst()).To(BeTrue())
 				Expect(iter.View()).To(Equal(telem.TimeRange{
 					Start: telem.TimeStamp(5 * cesium.Second),

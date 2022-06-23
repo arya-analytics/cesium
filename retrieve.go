@@ -108,9 +108,9 @@ func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); r
 // segment reads are returns as part of RetrieveResponse.
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	stream := confluence.NewStream[RetrieveResponse](10)
-	iter := r.Iterate(ctx)
-	if err := iter.Error(); err != nil {
-		return nil, err
+	iter, err := r.Iterate(ctx)
+	if err != nil {
+		return stream.Outlet(), err
 	}
 	iter.OutTo(stream)
 	iter.First()
@@ -123,12 +123,14 @@ func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	return stream.Outlet(), nil
 }
 
-func (r Retrieve) Iterate(ctx context.Context) StreamIterator {
+func (r Retrieve) Iterate(ctx context.Context) (StreamIterator, error) {
 	responses := &confluence.UnarySource[RetrieveResponse]{}
 	wg := &sync.WaitGroup{}
+	internal := ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...)
+	err := internal.Error()
 	return &streamIterator{
 		ctx:      ctx,
-		internal: ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...),
+		internal: internal,
 		executor: r.ops,
 		parser: &retrieveParser{
 			ctx:       ctx,
@@ -139,7 +141,7 @@ func (r Retrieve) Iterate(ctx context.Context) StreamIterator {
 		},
 		wg:          wg,
 		UnarySource: responses,
-	}
+	}, err
 }
 
 // |||||| OPTIONS ||||||

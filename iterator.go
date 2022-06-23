@@ -51,9 +51,6 @@ type StreamIterator interface {
 	View() TimeRange
 	// Exhaust exhausts the StreamIterator, piping all segments to the Source outlet.
 	Exhaust()
-	// Error returns the error encountered during the last call to the StreamIterator.
-	// This value is reset after iteration.
-	Error() error
 	// Close closes the StreamIterator, ensuring that all in-progress segment reads complete before closing the Source outlet.
 	Close() error
 }
@@ -71,9 +68,6 @@ type streamIterator struct {
 	executor confluence.Inlet[[]retrieveOperation]
 	// wg is used to track the completion status of the latest operations in the iterator.
 	wg *sync.WaitGroup
-	// _error represents a general error encountered during iterator. This value is reset whenever a seeking
-	// call is made.
-	_error error
 }
 
 // Next implements StreamIterator.
@@ -157,14 +151,6 @@ func (i *streamIterator) Seek(stamp TimeStamp) bool { return i.internal.Seek(sta
 // View implements StreamIterator.
 func (i *streamIterator) View() TimeRange { return i.internal.View() }
 
-// Error implements StreamIterator.
-func (i *streamIterator) Error() error {
-	if i.error() != nil {
-		return i.error()
-	}
-	return i.internal.Error()
-}
-
 // Exhaust implements StreamIterator.
 func (i *streamIterator) Exhaust() {
 	for {
@@ -175,19 +161,15 @@ func (i *streamIterator) Exhaust() {
 		if !i.Next() {
 			break
 		}
-		if i.Error() != nil {
-			i.Out.Inlet() <- RetrieveResponse{Error: i.Error()}
-			break
-		}
 	}
 }
 
 // Close implements StreamIterator.
 func (i *streamIterator) Close() error {
-	i.updateError(i.internal.Close())
+	err := i.internal.Close()
 	i.wg.Wait()
 	close(i.Out.Inlet())
-	return i.error()
+	return err
 }
 
 func (i *streamIterator) pipeOperations() {
@@ -197,17 +179,12 @@ func (i *streamIterator) pipeOperations() {
 	}
 	i.wg.Add(len(ops))
 	i.executor.Inlet() <- ops
+	if err := i.internal.Error(); err != nil {
+		i.pipeError(err)
+	}
+
 }
 
-func (i *streamIterator) updateError(err error) {
-	if err != nil {
-		i._error = err
-	}
-}
-
-func (i *streamIterator) error() error {
-	if i._error != nil {
-		return i._error
-	}
-	return i.internal.Error()
+func (i *streamIterator) pipeError(err error) {
+	i.UnarySource.Out.Inlet() <- RetrieveResponse{Error: err}
 }
