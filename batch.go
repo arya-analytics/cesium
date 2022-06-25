@@ -25,9 +25,12 @@ func newRetrieveBatch() retrieveSegment {
 	return rb
 }
 
-func (rb *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) ([]retrieveOperation, bool) {
+func (rb *retrieveBatch) batch(
+	ctx confluence.Context,
+	ops []retrieveOperation,
+) ([]retrieveOperation, bool, error) {
 	if len(ops) == 0 {
-		return []retrieveOperation{}, false
+		return []retrieveOperation{}, false, nil
 	}
 	fileGrouped := make(map[core.FileKey]retrieveOperationSet)
 	for _, op := range ops {
@@ -40,7 +43,7 @@ func (rb *retrieveBatch) batch(ctx confluence.Context, ops []retrieveOperation) 
 		})
 		channelSorted = append(channelSorted, opSet)
 	}
-	return channelSorted, true
+	return channelSorted, true, nil
 }
 
 // |||||| CREATE ||||||
@@ -65,9 +68,12 @@ func newCreateBatch() createSegment {
 	return cb
 }
 
-func (cb *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]createOperation, bool) {
+func (cb *createBatch) batch(
+	ctx confluence.Context,
+	ops []createOperation,
+) ([]createOperation, bool, error) {
 	if len(ops) == 0 {
-		return []createOperation{}, false
+		return []createOperation{}, false, nil
 	}
 	fileGrouped := make(map[core.FileKey]createOperationSet)
 	for _, op := range ops {
@@ -81,5 +87,5 @@ func (cb *createBatch) batch(ctx confluence.Context, ops []createOperation) ([]c
 		})
 		channelSorted = append(channelSorted, fileOps)
 	}
-	return channelSorted, true
+	return channelSorted, true, nil
 }

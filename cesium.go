@@ -7,7 +7,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/segment"
 	kvx "github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/query"
-	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/signal"
 )
 
 var (
@@ -278,7 +278,8 @@ type (
 
 type db struct {
 	kv                kvx.KV
-	shutdown          *shutdown.Group
+	shutdown          context.CancelFunc
+	conductor         signal.Conductor
 	create            query.Factory[Create]
 	retrieve          query.Factory[Retrieve]
 	channelKeyCounter *kvx.PersistedCounter
@@ -323,8 +324,11 @@ func (d *db) Sync(ctx context.Context, query interface{}, seg *[]Segment) error 
 
 // Close implements DB.
 func (d *db) Close() error {
-	if err := d.shutdown.Sequential(); err != nil {
+	d.shutdown()
+	err := d.conductor.WaitOnAll()
+	kvErr := d.kv.Close()
+	if err != context.Canceled {
 		return err
 	}
-	return d.kv.Close()
+	return kvErr
 }

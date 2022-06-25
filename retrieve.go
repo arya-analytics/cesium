@@ -12,7 +12,6 @@ import (
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
-	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -40,9 +39,6 @@ type retrieveConfig struct {
 	fs core.FS
 	// kv is the key-value store for reading segment metadata from.
 	kv kv.KV
-	// shutdown is used to gracefully shutdown down retrieve operations.
-	// retrieve releases the shutdown when all queries have been served.
-	shutdown shutdown.Shutdown
 	// logger is where retrieve operations will log their progress.
 	logger *zap.Logger
 	// debounce sets the debounce parameters for retrieve operations.
@@ -59,9 +55,6 @@ func mergeRetrieveConfigDefaults(cfg *retrieveConfig) {
 
 	if cfg.persist.NumWorkers == 0 {
 		cfg.persist.NumWorkers = retrievePersistMaxRoutines
-	}
-	if cfg.persist.Shutdown == nil {
-		cfg.persist.Shutdown = cfg.shutdown
 	}
 	if cfg.persist.Logger == nil {
 		cfg.persist.Logger = cfg.logger
@@ -181,19 +174,22 @@ func (r retrieveFactory) New() Retrieve {
 	}
 }
 
-func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
+func startRetrieve(
+	ctx confluence.Context,
+	cfg retrieveConfig,
+) (query.Factory[Retrieve], error) {
 	mergeRetrieveConfigDefaults(&cfg)
 
 	pipeline := confluence.NewPipeline[[]retrieveOperation]()
 
 	// queue 'debounces' operations so that they can be flushed to disk in efficient
 	// batches.
-	pipeline.Segment("queue", &queue.Debounce[retrieveOperation]{DebounceConfig: cfg.debounce})
+	pipeline.Segment("queue", &queue.Debounce[retrieveOperation]{Config: cfg.debounce})
 
 	// batch groups operations into batches that optimize sequential IO.
 	pipeline.Segment("batch", newRetrieveBatch())
 
-	// persist executeds batched operations on disk.
+	// persist executes batched operations on disk.
 	pipeline.Segment("persist", persist.New[core.FileKey, retrieveOperation](cfg.fs, cfg.persist))
 
 	rb := pipeline.NewRouteBuilder()
@@ -214,12 +210,7 @@ func startRetrieve(cfg retrieveConfig) (query.Factory[Retrieve], error) {
 
 	// inlet is the inlet for all retrieve operations to be executed on disk.
 	inlet := confluence.NewStream[[]retrieveOperation](1)
-
 	pipeline.InFrom(inlet)
-
-	ctx := confluence.DefaultContext()
-	ctx.Shutdown = cfg.shutdown
-
 	pipeline.Flow(ctx)
 
 	return retrieveFactory{

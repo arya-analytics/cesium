@@ -1,11 +1,13 @@
 package cesium
 
 import (
+	"context"
 	"github.com/arya-analytics/cesium/internal/core"
+	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kfs"
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/kv/pebblekv"
-	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/signal"
 	"github.com/cockroachdb/pebble"
 	"path/filepath"
 )
@@ -32,49 +34,53 @@ const channelCounterKey = "cs-nc"
 //
 // See each options documentation for more.
 func Open(dirname string, opts ...Option) (DB, error) {
-	_opts := newOptions(dirname, opts...)
+	options := newOptions(dirname, opts...)
 
 	// |||||| SHUTDOWN ||||||
 
-	sd := shutdown.New(_opts.shutdownOpts...)
+	_ctx, shutdown := context.WithCancel(context.Background())
+
+	ctx := confluence.Context{Conductor: signal.New(_ctx)}
 
 	// |||||| FILE SYSTEM ||||||
 
-	fs, err := openFS(_opts, sd)
+	fs, err := openFS(ctx, options)
 	if err != nil {
+		shutdown()
 		return nil, err
 	}
 
 	// |||||| KV ||||||
 
-	kve, err := openKV(_opts)
+	kve, err := openKV(options)
 	if err != nil {
+		shutdown()
 		return nil, err
 	}
 
 	// |||||| CREATE ||||||
 
-	create, err := startCreate(createConfig{
-		exp:      _opts.exp,
-		logger:   _opts.logger,
-		shutdown: sd,
-		fs:       fs,
-		kv:       kve,
+	create, err := startCreate(ctx, createConfig{
+		exp:    options.exp,
+		logger: options.logger,
+		fs:     fs,
+		kv:     kve,
 	})
 	if err != nil {
+		shutdown()
 		return nil, err
 	}
 
 	// |||||| RETRIEVE ||||||
 
-	retrieve, err := startRetrieve(retrieveConfig{
-		exp:      _opts.exp,
-		logger:   _opts.logger,
-		shutdown: sd,
-		fs:       fs,
-		kv:       kve,
+	retrieve, err := startRetrieve(ctx, retrieveConfig{
+		exp:    options.exp,
+		logger: options.logger,
+		fs:     fs,
+		kv:     kve,
 	})
 	if err != nil {
+		shutdown()
 		return nil, err
 	}
 
@@ -84,28 +90,30 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	// this is used to autogenerate unique keys for a channel.
 	channelKeyCounter, err := kv.NewPersistedCounter(kve, []byte(channelCounterKey))
 	if err != nil {
+		shutdown()
 		return nil, err
 	}
 
 	return &db{
 		kv:                kve,
-		shutdown:          shutdown.NewGroup(sd),
+		shutdown:          shutdown,
 		create:            create,
 		retrieve:          retrieve,
 		channelKeyCounter: channelKeyCounter,
+		conductor:         ctx.Conductor,
 	}, nil
 }
 
-func openFS(opts *options, sd shutdown.Shutdown) (core.FS, error) {
+func openFS(ctx confluence.Context, opts *options) (core.FS, error) {
 	fs, err := kfs.New[core.FileKey](
 		filepath.Join(opts.dirname, cesiumDirectory),
 		opts.kfs.opts...,
 	)
 	sync := &kfs.Sync[core.FileKey]{
-		FS:       fs,
-		Interval: opts.kfs.sync.interval,
-		MaxAge:   opts.kfs.sync.maxAge,
-		Shutter:  sd,
+		FS:        fs,
+		Interval:  opts.kfs.sync.interval,
+		MaxAge:    opts.kfs.sync.maxAge,
+		Conductor: ctx.Conductor,
 	}
 	sync.Start()
 	return fs, err

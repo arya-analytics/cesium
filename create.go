@@ -14,7 +14,6 @@ import (
 	"github.com/arya-analytics/x/lock"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
-	"github.com/arya-analytics/x/shutdown"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -46,9 +45,6 @@ type createConfig struct {
 	fs core.FS
 	// kv is the key-value store for writing segment metadata to.
 	kv kvx.KV
-	// shutdown is used to gracefully shutdown down create operations.
-	// create releases the shutdown when all segment data has persisted to disk.
-	shutdown shutdown.Shutdown
 	// logger is where create operations will log their progress.
 	logger *zap.Logger
 	// allocate is used for setting the parameters for allocating a segment to  afile.
@@ -78,9 +74,6 @@ func mergeCreateConfigDefaults(cfg *createConfig) {
 
 	if cfg.persist.NumWorkers == 0 {
 		cfg.persist.NumWorkers = createPersistMaxRoutines
-	}
-	if cfg.persist.Shutdown == nil {
-		cfg.persist.Shutdown = cfg.shutdown
 	}
 	if cfg.persist.Logger == nil {
 		cfg.persist.Logger = cfg.logger
@@ -215,7 +208,7 @@ func (c createFactory) New() Create {
 
 // |||||| START UP |||||||
 
-func startCreate(cfg createConfig) (query.Factory[Create], error) {
+func startCreate(ctx confluence.Context, cfg createConfig) (query.Factory[Create], error) {
 
 	mergeCreateConfigDefaults(&cfg)
 
@@ -238,9 +231,7 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 
 	// queue 'debounces' operations so that they can be flushed to disk in efficient
 	// batches.
-	pipeline.Segment("queue", &queue.Debounce[createOperation]{
-		DebounceConfig: cfg.debounce,
-	})
+	pipeline.Segment("queue", &queue.Debounce[createOperation]{Config: cfg.debounce})
 
 	// batch groups operations into batches that are more efficient upon retrieval.
 	pipeline.Segment("batch", newCreateBatch())
@@ -274,9 +265,6 @@ func startCreate(cfg createConfig) (query.Factory[Create], error) {
 	inlet := confluence.NewStream[[]createOperation](1)
 
 	pipeline.InFrom(inlet)
-
-	ctx := confluence.DefaultContext()
-	ctx.Shutdown = cfg.shutdown
 
 	pipeline.Flow(ctx)
 

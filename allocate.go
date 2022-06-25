@@ -20,9 +20,12 @@ func newAllocator(counter *fileCounter, cfg allocate.Config) createSegment {
 	return a
 }
 
-func (a *allocator) allocate(ctx confluence.Context, ops []createOperation) ([]createOperation, bool) {
+func (a *allocator) allocate(
+	ctx confluence.Context,
+	ops []createOperation,
+) ([]createOperation, bool, error) {
 	for i, fk := range a.Allocate(ops...) {
 		ops[i].SetFileKey(fk)
 	}
-	return ops, true
+	return ops, true, nil
 }

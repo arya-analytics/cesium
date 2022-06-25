@@ -4,7 +4,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kfs"
-	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/signal"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 )
@@ -31,11 +31,6 @@ type Config struct {
 	NumWorkers int
 	// Persist will log events to this Logger.
 	Logger *zap.Logger
-	// Shutdown will be used to gracefully stop Persist by waiting for all executed operations to complete.
-	// NOTE: Exec will continue accepting operations after the Shutdown is called. It is up to the caller
-	// to ensure that the flow of operations is halted beforehand. Shutdown is not required if the caller
-	// is tracking the completion of operations internally.
-	Shutdown shutdown.Shutdown
 }
 
 func DefaultConfig() Config { return Config{NumWorkers: DefaultNumWorkers} }
@@ -48,11 +43,11 @@ func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *
 
 func (p *Persist[K, O]) Flow(ctx confluence.Context) {
 	p.start(ctx)
-	ctx.Shutdown.Go(func(sig chan shutdown.Signal) error {
+	ctx.Go(func(sig signal.Signal) error {
 		for {
 			select {
-			case <-sig:
-				return nil
+			case <-sig.Done():
+				return sig.Err()
 			case ops := <-p.In.Outlet():
 				for _, op := range ops {
 					p.ops <- op
@@ -64,11 +59,11 @@ func (p *Persist[K, O]) Flow(ctx confluence.Context) {
 
 func (p *Persist[K, O]) start(ctx confluence.Context) {
 	for i := 0; i < p.NumWorkers; i++ {
-		ctx.Shutdown.Go(func(sig chan shutdown.Signal) error {
+		ctx.Go(func(sig signal.Signal) error {
 			for {
 				select {
-				case <-sig:
-					return nil
+				case <-sig.Done():
+					return sig.Err()
 				case op := <-p.ops:
 					f, err := p.kfs.Acquire(op.FileKey())
 					if err != nil {
