@@ -10,7 +10,7 @@ import (
 )
 
 var _ = Describe("segment", func() {
-	Describe("Key", func() {
+	Describe("Name", func() {
 		It("Should generate the segments key correctly", func() {
 			k := segment.NewKey(channel.Key(1), telem.TimeStampMax)
 			Expect(k[0]).To(Equal(byte('s')))

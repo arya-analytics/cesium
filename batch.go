@@ -3,6 +3,7 @@ package cesium
 import (
 	"github.com/arya-analytics/cesium/internal/core"
 	"github.com/arya-analytics/x/confluence"
+	"github.com/arya-analytics/x/signal"
 	"sort"
 )
 
@@ -26,7 +27,7 @@ func newRetrieveBatch() retrieveSegment {
 }
 
 func (rb *retrieveBatch) batch(
-	ctx confluence.Context,
+	ctx signal.Context,
 	ops []retrieveOperation,
 ) ([]retrieveOperation, bool, error) {
 	if len(ops) == 0 {
@@ -69,7 +70,7 @@ func newCreateBatch() createSegment {
 }
 
 func (cb *createBatch) batch(
-	ctx confluence.Context,
+	ctx signal.Context,
 	ops []createOperation,
 ) ([]createOperation, bool, error) {
 	if len(ops) == 0 {

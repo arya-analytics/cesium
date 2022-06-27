@@ -5,6 +5,7 @@ import (
 	"github.com/arya-analytics/cesium/internal/channel"
 	"github.com/arya-analytics/cesium/internal/core"
 	"github.com/arya-analytics/x/confluence"
+	"github.com/arya-analytics/x/signal"
 )
 
 type allocator struct {
@@ -21,7 +22,7 @@ func newAllocator(counter *fileCounter, cfg allocate.Config) createSegment {
 }
 
 func (a *allocator) allocate(
-	ctx confluence.Context,
+	ctx signal.Context,
 	ops []createOperation,
 ) ([]createOperation, bool, error) {
 	for i, fk := range a.Allocate(ops...) {

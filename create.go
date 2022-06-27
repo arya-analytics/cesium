@@ -14,6 +14,7 @@ import (
 	"github.com/arya-analytics/x/lock"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
+	"github.com/arya-analytics/x/signal"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -208,7 +209,7 @@ func (c createFactory) New() Create {
 
 // |||||| START UP |||||||
 
-func startCreate(ctx confluence.Context, cfg createConfig) (query.Factory[Create], error) {
+func startCreate(ctx signal.Context, cfg createConfig) (query.Factory[Create], error) {
 
 	mergeCreateConfigDefaults(&cfg)
 

@@ -39,13 +39,13 @@ func TestCaesium(t *testing.T) {
 //
 //	// Define a new segment.
 //	seg := cesium.Segment{
-//		CesiumKey: ch.Key,
+//		CesiumKey: ch.Name,
 //		Start:      cesium.Now(),
 //		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //	}
 //
 //	// Write the segment.
-//	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &[]cesium.Segment{seg}); err != nil {
+//	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Name), &[]cesium.Segment{seg}); err != nil {
 //		log.Fatal(err)
 //	}
 //
@@ -72,7 +72,7 @@ func TestCaesium(t *testing.T) {
 //		Exec(ctx)
 //
 //	// New the query.
-//	req, res, err := db.NewCreate().WhereChannels(ch.Key).RouteStream(ctx)
+//	req, res, err := db.NewCreate().WhereChannels(ch.Name).RouteStream(ctx)
 //
 //	// Listen for errors.
 //	wg := sync.WaitGroup{}
@@ -96,7 +96,7 @@ func TestCaesium(t *testing.T) {
 //		// Define the segment.
 //		// It'stream important to notice that the start times do not overlap.
 //		seg := cesium.Segment{
-//			CesiumKey: ch.Key,
+//			CesiumKey: ch.Name,
 //			Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
 //			Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //		}
@@ -135,7 +135,7 @@ func TestCaesium(t *testing.T) {
 //	}
 //	var cPKs []int16
 //	for _, ch := range channels {
-//		cPKs = append(cPKs, ch.Key)
+//		cPKs = append(cPKs, ch.Name)
 //	}
 //
 //	// New the query.
@@ -168,7 +168,7 @@ func TestCaesium(t *testing.T) {
 //		for j := 0; j < nChannels; j++ {
 //			// It'stream important to notice that the start times do not overlap.
 //			segs[j] = cesium.Segment{
-//				CesiumKey: channels[j].Key,
+//				CesiumKey: channels[j].Name,
 //				Start:      t0.Add(cesium.TimeSpan(i) * 5 * cesium.Second),
 //				Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //			}
@@ -210,19 +210,19 @@ func TestCaesium(t *testing.T) {
 //
 //	// Define a new segment.
 //	seg := cesium.Segment{
-//		CesiumKey: ch.Key,
+//		CesiumKey: ch.Name,
 //		Start:      cesium.Now(),
 //		Data:       cesium.MarshalFloat64([]float64{1, 2, 3, 4, 5}),
 //	}
 //
 //	// Write the segment.
-//	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Key), &[]cesium.Segment{seg}); err != nil {
+//	if err := db.Sync(ctx, db.NewCreate().WhereChannels(ch.Name), &[]cesium.Segment{seg}); err != nil {
 //		log.Fatal(err)
 //	}
 //
 //	// New the retrieve query.
 //	var resSegs []cesium.Segment
-//	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.Key).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
+//	err = db.Sync(ctx, db.NewRetrieve().WhereChannels(ch.Name).WhereTimeRange(cesium.TimeRangeMax), &resSegs)
 //	if err != nil {
 //		log.Fatal(err)
 //	}

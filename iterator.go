@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/x/confluence"
+	"github.com/arya-analytics/x/signal"
 	"github.com/arya-analytics/x/telem"
 	"sync"
 )
@@ -50,13 +51,12 @@ type StreamIterator interface {
 	// segments most recently returned to the caller.
 	View() TimeRange
 	// Exhaust exhausts the StreamIterator, piping all segments to the Source outlet.
-	Exhaust()
+	Exhaust(ctx context.Context)
 	// Close closes the StreamIterator, ensuring that all in-progress segment reads complete before closing the Source outlet.
 	Close() error
 }
 
 type streamIterator struct {
-	ctx context.Context
 	// internal is the iterator that traverses segment metadata in key-value storage. It's essentially the 'brains'
 	// behind the operations.
 	internal kv.Iterator
@@ -68,6 +68,17 @@ type streamIterator struct {
 	executor confluence.Inlet[[]retrieveOperation]
 	// wg is used to track the completion status of the latest operations in the iterator.
 	wg *sync.WaitGroup
+}
+
+// Flow implements the confluence.Flow interface.
+func (i *streamIterator) Flow(ctx signal.Context) {
+	ctx.Go(func() error {
+		<-ctx.Done()
+		if err := i.Close(); err != nil {
+			return err
+		}
+		return ctx.Err()
+	})
 }
 
 // Next implements StreamIterator.
@@ -152,10 +163,10 @@ func (i *streamIterator) Seek(stamp TimeStamp) bool { return i.internal.Seek(sta
 func (i *streamIterator) View() TimeRange { return i.internal.View() }
 
 // Exhaust implements StreamIterator.
-func (i *streamIterator) Exhaust() {
+func (i *streamIterator) Exhaust(ctx context.Context) {
 	for {
-		if i.ctx.Err() != nil {
-			i.Out.Inlet() <- RetrieveResponse{Error: i.ctx.Err()}
+		if ctx.Err() != nil {
+			i.Out.Inlet() <- RetrieveResponse{Error: ctx.Err()}
 			break
 		}
 		if !i.Next() {

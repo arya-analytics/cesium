@@ -19,7 +19,7 @@ package cesium_test
 //
 //			segments := []cesium.Segment{
 //				{
-//					CesiumKey: ch.Key,
+//					CesiumKey: ch.Name,
 //					Start:      cesium.Now(),
 //					Data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
 //				},
@@ -27,14 +27,14 @@ package cesium_test
 //
 //			Expect(db.Sync(
 //				ctx,
-//				db.NewCreate().WhereChannels(ch.Key),
+//				db.NewCreate().WhereChannels(ch.Name),
 //				&segments,
 //			)).To(Succeed())
 //
 //			var resSegments []cesium.Segment
 //			Expect(db.Sync(
 //				ctx,
-//				db.NewRetrieve().WhereChannels(ch.Key),
+//				db.NewRetrieve().WhereChannels(ch.Name),
 //				&resSegments,
 //			)).To(Succeed())
 //
@@ -51,12 +51,12 @@ package cesium_test
 //
 //			segments := []cesium.Segment{
 //				{
-//					CesiumKey: ch.Key,
+//					CesiumKey: ch.Name,
 //					Start:      cesium.Now(),
 //					Data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
 //				},
 //				{
-//					CesiumKey: ch.Key,
+//					CesiumKey: ch.Name,
 //					Start:      cesium.Now().Add(3 * cesium.Second),
 //					Data:       cesium.MarshalFloat64([]float64{4, 5, 6}),
 //				},
@@ -64,14 +64,14 @@ package cesium_test
 //
 //			Expect(db.Sync(
 //				ctx,
-//				db.NewCreate().WhereChannels(ch.Key),
+//				db.NewCreate().WhereChannels(ch.Name),
 //				&segments,
 //			)).To(Succeed())
 //
 //			var resSegments []cesium.Segment
 //			Expect(db.Sync(
 //				ctx,
-//				db.NewRetrieve().WhereChannels(ch.Key).WhereTimeRange(cesium.TimeRange{
+//				db.NewRetrieve().WhereChannels(ch.Name).WhereTimeRange(cesium.TimeRange{
 //					Start: cesium.Now().Add(-10 * cesium.Second),
 //					End:   cesium.Now().Add(10 * cesium.Second),
 //				}),

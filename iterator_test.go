@@ -60,7 +60,7 @@ var _ = Describe("Iterator", func() {
 				iter, err := db.NewRetrieve().
 					WhereChannels(key).
 					WhereTimeRange(cesium.TimeRangeMax).
-					Iterate(ctx)
+					Iterate()
 				Expect(err).To(BeNil())
 				stream := confluence.NewStream[cesium.RetrieveResponse](1)
 				iter.OutTo(stream)
@@ -88,7 +88,7 @@ var _ = Describe("Iterator", func() {
 					WhereTimeRange(cesium.TimeRange{
 						Start: telem.TimeStamp(5 * cesium.Second),
 						End:   telem.TimeStampMax,
-					}).Iterate(ctx)
+					}).Iterate()
 				Expect(err).ToNot(HaveOccurred())
 				stream := confluence.NewStream[cesium.RetrieveResponse](1)
 				iter.OutTo(stream)

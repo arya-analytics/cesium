@@ -12,6 +12,7 @@ import (
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
+	"github.com/arya-analytics/x/signal"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -101,14 +102,14 @@ func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); r
 // segment reads are returns as part of RetrieveResponse.
 func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	stream := confluence.NewStream[RetrieveResponse](10)
-	iter, err := r.Iterate(ctx)
+	iter, err := r.Iterate()
 	if err != nil {
 		return stream.Outlet(), err
 	}
 	iter.OutTo(stream)
 	iter.First()
 	go func() {
-		iter.Exhaust()
+		iter.Exhaust(ctx)
 		if err := iter.Close(); err != nil {
 			panic(err)
 		}
@@ -116,17 +117,15 @@ func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
 	return stream.Outlet(), nil
 }
 
-func (r Retrieve) Iterate(ctx context.Context) (StreamIterator, error) {
+func (r Retrieve) Iterate() (StreamIterator, error) {
 	responses := &confluence.UnarySource[RetrieveResponse]{}
 	wg := &sync.WaitGroup{}
 	internal := ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...)
 	err := internal.Error()
 	return &streamIterator{
-		ctx:      ctx,
 		internal: internal,
 		executor: r.ops,
 		parser: &retrieveParser{
-			ctx:       ctx,
 			logger:    r.logger,
 			responses: responses,
 			wg:        wg,
@@ -175,7 +174,7 @@ func (r retrieveFactory) New() Retrieve {
 }
 
 func startRetrieve(
-	ctx confluence.Context,
+	ctx signal.Context,
 	cfg retrieveConfig,
 ) (query.Factory[Retrieve], error) {
 	mergeRetrieveConfigDefaults(&cfg)

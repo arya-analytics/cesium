@@ -41,13 +41,13 @@ func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *
 	return p
 }
 
-func (p *Persist[K, O]) Flow(ctx confluence.Context) {
+func (p *Persist[K, O]) Flow(ctx signal.Context) {
 	p.start(ctx)
-	ctx.Go(func(sig signal.Signal) error {
+	ctx.Go(func() error {
 		for {
 			select {
-			case <-sig.Done():
-				return sig.Err()
+			case <-ctx.Done():
+				return ctx.Err()
 			case ops := <-p.In.Outlet():
 				for _, op := range ops {
 					p.ops <- op
@@ -57,13 +57,13 @@ func (p *Persist[K, O]) Flow(ctx confluence.Context) {
 	})
 }
 
-func (p *Persist[K, O]) start(ctx confluence.Context) {
+func (p *Persist[K, O]) start(ctx signal.Context) {
 	for i := 0; i < p.NumWorkers; i++ {
-		ctx.Go(func(sig signal.Signal) error {
+		ctx.Go(func() error {
 			for {
 				select {
-				case <-sig.Done():
-					return sig.Err()
+				case <-ctx.Done():
+					return ctx.Err()
 				case op := <-p.ops:
 					f, err := p.kfs.Acquire(op.FileKey())
 					if err != nil {

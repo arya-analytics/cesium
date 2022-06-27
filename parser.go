@@ -39,7 +39,6 @@ func (c *createParser) parse(segments []Segment) []createOperation {
 }
 
 type retrieveParser struct {
-	ctx       context.Context
 	responses *confluence.UnarySource[RetrieveResponse]
 	logger    *zap.Logger
 	metrics   retrieveMetrics
@@ -53,7 +52,7 @@ func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
 			seg := header.Sugar(rng.Channel)
 			seg.SetBounds(rng.Bound)
 			ops = append(ops, retrieveOperationUnary{
-				ctx:         r.ctx,
+				ctx:         context.Background(),
 				seg:         seg,
 				dataRead:    r.metrics.dataRead,
 				wg:          r.wg,

@@ -228,7 +228,7 @@ type DB interface {
 	//		// output:
 	//		//  1
 	//
-	// If the cesium.Channel.Key field is not set, the DB will automatically generate
+	// If the cesium.Channel.Name field is not set, the DB will automatically generate
 	// an auto-incrementing uint16 key for you. Cesium requires that all channels have
 	// a unique key. If you attempt to create a channel with a duplicate key, the DB
 	// will return a UniqueViolation error.
@@ -245,7 +245,7 @@ type DB interface {
 	//		if err != nil {
 	//			logger.Fatal(err)
 	//		}
-	//		fmt.Println(ch.Key)
+	//		fmt.Println(ch.Name)
 	//		// output:
 	//		//  1
 	//
@@ -278,8 +278,8 @@ type (
 
 type db struct {
 	kv                kvx.KV
+	wg                signal.WaitGroup
 	shutdown          context.CancelFunc
-	conductor         signal.Conductor
 	create            query.Factory[Create]
 	retrieve          query.Factory[Retrieve]
 	channelKeyCounter *kvx.PersistedCounter
@@ -325,7 +325,7 @@ func (d *db) Sync(ctx context.Context, query interface{}, seg *[]Segment) error 
 // Close implements DB.
 func (d *db) Close() error {
 	d.shutdown()
-	err := d.conductor.WaitOnAll()
+	err := d.wg.WaitOnAll()
 	kvErr := d.kv.Close()
 	if err != context.Canceled {
 		return err

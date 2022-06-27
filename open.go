@@ -1,9 +1,7 @@
 package cesium
 
 import (
-	"context"
 	"github.com/arya-analytics/cesium/internal/core"
-	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kfs"
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/kv/pebblekv"
@@ -24,7 +22,7 @@ const channelCounterKey = "cs-nc"
 //	cesium.WithLogger(zap.NewNop())
 //
 //	// Bind an alamos.Experiment to register DB metrics.
-//	cesium.WithExperiment(alamos.New("myExperiment"))
+//	cesium.WithExperiment(alamos.WithCancel("myExperiment"))
 //
 // 	// Override the default shutdown threshold.
 //  cesium.WithShutdownThreshold(time.Second)
@@ -38,9 +36,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| SHUTDOWN ||||||
 
-	_ctx, shutdown := context.WithCancel(context.Background())
-
-	ctx := confluence.Context{Conductor: signal.New(_ctx)}
+	ctx, shutdown := signal.Background(signal.WithRoutineCap(10000))
 
 	// |||||| FILE SYSTEM ||||||
 
@@ -100,22 +96,21 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		create:            create,
 		retrieve:          retrieve,
 		channelKeyCounter: channelKeyCounter,
-		conductor:         ctx.Conductor,
+		wg:                ctx,
 	}, nil
 }
 
-func openFS(ctx confluence.Context, opts *options) (core.FS, error) {
+func openFS(ctx signal.Context, opts *options) (core.FS, error) {
 	fs, err := kfs.New[core.FileKey](
 		filepath.Join(opts.dirname, cesiumDirectory),
 		opts.kfs.opts...,
 	)
 	sync := &kfs.Sync[core.FileKey]{
-		FS:        fs,
-		Interval:  opts.kfs.sync.interval,
-		MaxAge:    opts.kfs.sync.maxAge,
-		Conductor: ctx.Conductor,
+		FS:       fs,
+		Interval: opts.kfs.sync.interval,
+		MaxAge:   opts.kfs.sync.maxAge,
 	}
-	sync.Start()
+	sync.Start(ctx)
 	return fs, err
 }
 
