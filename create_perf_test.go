@@ -1,13 +1,13 @@
 package cesium_test
 
 import (
+	"github.com/arya-analytics/cesium/testutil/seg"
 	_ "net/http/pprof"
 )
 
 import (
 	"fmt"
 	"github.com/arya-analytics/cesium"
-	"github.com/arya-analytics/cesium/internal/testutil/seg"
 	"github.com/arya-analytics/x/alamos"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

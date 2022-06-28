@@ -329,7 +329,7 @@ func (i *unaryIterator) PrevSpan(span telem.TimeSpan) bool {
 		i.resetValue()
 	}
 
-	if !i.Value().UnboundedRange().Start.After(rng.Start) {
+	if i.Value().UnboundedRange().Start.After(rng.Start) {
 		for i.internal.Prev(); i.Value().UnboundedRange().Start.After(rng.Start) && i.internal.Valid(); i.internal.Prev() {
 			i.prependValue()
 		}

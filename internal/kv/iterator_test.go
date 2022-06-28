@@ -127,7 +127,7 @@ var _ = Describe("Iterate", func() {
 				})
 			})
 
-			Describe("Next", func() {
+			Describe("next", func() {
 				It("Should return the segment that contains the view", func() {
 					Expect(iter.Seek(telem.TimeStamp(50 * time.Second))).To(BeTrue())
 					Expect(iter.Next()).To(BeTrue())
@@ -137,7 +137,7 @@ var _ = Describe("Iterate", func() {
 
 		})
 
-		Describe("Next", func() {
+		Describe("next", func() {
 
 			Context("At First", func() {
 				It("Should return the correct segment", func() {
@@ -505,7 +505,7 @@ var _ = Describe("Iterate", func() {
 				Expect(iter.Value().Range()).To(Equal(iter.View()))
 				Expect(iter.Value().Headers).To(HaveLen(3))
 
-				By("Returning false on the next call to Next()")
+				By("Returning false on the next call to next()")
 				Expect(iter.Next()).To(BeFalse())
 				Expect(iter.Valid()).To(BeFalse())
 
@@ -712,4 +712,5 @@ var _ = Describe("Iterate", func() {
 		})
 
 	})
+
 })

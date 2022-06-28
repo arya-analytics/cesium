@@ -32,15 +32,13 @@ const channelCounterKey = "cs-nc"
 //
 // See each options documentation for more.
 func Open(dirname string, opts ...Option) (DB, error) {
-	options := newOptions(dirname, opts...)
+	ctx, shutdown := signal.Background()
 
-	// |||||| SHUTDOWN ||||||
-
-	ctx, shutdown := signal.Background(signal.WithRoutineCap(10000))
+	o := newOptions(dirname, opts...)
 
 	// |||||| FILE SYSTEM ||||||
 
-	fs, err := openFS(ctx, options)
+	fs, err := openFS(ctx, o)
 	if err != nil {
 		shutdown()
 		return nil, err
@@ -48,7 +46,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| KV ||||||
 
-	kve, err := openKV(options)
+	kve, err := openKV(o)
 	if err != nil {
 		shutdown()
 		return nil, err
@@ -57,8 +55,8 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	// |||||| CREATE ||||||
 
 	create, err := startCreate(ctx, createConfig{
-		exp:    options.exp,
-		logger: options.logger,
+		exp:    o.exp,
+		logger: o.logger,
 		fs:     fs,
 		kv:     kve,
 	})
@@ -70,8 +68,8 @@ func Open(dirname string, opts ...Option) (DB, error) {
 	// |||||| RETRIEVE ||||||
 
 	retrieve, err := startRetrieve(ctx, retrieveConfig{
-		exp:    options.exp,
-		logger: options.logger,
+		exp:    o.exp,
+		logger: o.logger,
 		fs:     fs,
 		kv:     kve,
 	})

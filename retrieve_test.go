@@ -2,7 +2,7 @@ package cesium_test
 
 import (
 	"github.com/arya-analytics/cesium"
-	"github.com/arya-analytics/cesium/internal/testutil/seg"
+	"github.com/arya-analytics/cesium/testutil/seg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -60,8 +60,7 @@ var _ = Describe("Retrieve", func() {
 			stc := &seg.StreamCreate{
 				Req: req,
 				Res: res,
-				SequentialFactory: seg.NewSequentialFactory(&seg.
-					RandomFloat64Factory{}, 10*cesium.Second,
+				SequentialFactory: seg.NewSequentialFactory(&seg.RandomFloat64Factory{}, 10*cesium.Second,
 					channel),
 			}
 			stc.CreateCRequestsOfN(10, 2)
@@ -121,8 +120,7 @@ var _ = Describe("Retrieve", func() {
 				stc := &seg.StreamCreate{
 					Req: req,
 					Res: res,
-					SequentialFactory: seg.NewSequentialFactory(&seg.
-						RandomFloat64Factory{},
+					SequentialFactory: seg.NewSequentialFactory(&seg.RandomFloat64Factory{},
 						10*cesium.Second, channels[i]),
 				}
 				stc.CreateCRequestsOfN(10, 2)

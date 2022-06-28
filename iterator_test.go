@@ -2,7 +2,7 @@ package cesium_test
 
 import (
 	"github.com/arya-analytics/cesium"
-	"github.com/arya-analytics/cesium/internal/testutil/seg"
+	"github.com/arya-analytics/cesium/testutil/seg"
 	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/telem"
 	. "github.com/onsi/ginkgo/v2"

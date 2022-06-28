@@ -4,8 +4,8 @@ import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/x/confluence"
-	"github.com/arya-analytics/x/signal"
 	"github.com/arya-analytics/x/telem"
+	"io"
 	"sync"
 )
 
@@ -68,17 +68,6 @@ type streamIterator struct {
 	executor confluence.Inlet[[]retrieveOperation]
 	// wg is used to track the completion status of the latest operations in the iterator.
 	wg *sync.WaitGroup
-}
-
-// Flow implements the confluence.Flow interface.
-func (i *streamIterator) Flow(ctx signal.Context) {
-	ctx.Go(func() error {
-		<-ctx.Done()
-		if err := i.Close(); err != nil {
-			return err
-		}
-		return ctx.Err()
-	})
 }
 
 // Next implements StreamIterator.
@@ -179,6 +168,7 @@ func (i *streamIterator) Exhaust(ctx context.Context) {
 func (i *streamIterator) Close() error {
 	err := i.internal.Close()
 	i.wg.Wait()
+	i.pipeError(io.EOF)
 	close(i.Out.Inlet())
 	return err
 }
@@ -197,5 +187,5 @@ func (i *streamIterator) pipeOperations() {
 }
 
 func (i *streamIterator) pipeError(err error) {
-	i.UnarySource.Out.Inlet() <- RetrieveResponse{Error: err}
+	i.Out.Inlet() <- RetrieveResponse{Error: err}
 }
