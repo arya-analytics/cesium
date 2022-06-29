@@ -194,15 +194,15 @@ func startRetrieve(
 	rb := pipeline.NewRouteBuilder()
 
 	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{
-		FromAddr: "queue",
-		ToAddr:   "batch",
-		Capacity: 10,
+		SourceTarget: "queue",
+		SinkTarget:   "batch",
+		Capacity:     10,
 	})
 
 	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{
-		FromAddr: "batch",
-		ToAddr:   "persist",
-		Capacity: 10,
+		SourceTarget: "batch",
+		SinkTarget:   "persist",
+		Capacity:     10,
 	})
 
 	rb.RouteInletTo("queue")

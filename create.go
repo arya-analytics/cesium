@@ -243,21 +243,21 @@ func startCreate(ctx signal.Context, cfg createConfig) (query.Factory[Create], e
 	rb := pipeline.NewRouteBuilder()
 
 	rb.Route(confluence.UnaryRouter[[]createOperation]{
-		FromAddr: "allocator",
-		ToAddr:   "queue",
-		Capacity: 1,
+		SourceTarget: "allocator",
+		SinkTarget:   "queue",
+		Capacity:     1,
 	})
 
 	rb.Route(confluence.UnaryRouter[[]createOperation]{
-		FromAddr: "queue",
-		ToAddr:   "batch",
-		Capacity: 1,
+		SourceTarget: "queue",
+		SinkTarget:   "batch",
+		Capacity:     1,
 	})
 
 	rb.Route(confluence.UnaryRouter[[]createOperation]{
-		FromAddr: "batch",
-		ToAddr:   "persist",
-		Capacity: 1,
+		SourceTarget: "batch",
+		SinkTarget:   "persist",
+		Capacity:     1,
 	})
 
 	rb.RouteInletTo("allocator")
