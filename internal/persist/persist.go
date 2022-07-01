@@ -22,7 +22,7 @@ type Persist[F comparable, O operation.Operation[F]] struct {
 
 const (
 	// DefaultNumWorkers is the default maximum number of goroutines Persist can operate at once.
-	DefaultNumWorkers = 50
+	DefaultNumWorkers = 10
 )
 
 type Config struct {

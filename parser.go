@@ -43,6 +43,7 @@ type retrieveParser struct {
 	logger    *zap.Logger
 	metrics   retrieveMetrics
 	wg        *sync.WaitGroup
+	errC      chan<- error
 }
 
 func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
@@ -53,6 +54,7 @@ func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
 			seg.SetBounds(rng.Bound)
 			ops = append(ops, retrieveOperationUnary{
 				ctx:         context.Background(),
+				errC:        r.errC,
 				seg:         seg,
 				dataRead:    r.metrics.dataRead,
 				wg:          r.wg,

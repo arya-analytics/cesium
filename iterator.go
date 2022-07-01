@@ -1,11 +1,10 @@
 package cesium
 
 import (
-	"context"
+	"github.com/arya-analytics/cesium/internal/channel"
 	"github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/telem"
-	"io"
 	"sync"
 )
 
@@ -50,10 +49,12 @@ type StreamIterator interface {
 	// View returns the current range of values the StreamIterator has a 'view' of.  This view represents the range of
 	// segments most recently returned to the caller.
 	View() TimeRange
-	// Exhaust exhausts the StreamIterator, piping all segments to the Source outlet.
-	Exhaust(ctx context.Context)
 	// Close closes the StreamIterator, ensuring that all in-progress segment reads complete before closing the Source outlet.
 	Close() error
+	// Valid returns true if the StreamIterator is pointing at valid segments.
+	Valid() bool
+	// Error returns any errors accumulated by the StreamIterator.
+	Error() error
 }
 
 type streamIterator struct {
@@ -67,7 +68,30 @@ type streamIterator struct {
 	// executor is an Outlet where generated operations are piped for execution.
 	executor confluence.Inlet[[]retrieveOperation]
 	// wg is used to track the completion status of the latest operations in the iterator.
-	wg *sync.WaitGroup
+	wg     *sync.WaitGroup
+	opErrC chan error
+	_error error
+}
+
+func newIteratorFromRetrieve(r Retrieve) StreamIterator {
+	responses := &confluence.UnarySource[RetrieveResponse]{}
+	wg := &sync.WaitGroup{}
+	internal := kv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...)
+	errC := make(chan error)
+	return &streamIterator{
+		internal: internal,
+		executor: r.ops,
+		parser: &retrieveParser{
+			logger:    r.logger,
+			responses: responses,
+			wg:        wg,
+			metrics:   r.metrics,
+			errC:      errC,
+		},
+		wg:          wg,
+		UnarySource: responses,
+		opErrC:      errC,
+	}
 }
 
 // Next implements StreamIterator.
@@ -151,26 +175,41 @@ func (i *streamIterator) Seek(stamp TimeStamp) bool { return i.internal.Seek(sta
 // View implements StreamIterator.
 func (i *streamIterator) View() TimeRange { return i.internal.View() }
 
-// Exhaust implements StreamIterator.
-func (i *streamIterator) Exhaust(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			i.Out.Inlet() <- RetrieveResponse{Error: ctx.Err()}
-			break
-		}
-		if !i.Next() {
-			break
-		}
-	}
-}
-
 // Close implements StreamIterator.
 func (i *streamIterator) Close() error {
 	err := i.internal.Close()
+	go func() {
+		for _err := range i.opErrC {
+			if _err != nil {
+				err = _err
+			}
+		}
+	}()
 	i.wg.Wait()
-	i.pipeError(io.EOF)
+	close(i.opErrC)
 	close(i.Out.Inlet())
 	return err
+}
+
+// Valid implements StreamIterator.
+func (i *streamIterator) Valid() bool { return i.internal.Valid() && i.Error() == nil }
+
+func (i *streamIterator) error() error {
+	select {
+	case err := <-i.opErrC:
+		if err != nil {
+			i._error = err
+		}
+	default:
+	}
+	return i._error
+}
+
+func (i *streamIterator) Error() error {
+	if i.error() != nil {
+		return i.error()
+	}
+	return i.internal.Error()
 }
 
 func (i *streamIterator) pipeOperations() {
@@ -180,12 +219,4 @@ func (i *streamIterator) pipeOperations() {
 	}
 	i.wg.Add(len(ops))
 	i.executor.Inlet() <- ops
-	if err := i.internal.Error(); err != nil {
-		i.pipeError(err)
-	}
-
-}
-
-func (i *streamIterator) pipeError(err error) {
-	i.Out.Inlet() <- RetrieveResponse{Error: err}
 }

@@ -98,7 +98,7 @@ type Iterator interface {
 	// View returns a TimeRange representing the iterators current 'view' of the data
 	// i.e. what is the potential range of segments currently loaded into Value().
 	View() telem.TimeRange
-	// Error returns any errors encountered by the iterator. Error is reset after any
+	// Error returns any errors accumulated by the iterator. Error is reset after any
 	// non-relative call (i.e. First(), Last(), SeekFirst(), SeekLast(), SeekLT(),
 	//SeekGE(), Seek()). If Error is non-nil, any calls to Next(), NextRange(), NextSpan(),
 	// Prev(), PrevSpan(), or Valid() will return false.
@@ -146,11 +146,11 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 
 	chs, err := NewChannel(kve).Get(key)
 	if err != nil {
-		iter.setError(err)
+		iter.maybeSetError(err)
 		return iter
 	}
 	if len(chs) == 0 {
-		iter.setError(query.NotFound)
+		iter.maybeSetError(query.NotFound)
 		return iter
 	}
 
@@ -165,14 +165,14 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 	// point for the iterator. Otherwise, we'll seek to the first segment that starts
 	// after the start of the range. If this value overlaps with our desired range,
 	// we'll use it as the starting point for the iterator. Otherwise, set an error
-	// on the iterator/
+	// on the iterator.
 	if iter.SeekLT(rng.Start) && iter.Next() && iter.Value().Range().OverlapsWith(
 		rng) {
 		start = iter.key(iter.Value().UnboundedRange().Start).Bytes()
 	} else if iter.SeekGE(rng.Start) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
 		start = iter.key(iter.Value().UnboundedRange().Start).Bytes()
 	} else {
-		iter.setError(errors.New("[cesium.kv] - range has no data"))
+		iter.maybeSetError(errors.New("[cesium.kv] - range has no data"))
 	}
 
 	if iter.SeekGE(rng.End) && iter.Prev() && iter.Value().Range().OverlapsWith(rng) {
@@ -180,11 +180,11 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 	} else if iter.SeekLT(rng.End) && iter.Next() && iter.Value().Range().OverlapsWith(rng) {
 		end = iter.key(iter.Value().UnboundedRange().End).Bytes()
 	} else {
-		iter.setError(errors.New("[cesium.kv] - range has no data"))
+		iter.maybeSetError(errors.New("[cesium.kv] - range has no data"))
 	}
 
 	iter.rng = rng
-	iter.setError(iter.internal.Close())
+	iter.maybeSetError(iter.internal.Close())
 	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterRange(start, end))
 
 	return iter
@@ -203,7 +203,6 @@ func (i *unaryIterator) First() bool {
 	i.appendValue()
 	i.updateView(i.Value().UnboundedRange())
 	i.boundValueToView()
-
 	return true
 }
 
@@ -241,6 +240,7 @@ func (i *unaryIterator) Next() bool {
 	i.appendValue()
 	i.updateView(i.value.UnboundedRange())
 	i.boundValueToView()
+
 	return true
 }
 
@@ -304,7 +304,7 @@ func (i *unaryIterator) NextSpan(span telem.TimeSpan) bool {
 		i.forceInternalValid()
 	}
 
-	return !i.Value().Empty()
+	return !i.View().IsZero()
 }
 
 // PrevSpan implements Iterator.
@@ -347,7 +347,7 @@ func (i *unaryIterator) PrevSpan(span telem.TimeSpan) bool {
 		i.forceInternalValid()
 	}
 
-	return !i.Value().Empty()
+	return !i.View().IsZero()
 }
 
 // NextRange implements Iterator.
@@ -371,7 +371,10 @@ func (i *unaryIterator) NextRange(tr telem.TimeRange) bool {
 		return false
 	}
 
-	i.NextSpan(telem.TimeRange{Start: i.View().Start, End: tr.End}.Span())
+	if !i.NextSpan(telem.TimeRange{Start: i.View().Start, End: tr.End}.Span()) {
+		return false
+	}
+
 	i.updateView(tr)
 	i.boundValueToView()
 
@@ -497,13 +500,7 @@ func (i *unaryIterator) Error() error {
 
 // Valid implements Iterator.
 func (i *unaryIterator) Valid() bool {
-	if i.error() != nil || i.View().IsZero() {
-		return false
-	}
-	if i._forceInternalValid {
-		return true
-	}
-	return i.internal.Valid()
+	return !i.View().IsZero() && (i.internal.Valid() || i._forceInternalValid) && i.Error() == nil
 }
 
 // Close closes the iterator.
@@ -536,7 +533,7 @@ func (i *unaryIterator) forceInternalValid() { i._forceInternalValid = true }
 
 func (i *unaryIterator) resetForceInternalValid() { i._forceInternalValid = false }
 
-func (i *unaryIterator) setError(err error) {
+func (i *unaryIterator) maybeSetError(err error) {
 	if err != nil {
 		i._error = err
 	}

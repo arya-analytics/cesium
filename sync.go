@@ -15,17 +15,15 @@ func createSync(ctx context.Context, c Create, segments *[]Segment) error {
 }
 
 func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {
-	res, err := r.Stream(ctx)
-	if err != nil {
-		return err
+	resV := make(chan RetrieveResponse)
+	var err error
+	go func() {
+		err = r.Stream(ctx, resV)
+	}()
+	for res := range resV {
+		*segments = append(*segments, res.Segments...)
 	}
-	for resV := range res {
-		if resV.Error != nil {
-			return resV.Error
-		}
-		*segments = append(*segments, resV.Segments...)
-	}
-	return nil
+	return err
 }
 
 func syncExec(ctx context.Context, query interface{}, seg *[]Segment) error {

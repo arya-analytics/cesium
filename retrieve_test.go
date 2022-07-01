@@ -48,11 +48,10 @@ var _ = Describe("Retrieve", func() {
 			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
-			resV, err := db.NewRetrieve().WhereChannels(key).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			segments, err := seg.StreamRetrieve{Res: resV}.All()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(segments).To(HaveLen(20))
+			var segments []cesium.Segment
+			q := db.NewRetrieve().WhereChannels(key).WhereTimeRange(cesium.TimeRangeMax)
+			Expect(db.Sync(ctx, q, &segments)).To(Succeed())
+			Expect(len(segments)).To(Equal(20))
 		})
 		It("It should support multiple concurrent read requests", func() {
 			req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
@@ -72,18 +71,13 @@ var _ = Describe("Retrieve", func() {
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
-					rResV, err := db.NewRetrieve().
+					var segments []cesium.Segment
+					q := db.NewRetrieve().
 						WhereChannels(key).
-						WhereTimeRange(cesium.TimeRangeMax).
-						Stream(ctx)
+						WhereTimeRange(cesium.TimeRangeMax)
+					err := db.Sync(ctx, q, &segments)
 					Expect(err).ToNot(HaveOccurred())
-					if err != nil {
-						return
-
-					}
-					segments, err := seg.StreamRetrieve{Res: rResV}.All()
-					Expect(err).ToNot(HaveOccurred())
-					Expect(segments).To(HaveLen(20))
+					Expect(len(segments)).To(Equal(20))
 				}()
 			}
 			wg.Wait()
@@ -130,10 +124,9 @@ var _ = Describe("Retrieve", func() {
 			for _, c := range channels {
 				cPKs = append(cPKs, c.Key)
 			}
-			rResV, err := db.NewRetrieve().WhereChannels(cPKs...).WhereTimeRange(cesium.TimeRangeMax).Stream(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			segments, err := seg.StreamRetrieve{Res: rResV}.All()
-			Expect(err).ToNot(HaveOccurred())
+			var segments []cesium.Segment
+			q := db.NewRetrieve().WhereChannels(cPKs...).WhereTimeRange(cesium.TimeRangeMax)
+			Expect(db.Sync(ctx, q, &segments)).To(Succeed())
 			Expect(segments).To(HaveLen(200))
 		})
 	})

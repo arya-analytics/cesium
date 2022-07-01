@@ -3,7 +3,6 @@ package seg
 import (
 	"github.com/arya-analytics/cesium"
 	"github.com/arya-analytics/x/binary"
-	"io"
 	"math/rand"
 )
 
@@ -213,16 +212,10 @@ type StreamRetrieve struct {
 	Res <-chan cesium.RetrieveResponse
 }
 
-func (sr StreamRetrieve) All() ([]cesium.Segment, error) {
+func (sr StreamRetrieve) All() []cesium.Segment {
 	var s []cesium.Segment
 	for resV := range sr.Res {
-		if resV.Error == io.EOF {
-			return s, nil
-		}
-		if resV.Error != nil {
-			return nil, resV.Error
-		}
 		s = append(s, resV.Segments...)
 	}
-	return s, nil
+	return s
 }

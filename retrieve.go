@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/channel"
 	"github.com/arya-analytics/cesium/internal/core"
-	ckv "github.com/arya-analytics/cesium/internal/kv"
 	"github.com/arya-analytics/cesium/internal/persist"
 	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
@@ -13,8 +12,8 @@ import (
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
 	"github.com/arya-analytics/x/signal"
+	"github.com/cockroachdb/errors"
 	"go.uber.org/zap"
-	"sync"
 	"time"
 )
 
@@ -30,7 +29,7 @@ const (
 	retrieveDebounceFlushInterval = 10 * time.Millisecond
 	// retrieveDebounceFlushThreshold is the number of retrieve operations that must be in the debounce queue before
 	// it flushes
-	retrieveDebounceFlushThreshold = 10
+	retrieveDebounceFlushThreshold = 100
 )
 
 type retrieveConfig struct {
@@ -76,7 +75,6 @@ func mergeRetrieveConfigDefaults(cfg *retrieveConfig) {
 // RetrieveResponse is a response containing segments satisfying a Retrieve Query as well as any errors
 // encountered during the retrieval.
 type RetrieveResponse struct {
-	Error    error
 	Segments []segment.Segment
 }
 
@@ -100,40 +98,22 @@ func (r Retrieve) WhereTimeRange(tr TimeRange) Retrieve { setTimeRange(r, tr); r
 // Stream streams all segments from the iterator out to the channel. Errors encountered
 // during stream construction are returned immediately. Errors encountered during
 // segment reads are returns as part of RetrieveResponse.
-func (r Retrieve) Stream(ctx context.Context) (<-chan RetrieveResponse, error) {
-	stream := confluence.NewStream[RetrieveResponse](10)
-	iter, err := r.Iterate()
-	if err != nil {
-		return stream.Outlet(), err
-	}
-	iter.OutTo(stream)
-	iter.First()
-	go func() {
-		iter.Exhaust(ctx)
-		if err := iter.Close(); err != nil {
-			panic(err)
-		}
+func (r Retrieve) Stream(ctx context.Context, res chan<- RetrieveResponse) (err error) {
+	iter := r.Iterate()
+	iter.OutTo(confluence.NewInlet(res))
+	defer func() {
+		err = errors.CombineErrors(iter.Close(), err)
 	}()
-	return stream.Outlet(), nil
+	for iter.First(); iter.Valid(); iter.Next() {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}
+	return err
 }
 
-func (r Retrieve) Iterate() (StreamIterator, error) {
-	responses := &confluence.UnarySource[RetrieveResponse]{}
-	wg := &sync.WaitGroup{}
-	internal := ckv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...)
-	err := internal.Error()
-	return &streamIterator{
-		internal: internal,
-		executor: r.ops,
-		parser: &retrieveParser{
-			logger:    r.logger,
-			responses: responses,
-			wg:        wg,
-			metrics:   r.metrics,
-		},
-		wg:          wg,
-		UnarySource: responses,
-	}, err
+func (r Retrieve) Iterate() StreamIterator {
+	return newIteratorFromRetrieve(r)
 }
 
 // |||||| OPTIONS ||||||

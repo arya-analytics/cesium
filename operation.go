@@ -30,6 +30,7 @@ type retrieveOperationUnary struct {
 	dataRead alamos.Duration
 	wg       *sync.WaitGroup
 	logger   *zap.Logger
+	errC     chan<- error
 	*confluence.UnarySource[RetrieveResponse]
 }
 
@@ -40,9 +41,7 @@ func (rou retrieveOperationUnary) Context() context.Context { return rou.ctx }
 func (rou retrieveOperationUnary) FileKey() core.FileKey { return rou.seg.FileKey() }
 
 // WriteError implements retrieveOperation.
-func (rou retrieveOperationUnary) WriteError(err error) {
-	rou.Out.Inlet() <- RetrieveResponse{Error: err}
-}
+func (rou retrieveOperationUnary) WriteError(err error) { rou.errC <- err }
 
 // Offset implements retrieveOperation.
 func (rou retrieveOperationUnary) Offset() telem.Offset { return rou.seg.BoundedOffset() }
@@ -58,9 +57,12 @@ func (rou retrieveOperationUnary) Exec(f core.File) {
 	if err == io.EOF {
 		panic("[cesium] unexpected EOF encountered while reading segment")
 	}
+	if err != nil {
+		rou.WriteError(err)
+	}
 	s.Stop()
 	rou.logger.Info("retrieved segment")
-	rou.Out.Inlet() <- RetrieveResponse{Segments: []segment.Segment{rou.seg.Segment()}, Error: err}
+	rou.Out.Inlet() <- RetrieveResponse{Segments: []segment.Segment{rou.seg.Segment()}}
 }
 
 // retrieveOperationSet represents a set of retrieveOperations to execute together.
