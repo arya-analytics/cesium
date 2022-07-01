@@ -51,7 +51,7 @@ func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
 	for _, rng := range ranges {
 		for _, header := range rng.Headers {
 			seg := header.Sugar(rng.Channel)
-			seg.SetBounds(rng.Bound)
+			seg.SetBounds(rng.Bounds)
 			ops = append(ops, retrieveOperationUnary{
 				ctx:         context.Background(),
 				errC:        r.errC,

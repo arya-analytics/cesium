@@ -150,7 +150,7 @@ func (i *streamIterator) PrevSpan(span TimeSpan) bool {
 
 // NextRange implements StreamIterator.
 func (i *streamIterator) NextRange(tr TimeRange) bool {
-	if !i.internal.NextRange(tr) {
+	if !i.internal.SetRange(tr) {
 		return false
 	}
 	i.pipeOperations()
@@ -213,7 +213,7 @@ func (i *streamIterator) Error() error {
 }
 
 func (i *streamIterator) pipeOperations() {
-	ops := i.parser.parse(i.internal.Values())
+	ops := i.parser.parse(i.internal.Ranges())
 	if len(ops) == 0 {
 		return
 	}

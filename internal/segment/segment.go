@@ -61,11 +61,11 @@ func NewKey(channelKey channel.Key, stamp telem.TimeStamp) (key Key) {
 
 type Range struct {
 	Channel channel.Channel
-	Bound   telem.TimeRange
+	Bounds  telem.TimeRange
 	Headers []Header
 }
 
-func (r *Range) Range() telem.TimeRange { return r.UnboundedRange().BoundBy(r.Bound) }
+func (r *Range) Range() telem.TimeRange { return r.UnboundedRange().BoundBy(r.Bounds) }
 
 func (r *Range) Empty() bool { return r.UnboundedRange().IsZero() }
 
