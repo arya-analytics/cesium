@@ -55,8 +55,8 @@ var _ = Describe("Regression", func() {
 					Start: telem.TimeStamp(80 * telem.Second),
 					End:   telem.TimeStamp(100 * telem.Second),
 				}))
-				Expect(iter.Value().Headers).To(HaveLen(2))
-				Expect(iter.Value().UnboundedRange()).To(Equal(iter.View()))
+				Expect(iter.Range().Headers).To(HaveLen(2))
+				Expect(iter.Range().UnboundedRange()).To(Equal(iter.View()))
 			})
 		})
 
