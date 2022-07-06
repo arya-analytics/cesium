@@ -41,9 +41,9 @@ func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *
 	return p
 }
 
-func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.FlowOption) {
+func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.Option) {
 	p.start(ctx)
-	fo := confluence.NewFlowOptions(opts)
+	o := confluence.NewOptions(opts)
 	ctx.Go(func() error {
 		for {
 			select {
@@ -55,7 +55,7 @@ func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.FlowOption) 
 				}
 			}
 		}
-	}, fo.Signal...)
+	}, o.Signal...)
 }
 
 func (p *Persist[K, O]) start(ctx signal.Context) {

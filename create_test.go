@@ -38,30 +38,17 @@ var _ = Describe("Create", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					By("Initializing a request")
-					cReq := cesium.CreateRequest{
-						Segments: []cesium.Segment{
-							{
-								ChannelKey: key,
-								Start:      cesium.Now(),
-								Data:       cesium.MarshalFloat64([]float64{1}),
-							},
-						},
-					}
+					segments := []cesium.Segment{
+						{
+							ChannelKey: key,
+							Start:      cesium.Now(),
+							Data:       cesium.MarshalFloat64([]float64{1}),
+						}}
 
 					By("Opening the create query")
-					req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
+					Expect(db.Sync(ctx, db.NewCreate().WhereChannels(key),
+						&segments)).To(Succeed())
 					Expect(err).ToNot(HaveOccurred())
-
-					By("Writing the segment")
-					req <- cReq
-
-					By("Closing the request pipe")
-					close(req)
-
-					By("Not returning any errors")
-					for resV := range res {
-						Expect(resV.Error).ToNot(HaveOccurred())
-					}
 
 					var resSeg []cesium.Segment
 					err = db.Sync(ctx, db.NewRetrieve().
@@ -71,7 +58,7 @@ var _ = Describe("Create", func() {
 					)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resSeg).To(HaveLen(1))
-					Expect(resSeg[0].Start).To(Equal(cReq.Segments[0].Start))
+					Expect(resSeg[0].Start).To(Equal(segments[0].Start))
 				})
 			})
 
@@ -86,45 +73,30 @@ var _ = Describe("Create", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					By("Initializing a request")
-					cReq := cesium.CreateRequest{
-						Segments: []cesium.Segment{
-							{
-								ChannelKey: key,
-								Start:      cesium.Now(),
-								Data:       cesium.MarshalFloat64([]float64{1}),
-							},
-							{
-								ChannelKey: key,
-								Start:      cesium.Now().Add(1 * cesium.Second),
-								Data:       cesium.MarshalFloat64([]float64{2}),
-							},
+					segments := []cesium.Segment{
+						{
+							ChannelKey: key,
+							Start:      cesium.Now(),
+							Data:       cesium.MarshalFloat64([]float64{1}),
+						},
+						{
+							ChannelKey: key,
+							Start:      cesium.Now().Add(1 * cesium.Second),
+							Data:       cesium.MarshalFloat64([]float64{2}),
 						},
 					}
 
 					By("Opening the create query")
-					req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
-					Expect(err).ToNot(HaveOccurred())
-
-					By("Writing the segments")
-					req <- cReq
-
-					By("Closing the request pipe")
-					close(req)
-
-					By("Not returning any errors")
-					for resV := range res {
-						Expect(resV.Error).ToNot(HaveOccurred())
-					}
+					Expect(db.Sync(ctx, db.NewCreate().WhereChannels(key), &segments)).To(Succeed())
 
 					By("Retrieving the segments afterwards")
 					var resSeg []cesium.Segment
 					err = db.Sync(ctx, db.NewRetrieve().WhereChannels(key).WhereTimeRange(cesium.TimeRangeMax), &resSeg)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resSeg).To(HaveLen(2))
-					Expect(resSeg[0].Start).To(BeElementOf([]cesium.TimeStamp{cReq.
-						Segments[0].Start, cReq.Segments[1].Start}))
-					Expect(resSeg[1].Start).To(BeElementOf([]cesium.TimeStamp{cReq.
-						Segments[0].Start, cReq.Segments[1].Start}))
+					ts := []cesium.TimeStamp{segments[0].Start, segments[1].Start}
+					Expect(resSeg[0].Start).To(BeElementOf(ts))
+					Expect(resSeg[1].Start).To(BeElementOf(ts))
 				})
 			})
 
@@ -159,8 +131,12 @@ var _ = Describe("Create", func() {
 					}
 
 					By("Opening the create query")
-					req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
-					Expect(err).ToNot(HaveOccurred())
+					req := make(chan cesium.CreateRequest)
+					res := make(chan cesium.CreateResponse)
+					go func() {
+						err := db.NewCreate().WhereChannels(key).Stream(ctx, req, res)
+						Expect(err).ToNot(HaveOccurred())
+					}()
 
 					By("Writing the segments")
 					req <- cReqOne

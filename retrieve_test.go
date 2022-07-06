@@ -35,7 +35,11 @@ var _ = Describe("Retrieve", func() {
 			Expect(db.Close()).To(Succeed())
 		})
 		It("Should read the segments correctly", func() {
-			req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
+			req, res := make(chan cesium.CreateRequest), make(chan cesium.CreateResponse)
+			go func() {
+				err := db.NewCreate().WhereChannels(key).Stream(ctx, req, res)
+				Expect(err).ToNot(HaveOccurred())
+			}()
 			stc := &seg.StreamCreate{
 				Req: req,
 				Res: res,
@@ -45,7 +49,6 @@ var _ = Describe("Retrieve", func() {
 					channel,
 				),
 			}
-			Expect(err).ToNot(HaveOccurred())
 			stc.CreateCRequestsOfN(10, 2)
 			Expect(stc.CloseAndWait()).To(Succeed())
 			var segments []cesium.Segment
@@ -54,8 +57,11 @@ var _ = Describe("Retrieve", func() {
 			Expect(len(segments)).To(Equal(20))
 		})
 		It("It should support multiple concurrent read requests", func() {
-			req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
-			Expect(err).ToNot(HaveOccurred())
+			req, res := make(chan cesium.CreateRequest), make(chan cesium.CreateResponse)
+			go func() {
+				err := db.NewCreate().WhereChannels(key).Stream(ctx, req, res)
+				Expect(err).To(BeNil())
+			}()
 			stc := &seg.StreamCreate{
 				Req: req,
 				Res: res,
@@ -109,8 +115,11 @@ var _ = Describe("Retrieve", func() {
 		})
 		It("Should support reading data from multiple channels", func() {
 			for i := 0; i < channelCount; i++ {
-				req, res, err := db.NewCreate().WhereChannels(channels[i].Key).Stream(ctx)
-				Expect(err).ToNot(HaveOccurred())
+				req, res := make(chan cesium.CreateRequest), make(chan cesium.CreateResponse)
+				go func() {
+					err := db.NewCreate().WhereChannels(channels[i].Key).Stream(ctx, req, res)
+					Expect(err).ToNot(HaveOccurred())
+				}()
 				stc := &seg.StreamCreate{
 					Req: req,
 					Res: res,

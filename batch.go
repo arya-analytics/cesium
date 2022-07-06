@@ -17,12 +17,12 @@ import (
 //
 // The intent is to maximize sequential IO for a given set of operations.
 type retrieveBatch struct {
-	confluence.Transform[[]retrieveOperation]
+	confluence.LinearTransform[[]retrieveOperation, []retrieveOperation]
 }
 
 func newRetrieveBatch() retrieveSegment {
 	rb := &retrieveBatch{}
-	rb.Transform.Transform = rb.batch
+	rb.ApplyTransform = rb.batch
 	return rb
 }
 
@@ -60,12 +60,12 @@ func (rb *retrieveBatch) batch(
 // 		of the same channel together, we can minimize the number of disk seeks.
 //
 type createBatch struct {
-	confluence.Transform[[]createOperation]
+	confluence.LinearTransform[[]createOperation, []createOperation]
 }
 
 func newCreateBatch() createSegment {
 	cb := &createBatch{}
-	cb.Transform.Transform = cb.batch
+	cb.ApplyTransform = cb.batch
 	return cb
 }
 

@@ -10,6 +10,8 @@ import (
 	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
 	"github.com/arya-analytics/x/confluence"
+	"github.com/arya-analytics/x/confluence/plumber"
+	"github.com/arya-analytics/x/errutil"
 	kvx "github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/lock"
 	"github.com/arya-analytics/x/query"
@@ -20,7 +22,7 @@ import (
 	"time"
 )
 
-type createSegment = confluence.Segment[[]createOperation]
+type createSegment = confluence.Segment[[]createOperation, []createOperation]
 
 // |||||| CONFIGURATION ||||||
 
@@ -30,7 +32,7 @@ const (
 	createPersistMaxRoutines = persist.DefaultNumWorkers
 	// createDebounceFlushInterval is the interval at which create debounce
 	// queue will flush if the number of create operations is below the threshold.
-	createDebounceFlushInterval = 100 * time.Millisecond
+	createDebounceFlushInterval = 10 * time.Millisecond
 	// createDebounceFlushThreshold is the number of operations that must be queued
 	//before create debounce queue will flush.
 	createDebounceFlushThreshold = 100
@@ -119,21 +121,25 @@ type Create struct {
 func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, keys...); return c }
 
 // Stream opens the stream.
-func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
+func (c Create) Stream(
+	ctx context.Context,
+	requests <-chan CreateRequest,
+	responses chan<- CreateResponse,
+) error {
 	query.SetContext(c, ctx)
 	keys := channel.GetKeys(c)
 	if err := c.lock.Acquire(keys...); err != nil {
-		return nil, nil, err
+		return err
 	}
 	defer c.lock.Release(keys...)
 
 	_channels, err := kv.NewChannel(c.kv).Get(keys...)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	if len(_channels) != len(keys) {
-		return nil, nil, NotFound
+		return NotFound
 	}
 
 	channels := make(map[channel.Key]channel.Channel)
@@ -141,11 +147,9 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 		channels[ch.Key] = ch
 	}
 
-	requests := confluence.NewStream[CreateRequest](10)
-	responses := confluence.NewStream[CreateResponse](10)
-
-	responseSource := confluence.UnarySource[CreateResponse]{}
-	responseSource.OutTo(responses)
+	resInlet := confluence.NewInlet(responses)
+	res := confluence.AbstractUnarySource[CreateResponse]{}
+	res.OutTo(resInlet)
 
 	wg := &sync.WaitGroup{}
 
@@ -155,33 +159,30 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 		metrics:   c.metrics,
 		header:    kv.NewHeader(c.kv),
 		channels:  channels,
-		responses: responseSource,
+		responses: res,
 		wg:        wg,
 	}
 
-	go func() {
-		requestDur := c.metrics.request.Stopwatch()
-		requestDur.Start()
-		defer func() {
-			wg.Wait()
-			close(responseSource.Out.Inlet())
-			requestDur.Stop()
-		}()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case req, ok := <-requests.Outlet():
-				if !ok {
-					return
-				}
-				ops := parser.parse(req.Segments)
-				wg.Add(len(ops))
-				c.ops.Inlet() <- ops
-			}
-		}
+	requestDur := c.metrics.request.Stopwatch()
+	requestDur.Start()
+	defer func() {
+		wg.Wait()
+		resInlet.Close()
+		requestDur.Stop()
 	}()
-	return requests.Inlet(), responses.Outlet(), nil
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case req, ok := <-requests:
+			if !ok {
+				return nil
+			}
+			ops := parser.parse(req.Segments)
+			wg.Add(len(ops))
+			c.ops.Inlet() <- ops
+		}
+	}
 }
 
 // |||||| QUERY FACTORY ||||||
@@ -192,7 +193,8 @@ type createFactory struct {
 	logger  *zap.Logger
 	header  *kv.Header
 	metrics createMetrics
-	ops     confluence.Inlet[[]createOperation]
+	confluence.AbstractUnarySource[[]createOperation]
+	confluence.EmptyFlow
 }
 
 // New implements the query.Factory interface.
@@ -202,7 +204,7 @@ func (c createFactory) New() Create {
 		kv:      c.kv,
 		logger:  c.logger,
 		metrics: c.metrics,
-		ops:     c.ops,
+		ops:     c.Out,
 		lock:    c.lock,
 	}
 }
@@ -225,55 +227,69 @@ func startCreate(ctx signal.Context, cfg createConfig) (query.Factory[Create], e
 	// serialize writes to the same channel from different goroutines.
 	channelLock := lock.NewMap[channel.Key]()
 
-	pipeline := confluence.NewPipeline[[]createOperation]()
+	pipe := plumber.New()
 
 	// allocator allocates segments to files.
-	pipeline.Segment("allocator", newAllocator(fCount, cfg.allocate))
+	plumber.SetSegment[[]createOperation, []createOperation](
+		pipe,
+		"allocator",
+		newAllocator(fCount, cfg.allocate),
+	)
 
 	// queue 'debounces' operations so that they can be flushed to disk in efficient
 	// batches.
-	pipeline.Segment("queue", &queue.Debounce[createOperation]{Config: cfg.debounce})
+	plumber.SetSegment[[]createOperation, []createOperation](
+		pipe,
+		"queue",
+		&queue.Debounce[createOperation]{Config: cfg.debounce},
+	)
 
 	// batch groups operations into batches that are more efficient upon retrieval.
-	pipeline.Segment("batch", newCreateBatch())
+	plumber.SetSegment(pipe, "batch", newCreateBatch())
 
 	// persist executes batched operations to disk.
-	pipeline.Segment("persist", persist.New[core.FileKey, createOperation](cfg.fs, cfg.persist))
+	plumber.SetSink[[]createOperation](
+		pipe,
+		"persist",
+		persist.New[core.FileKey, createOperation](cfg.fs, cfg.persist),
+	)
 
-	rb := pipeline.NewRouteBuilder()
-
-	rb.Route(confluence.UnaryRouter[[]createOperation]{
-		SourceTarget: "allocator",
-		SinkTarget:   "queue",
-		Capacity:     1,
-	})
-
-	rb.Route(confluence.UnaryRouter[[]createOperation]{
-		SourceTarget: "queue",
-		SinkTarget:   "batch",
-		Capacity:     1,
-	})
-
-	rb.Route(confluence.UnaryRouter[[]createOperation]{
-		SourceTarget: "batch",
-		SinkTarget:   "persist",
-		Capacity:     1,
-	})
-
-	rb.RouteInletTo("allocator")
-
-	// inlet is the inlet for all create operations to be executed on disk.
-	inlet := confluence.NewStream[[]createOperation](1)
-
-	pipeline.InFrom(inlet)
-
-	pipeline.Flow(ctx)
-
-	return createFactory{
+	queryFactory := &createFactory{
 		lock:    channelLock,
 		kv:      cfg.kv,
 		logger:  cfg.logger,
 		metrics: newCreateMetrics(cfg.exp),
-		ops:     inlet,
-	}, rb.Error()
+	}
+
+	plumber.SetSource[[]createOperation](pipe, "query", queryFactory)
+
+	c := errutil.NewCatchSimple()
+
+	c.Exec(plumber.UnaryRouter[[]createOperation]{
+		SourceTarget: "query",
+		SinkTarget:   "allocator",
+		Capacity:     1,
+	}.PreRoute(pipe))
+
+	c.Exec(plumber.UnaryRouter[[]createOperation]{
+		SourceTarget: "allocator",
+		SinkTarget:   "queue",
+		Capacity:     1,
+	}.PreRoute(pipe))
+
+	c.Exec(plumber.UnaryRouter[[]createOperation]{
+		SourceTarget: "queue",
+		SinkTarget:   "batch",
+		Capacity:     1,
+	}.PreRoute(pipe))
+
+	c.Exec(plumber.UnaryRouter[[]createOperation]{
+		SourceTarget: "batch",
+		SinkTarget:   "persist",
+		Capacity:     1,
+	}.PreRoute(pipe))
+
+	pipe.Flow(ctx)
+
+	return queryFactory, c.Error()
 }

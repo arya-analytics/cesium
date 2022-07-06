@@ -5,13 +5,20 @@ import (
 )
 
 func createSync(ctx context.Context, c Create, segments *[]Segment) error {
-	req, res, err := c.Stream(ctx)
-	if err != nil {
-		return err
-	}
+	req, res := make(chan CreateRequest), make(chan CreateResponse)
+	var err error
+	go func() {
+		if sErr := c.Stream(ctx, req, res); sErr != nil {
+			err = sErr
+		}
+	}()
 	req <- CreateRequest{Segments: *segments}
 	close(req)
-	return (<-res).Error
+	resErr := (<-res).Error
+	if resErr != nil {
+		err = resErr
+	}
+	return err
 }
 
 func retrieveSync(ctx context.Context, r Retrieve, segments *[]Segment) error {

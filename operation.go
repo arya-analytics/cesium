@@ -25,13 +25,13 @@ type retrieveOperation interface {
 
 // retrieveOperationUnary executes a single segment read on a file.
 type retrieveOperationUnary struct {
-	ctx      context.Context
-	seg      *segment.Sugared
-	dataRead alamos.Duration
-	wg       *sync.WaitGroup
-	logger   *zap.Logger
-	errC     chan<- error
-	*confluence.UnarySource[RetrieveResponse]
+	ctx       context.Context
+	seg       *segment.Sugared
+	dataRead  alamos.Duration
+	wg        *sync.WaitGroup
+	logger    *zap.Logger
+	errC      chan<- error
+	responses *confluence.AbstractUnarySource[RetrieveResponse]
 }
 
 // Context implements retrieveOperation.
@@ -62,7 +62,7 @@ func (rou retrieveOperationUnary) Exec(f core.File) {
 	}
 	s.Stop()
 	rou.logger.Info("retrieved segment")
-	rou.Out.Inlet() <- RetrieveResponse{Segments: []segment.Segment{rou.seg.Segment()}}
+	rou.responses.Out.Inlet() <- RetrieveResponse{Segments: []segment.Segment{rou.seg.Segment()}}
 }
 
 // retrieveOperationSet represents a set of retrieveOperations to execute together.
@@ -86,13 +86,13 @@ type createOperation interface {
 
 // createOperationUnary executes a single segment write to a file.
 type createOperationUnary struct {
-	seg     *segment.Sugared
-	ctx     context.Context
-	logger  *zap.Logger
-	metrics createMetrics
-	wg      *sync.WaitGroup
-	kv      *kv.Header
-	confluence.UnarySource[CreateResponse]
+	seg       *segment.Sugared
+	ctx       context.Context
+	logger    *zap.Logger
+	metrics   createMetrics
+	wg        *sync.WaitGroup
+	kv        *kv.Header
+	responses confluence.AbstractUnarySource[CreateResponse]
 }
 
 // Context implements createOperation.
@@ -105,7 +105,9 @@ func (cou createOperationUnary) FileKey() core.FileKey { return cou.seg.FileKey(
 func (cou createOperationUnary) ChannelKey() channel.Key { return cou.seg.ChannelKey() }
 
 // WriteError implements createOperation.
-func (cou createOperationUnary) WriteError(err error) { cou.Out.Inlet() <- CreateResponse{Error: err} }
+func (cou createOperationUnary) WriteError(err error) {
+	cou.responses.Out.Inlet() <- CreateResponse{Error: err}
+}
 
 // BindWaitGroup implements createOperation.
 func (cou createOperationUnary) BindWaitGroup(wg *sync.WaitGroup) { cou.wg = wg }

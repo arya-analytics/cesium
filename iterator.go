@@ -62,7 +62,8 @@ type streamIterator struct {
 	// behind the operations.
 	internal kv.Iterator
 	// UnarySource is where values from the iterator will be piped.
-	*confluence.UnarySource[RetrieveResponse]
+	*confluence.AbstractUnarySource[RetrieveResponse]
+	confluence.EmptyFlow
 	// parser converts segment metadata into executable operations on disk.
 	parser *retrieveParser
 	// executor is an Outlet where generated operations are piped for execution.
@@ -74,7 +75,7 @@ type streamIterator struct {
 }
 
 func newIteratorFromRetrieve(r Retrieve) StreamIterator {
-	responses := &confluence.UnarySource[RetrieveResponse]{}
+	responses := &confluence.AbstractUnarySource[RetrieveResponse]{}
 	wg := &sync.WaitGroup{}
 	internal := kv.NewIterator(r.kve, timeRange(r), channel.GetKeys(r)...)
 	errC := make(chan error)
@@ -88,9 +89,9 @@ func newIteratorFromRetrieve(r Retrieve) StreamIterator {
 			metrics:   r.metrics,
 			errC:      errC,
 		},
-		wg:          wg,
-		UnarySource: responses,
-		opErrC:      errC,
+		wg:                  wg,
+		AbstractUnarySource: responses,
+		opErrC:              errC,
 	}
 }
 

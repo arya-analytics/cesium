@@ -8,6 +8,8 @@ import (
 	"github.com/arya-analytics/cesium/internal/segment"
 	"github.com/arya-analytics/x/alamos"
 	"github.com/arya-analytics/x/confluence"
+	"github.com/arya-analytics/x/confluence/plumber"
+	"github.com/arya-analytics/x/errutil"
 	"github.com/arya-analytics/x/kv"
 	"github.com/arya-analytics/x/query"
 	"github.com/arya-analytics/x/queue"
@@ -17,7 +19,7 @@ import (
 	"time"
 )
 
-type retrieveSegment = confluence.Segment[[]retrieveOperation]
+type retrieveSegment = confluence.Segment[[]retrieveOperation, []retrieveOperation]
 
 // |||||| CONFIGURATION ||||||
 
@@ -137,16 +139,17 @@ func timeRange(q query.Query) TimeRange {
 // |||||| QUERY FACTORY ||||||
 
 type retrieveFactory struct {
-	ops     confluence.Inlet[[]retrieveOperation]
 	kve     kv.KV
 	logger  *zap.Logger
 	metrics retrieveMetrics
+	confluence.AbstractUnarySource[[]retrieveOperation]
+	confluence.EmptyFlow
 }
 
 func (r retrieveFactory) New() Retrieve {
 	return Retrieve{
 		Query:   query.New(),
-		ops:     r.ops,
+		ops:     r.Out,
 		kve:     r.kve,
 		logger:  r.logger,
 		metrics: r.metrics,
@@ -159,43 +162,59 @@ func startRetrieve(
 ) (query.Factory[Retrieve], error) {
 	mergeRetrieveConfigDefaults(&cfg)
 
-	pipeline := confluence.NewPipeline[[]retrieveOperation]()
+	pipe := plumber.New()
 
 	// queue 'debounces' operations so that they can be flushed to disk in efficient
 	// batches.
-	pipeline.Segment("queue", &queue.Debounce[retrieveOperation]{Config: cfg.debounce})
+	plumber.SetSegment[[]retrieveOperation, []retrieveOperation](
+		pipe,
+		"queue",
+		&queue.Debounce[retrieveOperation]{Config: cfg.debounce},
+	)
 
 	// batch groups operations into batches that optimize sequential IO.
-	pipeline.Segment("batch", newRetrieveBatch())
+	plumber.SetSegment[[]retrieveOperation, []retrieveOperation](
+		pipe,
+		"batch",
+		newRetrieveBatch(),
+	)
 
 	// persist executes batched operations on disk.
-	pipeline.Segment("persist", persist.New[core.FileKey, retrieveOperation](cfg.fs, cfg.persist))
+	plumber.SetSink[[]retrieveOperation](
+		pipe,
+		"persist",
+		persist.New[core.FileKey, retrieveOperation](cfg.fs, cfg.persist),
+	)
 
-	rb := pipeline.NewRouteBuilder()
-
-	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{
-		SourceTarget: "queue",
-		SinkTarget:   "batch",
-		Capacity:     10,
-	})
-
-	rb.Route(confluence.UnaryRouter[[]retrieveOperation]{
-		SourceTarget: "batch",
-		SinkTarget:   "persist",
-		Capacity:     10,
-	})
-
-	rb.RouteInletTo("queue")
-
-	// inlet is the inlet for all retrieve operations to be executed on disk.
-	inlet := confluence.NewStream[[]retrieveOperation](1)
-	pipeline.InFrom(inlet)
-	pipeline.Flow(ctx)
-
-	return retrieveFactory{
-		ops:     inlet,
+	queryFactory := &retrieveFactory{
 		kve:     cfg.kv,
 		metrics: newRetrieveMetrics(cfg.exp),
 		logger:  cfg.logger,
-	}, rb.Error()
+	}
+
+	plumber.SetSource[[]retrieveOperation](pipe, "query", queryFactory)
+
+	c := errutil.NewCatchSimple()
+
+	c.Exec(plumber.UnaryRouter[[]retrieveOperation]{
+		SourceTarget: "query",
+		SinkTarget:   "queue",
+		Capacity:     10,
+	}.PreRoute(pipe))
+
+	c.Exec(plumber.UnaryRouter[[]retrieveOperation]{
+		SourceTarget: "queue",
+		SinkTarget:   "batch",
+		Capacity:     10,
+	}.PreRoute(pipe))
+
+	c.Exec(plumber.UnaryRouter[[]retrieveOperation]{
+		SourceTarget: "batch",
+		SinkTarget:   "persist",
+		Capacity:     10,
+	}.PreRoute(pipe))
+
+	pipe.Flow(ctx)
+
+	return queryFactory, c.Error()
 }

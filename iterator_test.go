@@ -41,7 +41,11 @@ var _ = Describe("Iterator", func() {
 			channel.Key = key
 			Expect(err).ToNot(HaveOccurred())
 
-			req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
+			req, res := make(chan cesium.CreateRequest), make(chan cesium.CreateResponse)
+			go func() {
+				err := db.NewCreate().WhereChannels(key).Stream(ctx, req, res)
+				Expect(err).ToNot(HaveOccurred())
+			}()
 			stc := &seg.StreamCreate{
 				Req: req,
 				Res: res,

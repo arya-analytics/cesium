@@ -9,7 +9,7 @@ import (
 )
 
 type allocator struct {
-	confluence.Transform[[]createOperation]
+	confluence.LinearTransform[[]createOperation, []createOperation]
 	allocate.Allocator[channel.Key, core.FileKey, createOperation]
 }
 
@@ -17,7 +17,7 @@ func newAllocator(counter *fileCounter, cfg allocate.Config) createSegment {
 	a := &allocator{
 		Allocator: allocate.New[channel.Key, core.FileKey, createOperation](counter, cfg),
 	}
-	a.Transform.Transform = a.allocate
+	a.ApplyTransform = a.allocate
 	return a
 }
 

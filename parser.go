@@ -15,7 +15,7 @@ type createParser struct {
 	logger    *zap.Logger
 	metrics   createMetrics
 	wg        *sync.WaitGroup
-	responses confluence.UnarySource[CreateResponse]
+	responses confluence.AbstractUnarySource[CreateResponse]
 	channels  map[channel.Key]channel.Channel
 	header    *kv.Header
 }
@@ -24,13 +24,13 @@ func (c *createParser) parse(segments []Segment) []createOperation {
 	var ops []createOperation
 	for _, seg := range segments {
 		op := createOperationUnary{
-			ctx:         c.ctx,
-			seg:         seg.Sugar(c.channels[seg.ChannelKey]),
-			logger:      c.logger,
-			kv:          c.header,
-			metrics:     c.metrics,
-			wg:          c.wg,
-			UnarySource: c.responses,
+			ctx:       c.ctx,
+			seg:       seg.Sugar(c.channels[seg.ChannelKey]),
+			logger:    c.logger,
+			kv:        c.header,
+			metrics:   c.metrics,
+			wg:        c.wg,
+			responses: c.responses,
 		}
 		c.metrics.segSize.Record(int(op.seg.UnboundedSize()))
 		ops = append(ops, op)
@@ -39,7 +39,7 @@ func (c *createParser) parse(segments []Segment) []createOperation {
 }
 
 type retrieveParser struct {
-	responses *confluence.UnarySource[RetrieveResponse]
+	responses *confluence.AbstractUnarySource[RetrieveResponse]
 	logger    *zap.Logger
 	metrics   retrieveMetrics
 	wg        *sync.WaitGroup
@@ -53,13 +53,13 @@ func (r *retrieveParser) parse(ranges []*segment.Range) []retrieveOperation {
 			seg := header.Sugar(rng.Channel)
 			seg.SetBounds(rng.Bounds)
 			ops = append(ops, retrieveOperationUnary{
-				ctx:         context.Background(),
-				errC:        r.errC,
-				seg:         seg,
-				dataRead:    r.metrics.dataRead,
-				wg:          r.wg,
-				logger:      r.logger,
-				UnarySource: r.responses,
+				ctx:       context.Background(),
+				errC:      r.errC,
+				seg:       seg,
+				dataRead:  r.metrics.dataRead,
+				wg:        r.wg,
+				logger:    r.logger,
+				responses: r.responses,
 			})
 		}
 	}
