@@ -129,11 +129,8 @@ var _ = Describe("Create", func() {
 				for _, ch := range channels {
 					go func(ch cesium.Channel) {
 						defer GinkgoRecover()
-						req, res := make(chan cesium.CreateRequest), make(chan cesium.CreateResponse)
-						go func() {
-							err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx, req, res)
-							Expect(err).ToNot(HaveOccurred())
-						}()
+						req, res, err := db.NewCreate().WhereChannels(ch.Key).Stream(ctx)
+						Expect(err).ToNot(HaveOccurred())
 						stc := &seg.StreamCreate{
 							Req:               req,
 							Res:               res,
@@ -169,11 +166,8 @@ var _ = Describe("Create", func() {
 					keys = append(keys, key)
 				}
 				Expect(channels).To(HaveLen(values.nChannels))
-				req, res := make(chan cesium.CreateRequest), make(chan cesium.CreateResponse)
-				go func() {
-					err := db.NewCreate().WhereChannels(keys...).Stream(ctx, req, res)
-					Expect(err).ToNot(HaveOccurred())
-				}()
+				req, res, err := db.NewCreate().WhereChannels(keys...).Stream(ctx)
+				Expect(err).ToNot(HaveOccurred())
 				stc := &seg.StreamCreate{
 					Req: req,
 					Res: res,

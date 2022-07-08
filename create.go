@@ -121,25 +121,22 @@ type Create struct {
 func (c Create) WhereChannels(keys ...channel.Key) Create { channel.SetKeys(c, keys...); return c }
 
 // Stream opens the stream.
-func (c Create) Stream(
-	ctx context.Context,
-	requests <-chan CreateRequest,
-	responses chan<- CreateResponse,
-) error {
-	query.SetContext(c, ctx)
+func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan CreateResponse, error) {
 	keys := channel.GetKeys(c)
-	if err := c.lock.Acquire(keys...); err != nil {
-		return err
-	}
-	defer c.lock.Release(keys...)
+	requests := confluence.NewStream[CreateRequest](0)
+	responses := confluence.NewStream[CreateResponse](0)
 
 	_channels, err := kv.NewChannel(c.kv).Get(keys...)
 	if err != nil {
-		return err
+		return nil, nil, err
+	}
+	if len(_channels) != len(keys) {
+		return nil, nil, NotFound
 	}
 
-	if len(_channels) != len(keys) {
-		return NotFound
+	query.SetContext(c, ctx)
+	if err := c.lock.Acquire(keys...); err != nil {
+		return nil, nil, err
 	}
 
 	channels := make(map[channel.Key]channel.Channel)
@@ -147,9 +144,8 @@ func (c Create) Stream(
 		channels[ch.Key] = ch
 	}
 
-	resInlet := confluence.NewInlet(responses)
 	res := confluence.AbstractUnarySource[CreateResponse]{}
-	res.OutTo(resInlet)
+	res.OutTo(responses)
 
 	wg := &sync.WaitGroup{}
 
@@ -165,24 +161,28 @@ func (c Create) Stream(
 
 	requestDur := c.metrics.request.Stopwatch()
 	requestDur.Start()
-	defer func() {
-		wg.Wait()
-		resInlet.Close()
-		requestDur.Stop()
-	}()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case req, ok := <-requests:
-			if !ok {
-				return nil
+	go func() {
+		defer func() {
+			wg.Wait()
+			responses.Close()
+			requestDur.Stop()
+			c.lock.Release(keys...)
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				responses.Inlet() <- CreateResponse{Error: ctx.Err()}
+			case req, ok := <-requests.Outlet():
+				if !ok {
+					return
+				}
+				ops := parser.parse(req.Segments)
+				wg.Add(len(ops))
+				c.ops.Inlet() <- ops
 			}
-			ops := parser.parse(req.Segments)
-			wg.Add(len(ops))
-			c.ops.Inlet() <- ops
 		}
-	}
+	}()
+	return requests.Inlet(), responses.Outlet(), nil
 }
 
 // |||||| QUERY FACTORY ||||||

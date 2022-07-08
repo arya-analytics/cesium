@@ -184,7 +184,7 @@ type DB interface {
 	//			stream := confluence.NewStream[cesium.RetrieveResponse](10)
 	//			iter.OutTo(stream)
 	//
-	//			for res := range stream.Outlet() {
+	//			for res := range stream.Output() {
 	//				if res.Error != nil {
 	//					log.Fatal(res.Error)
 	//				}
@@ -325,7 +325,7 @@ func (d *db) Sync(ctx context.Context, query interface{}, seg *[]Segment) error 
 // Close implements DB.
 func (d *db) Close() error {
 	d.shutdown()
-	err := d.wg.WaitOnAll()
+	err := d.wg.Wait()
 	kvErr := d.kv.Close()
 	if err != context.Canceled {
 		return err

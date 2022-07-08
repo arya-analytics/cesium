@@ -66,7 +66,7 @@ type streamIterator struct {
 	confluence.EmptyFlow
 	// parser converts segment metadata into executable operations on disk.
 	parser *retrieveParser
-	// executor is an Outlet where generated operations are piped for execution.
+	// executor is an Output where generated operations are piped for execution.
 	executor confluence.Inlet[[]retrieveOperation]
 	// wg is used to track the completion status of the latest operations in the iterator.
 	wg     *sync.WaitGroup

@@ -2,6 +2,7 @@ package cesium_test
 
 import (
 	"github.com/arya-analytics/cesium"
+	"github.com/arya-analytics/x/lock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -131,12 +132,7 @@ var _ = Describe("Create", func() {
 					}
 
 					By("Opening the create query")
-					req := make(chan cesium.CreateRequest)
-					res := make(chan cesium.CreateResponse)
-					go func() {
-						err := db.NewCreate().WhereChannels(key).Stream(ctx, req, res)
-						Expect(err).ToNot(HaveOccurred())
-					}()
+					req, res, err := db.NewCreate().WhereChannels(key).Stream(ctx)
 
 					By("Writing the segments")
 					req <- cReqOne
@@ -167,4 +163,24 @@ var _ = Describe("Create", func() {
 		})
 
 	})
+
+	Describe("Write Lock Violation", func() {
+		It("Should return an error when another query has a write lock on the channel", func() {
+			By("Creating a new channel")
+			key, err := db.CreateChannel(cesium.Channel{
+				DataRate: 1 * cesium.Hz,
+				DataType: cesium.Float64,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Opening the first query")
+			_, _, err = db.NewCreate().WhereChannels(key).Stream(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Failing to open the second query")
+			_, _, err = db.NewCreate().WhereChannels(key).Stream(ctx)
+			Expect(err).To(MatchError(lock.ErrLocked))
+		})
+	})
+
 })

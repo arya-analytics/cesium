@@ -1,8 +1,14 @@
 package channel
 
-import "github.com/arya-analytics/x/telem"
+import (
+	"github.com/arya-analytics/x/telem"
+	"strconv"
+)
 
 type Key uint16
+
+// String implements the fmt.Stringer interface.
+func (k Key) String() string { return strconv.Itoa(int(k)) }
 
 type Channel struct {
 	Key      Key
