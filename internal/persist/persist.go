@@ -2,8 +2,9 @@ package persist
 
 import (
 	"github.com/arya-analytics/cesium/internal/operation"
+	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kfs"
-	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/signal"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 )
@@ -16,11 +17,12 @@ type Persist[F comparable, O operation.Operation[F]] struct {
 	kfs kfs.FS[F]
 	ops chan O
 	Config
+	confluence.UnarySink[[]O]
 }
 
 const (
 	// DefaultNumWorkers is the default maximum number of goroutines Persist can operate at once.
-	DefaultNumWorkers = 50
+	DefaultNumWorkers = 10
 )
 
 type Config struct {
@@ -29,52 +31,51 @@ type Config struct {
 	NumWorkers int
 	// Persist will log events to this Logger.
 	Logger *zap.Logger
-	// Shutdown will be used to gracefully stop Persist by waiting for all executed operations to complete.
-	// NOTE: Exec will continue accepting operations after the Shutdown is called. It is up to the caller
-	// to ensure that the flow of operations is halted beforehand. Shutdown is not required if the caller
-	// is tracking the completion of operations internally.
-	Shutdown shutdown.Shutdown
 }
 
-func DefaultConfig() Config {
-	return Config{
-		NumWorkers: DefaultNumWorkers,
-	}
-}
+func DefaultConfig() Config { return Config{NumWorkers: DefaultNumWorkers} }
 
 // New creates a new Persist that wraps the provided kfs.FS.
 func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *Persist[F, O] {
 	p := &Persist[F, O]{kfs: kfs, Config: config, ops: make(chan O, config.NumWorkers)}
-	p.start()
 	return p
 }
 
-// Pipe queues a set of operations for execution. Operations are NOT guaranteed to execute in the order they are queued.
-func (p *Persist[K, O]) Pipe(ops <-chan []O) {
-	p.Shutdown.Go(func(sig chan shutdown.Signal) error {
-		defer close(p.ops)
-		for _ops := range ops {
-			for _, op := range _ops {
-				p.ops <- op
+func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.Option) {
+	p.start(ctx)
+	o := confluence.NewOptions(opts)
+	ctx.Go(func(ctx signal.Context) error {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case ops := <-p.In.Outlet():
+				for _, op := range ops {
+					p.ops <- op
+				}
 			}
 		}
-		return nil
-	})
+	}, o.Signal...)
 }
 
-func (p *Persist[K, O]) start() {
+func (p *Persist[K, O]) start(ctx signal.Context) {
 	for i := 0; i < p.NumWorkers; i++ {
-		p.Shutdown.Go(func(sig chan shutdown.Signal) error {
-			for op := range p.ops {
-				f, err := p.kfs.Acquire(op.FileKey())
-				if err != nil {
-					op.WriteError(err)
-					continue
+		ctx.Go(func(ctx signal.Context) error {
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case op := <-p.ops:
+					f, err := p.kfs.Acquire(op.FileKey())
+					if err != nil {
+						op.WriteError(err)
+						continue
+					}
+					op.Exec(f)
+					p.kfs.Release(op.FileKey())
 				}
-				op.Exec(f)
-				p.kfs.Release(op.FileKey())
+
 			}
-			return nil
 		})
 	}
 }

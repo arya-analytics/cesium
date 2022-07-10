@@ -2,31 +2,23 @@ package cesium
 
 import (
 	"github.com/arya-analytics/cesium/internal/allocate"
-	"github.com/arya-analytics/x/kfs"
+	"github.com/arya-analytics/cesium/internal/core"
 	"github.com/arya-analytics/x/kv"
 )
 
-type (
-	fileKey    int16
-	fileSystem = kfs.FS[fileKey]
-	file       = kfs.File[fileKey]
-)
-
 const (
-	// maxFileSize is the default maximum size of a cesium file.
-	maxFileSize = allocate.DefaultMaxDescriptors
+	// maxFileSize is the default maximum Size of a cesium file.
+	maxFileSize = allocate.DefaultMaxSize
 	// maxFileDescriptors is the default maximum number of file descriptors
 	// cesium can open at a time.
-	maxFileDescriptors = allocate.DefaultMaxSize
+	maxFileDescriptors = allocate.DefaultMaxDescriptors
 	// cesiumDirectory is the directory in which cesium files are stored.
 	cesiumDirectory = "cesium"
 	// kvDirectory is the directory in which kv files are stored.
 	kvDirectory = "kv"
 )
 
-type fileCounter struct {
-	kv.PersistedCounter
-}
+type fileCounter struct{ kv.PersistedCounter }
 
 func newFileCounter(kve kv.KV, key []byte) (*fileCounter, error) {
 	counter, err := kv.NewPersistedCounter(kve, key)
@@ -34,10 +26,10 @@ func newFileCounter(kve kv.KV, key []byte) (*fileCounter, error) {
 }
 
 // Next implements allocate.NextDescriptor.
-func (f *fileCounter) Next() fileKey {
+func (f *fileCounter) Next() core.FileKey {
 	v, err := f.Increment()
 	if err != nil {
 		panic(err)
 	}
-	return fileKey(v)
+	return core.FileKey(v)
 }

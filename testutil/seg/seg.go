@@ -3,11 +3,12 @@ package seg
 import (
 	"github.com/arya-analytics/cesium"
 	"github.com/arya-analytics/x/binary"
-	"io"
 	"math/rand"
 )
 
-type DataFactory func(n int) []byte
+type DataFactory interface {
+	Generate(n int) []byte
+}
 
 func New(c cesium.Channel, fac DataFactory, start cesium.TimeStamp, span cesium.TimeSpan) cesium.Segment {
 	return cesium.Segment{
@@ -45,12 +46,39 @@ func randomFloat64(n int) []float64 {
 	return GenSlice[float64](n, func(i int) float64 { return rand.Float64() })
 }
 
-func SeqFloat64(n int) []byte {
-	return writeBytes(sequentialFloat64Slice(n))
+type SequentialFloat64Factory struct {
+	Cache  bool
+	values []byte
 }
 
-func RandFloat64(n int) []byte {
-	return writeBytes(randomFloat64(n))
+func (s *SequentialFloat64Factory) Generate(n int) []byte {
+	if s.Cache && len(s.values) >= n {
+		if len(s.values) == n {
+			return s.values
+		}
+		return s.values[:n]
+	}
+	b := writeBytes(sequentialFloat64Slice(n))
+	if s.Cache {
+		s.values = b
+	}
+	return b
+}
+
+type RandomFloat64Factory struct {
+	Cache  bool
+	values []byte
+}
+
+func (s *RandomFloat64Factory) Generate(n int) []byte {
+	if s.Cache && len(s.values) >= n*8 {
+		return s.values[:n*8]
+	}
+	b := writeBytes(randomFloat64(n))
+	if s.Cache {
+		s.values = b
+	}
+	return b
 }
 
 func writeBytes(data interface{}) []byte {
@@ -63,11 +91,11 @@ func writeBytes(data interface{}) []byte {
 
 func generateSpan(c cesium.Channel, fac DataFactory, span cesium.TimeSpan) []byte {
 	sc := c.DataRate.SampleCount(span)
-	return fac(sc)
+	return fac.Generate(sc)
 }
 
 func DataTypeFactory(dt cesium.Density) DataFactory {
-	m := map[cesium.Density]DataFactory{cesium.Float64: SeqFloat64}
+	m := map[cesium.Density]DataFactory{cesium.Float64: &SequentialFloat64Factory{}}
 	return m[dt]
 }
 
@@ -173,7 +201,7 @@ func (sc *StreamCreate) CreateCRequestsOfN(c, n int) []cesium.CreateRequest {
 func (sc *StreamCreate) CloseAndWait() error {
 	close(sc.Req)
 	for resV := range sc.Res {
-		return resV.Err
+		return resV.Error
 	}
 	return nil
 }
@@ -184,16 +212,10 @@ type StreamRetrieve struct {
 	Res <-chan cesium.RetrieveResponse
 }
 
-func (sr StreamRetrieve) All() ([]cesium.Segment, error) {
+func (sr StreamRetrieve) All() []cesium.Segment {
 	var s []cesium.Segment
 	for resV := range sr.Res {
-		if resV.Err == io.EOF {
-			return s, nil
-		}
-		if resV.Err != nil {
-			return nil, resV.Err
-		}
 		s = append(s, resV.Segments...)
 	}
-	return s, nil
+	return s
 }

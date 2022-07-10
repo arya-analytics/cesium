@@ -2,6 +2,7 @@ package allocate
 
 import (
 	"github.com/arya-analytics/x/alamos"
+	"github.com/arya-analytics/x/telem"
 	"math"
 	"sync"
 )
@@ -40,7 +41,7 @@ func New[K, D comparable, I Item[K]](nd NextDescriptor[D], config Config) Alloca
 	metrics := newMetrics(mergedCfg.Experiment)
 	return &defaultAlloc[K, D, I]{
 		config:          mergedCfg,
-		descriptorSizes: make(map[D]int),
+		descriptorSizes: make(map[D]telem.Size),
 		itemDescriptors: make(map[K]D),
 		nextD:           nd,
 		metrics:         metrics,
@@ -51,7 +52,7 @@ type Item[K comparable] interface {
 	// Key returns the key of the item.
 	Key() K
 	// Size returns the size of the item.
-	Size() int
+	Size() telem.Size
 }
 
 // NextDescriptor returns a unique descriptor key that represents the next descriptor.
@@ -72,7 +73,7 @@ type Config struct {
 	MaxDescriptors int
 	// MaxSize is the maximum size of a descriptor in bytes. If this value is 0, the default value of
 	// DefaultMaxSize is used.
-	MaxSize int
+	MaxSize telem.Size
 	// Experiment is the experiment that Allocate will use to record its metrics.
 	Experiment alamos.Experiment
 }
@@ -97,7 +98,7 @@ func mergeConfig(c Config) Config {
 
 type defaultAlloc[K, D comparable, I Item[K]] struct {
 	mu              sync.Mutex
-	descriptorSizes map[D]int
+	descriptorSizes map[D]telem.Size
 	itemDescriptors map[K]D
 	nextD           NextDescriptor[D]
 	config          Config
@@ -127,7 +128,7 @@ func (d *defaultAlloc[K, D, I]) allocate(item I) D {
 	}
 	size, ok := d.descriptorSizes[key]
 	if !ok {
-		panic("alloc: descriptor not found")
+		panic("[cesium.allocate] - descriptor not found")
 	}
 	// If the descriptor is too large, allocate a new descriptor.
 	if (size + item.Size()) > d.config.MaxSize {
@@ -166,7 +167,7 @@ func (d *defaultAlloc[K, D, I]) scrubOversized() {
 }
 
 func (d *defaultAlloc[K, D, I]) smallestDescriptor() (desc D) {
-	min := math.MaxInt
+	min := telem.Size(math.MaxInt)
 	for k, size := range d.descriptorSizes {
 		if size < min {
 			desc = k
@@ -179,7 +180,4 @@ type NextDescriptorInt struct {
 	v int
 }
 
-func (n *NextDescriptorInt) Next() int {
-	n.v++
-	return n.v
-}
+func (n *NextDescriptorInt) Next() int { n.v++; return n.v }

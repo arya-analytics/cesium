@@ -3,7 +3,6 @@ package cesium
 import (
 	"github.com/arya-analytics/x/alamos"
 	"github.com/arya-analytics/x/kfs"
-	"github.com/arya-analytics/x/shutdown"
 	"github.com/cockroachdb/pebble/vfs"
 	"go.uber.org/zap"
 	"time"
@@ -20,10 +19,9 @@ type options struct {
 			maxAge   time.Duration
 		}
 	}
-	kvFS         vfs.FS
-	exp          alamos.Experiment
-	shutdownOpts []shutdown.Option
-	logger       *zap.Logger
+	kvFS   vfs.FS
+	exp    alamos.Experiment
+	logger *zap.Logger
 }
 
 func newOptions(dirname string, opts ...Option) *options {
@@ -41,9 +39,6 @@ func mergeDefaultOptions(o *options) {
 	}
 	if o.kfs.sync.maxAge == 0 {
 		o.kfs.sync.maxAge = 1 * time.Hour
-	}
-	if o.shutdownOpts == nil {
-		o.shutdownOpts = []shutdown.Option{}
 	}
 
 	// || LOGGER ||
@@ -73,17 +68,5 @@ func WithLogger(logger *zap.Logger) Option {
 func WithExperiment(exp alamos.Experiment) Option {
 	return func(o *options) {
 		o.exp = alamos.Sub(exp, "cesium")
-	}
-}
-
-func WithShutdownThreshold(threshold time.Duration) Option {
-	return func(o *options) {
-		o.shutdownOpts = append(o.shutdownOpts, shutdown.WithThreshold(threshold))
-	}
-}
-
-func WithShutdownOptions(opts ...shutdown.Option) Option {
-	return func(o *options) {
-		o.shutdownOpts = append(o.shutdownOpts, opts...)
 	}
 }

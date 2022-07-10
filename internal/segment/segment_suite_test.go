@@ -1,4 +1,4 @@
-package query_test
+package segment_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestQuery(t *testing.T) {
+func TestSegment(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Query Suite")
+	RunSpecs(t, "segment Suite")
 }
