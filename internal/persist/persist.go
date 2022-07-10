@@ -44,7 +44,7 @@ func New[F comparable, O operation.Operation[F]](kfs kfs.FS[F], config Config) *
 func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.Option) {
 	p.start(ctx)
 	o := confluence.NewOptions(opts)
-	ctx.Go(func() error {
+	ctx.Go(func(ctx signal.Context) error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -60,7 +60,7 @@ func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.Option) {
 
 func (p *Persist[K, O]) start(ctx signal.Context) {
 	for i := 0; i < p.NumWorkers; i++ {
-		ctx.Go(func() error {
+		ctx.Go(func(ctx signal.Context) error {
 			for {
 				select {
 				case <-ctx.Done():

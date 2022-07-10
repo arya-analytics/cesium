@@ -1,6 +1,7 @@
 package cesium
 
 import (
+	"context"
 	"github.com/arya-analytics/cesium/internal/core"
 	"github.com/arya-analytics/x/kfs"
 	"github.com/arya-analytics/x/kv"
@@ -32,7 +33,7 @@ const channelCounterKey = "cs-nc"
 //
 // See each options documentation for more.
 func Open(dirname string, opts ...Option) (DB, error) {
-	ctx, shutdown := signal.Background()
+	ctx, shutdown := signal.WithCancel(context.Background())
 
 	o := newOptions(dirname, opts...)
 
