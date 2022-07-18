@@ -41,7 +41,7 @@ type DB interface {
 	//      segments := []cesium.Segment{
 	//    		ChannelKey: key,
 	//          Start: cesium.Now(),
-	//          Data: cesium.MarshalFloat64([]{1.0, 2.0, 3.0})
+	//          data: cesium.MarshalFloat64([]{1.0, 2.0, 3.0})
 	//		}
 	//
 	//		// db.Sync is a helper that turns a typically asynchronous write into an
@@ -116,7 +116,7 @@ type DB interface {
 	// It's possible to retrieve a subset of data by time range by using the
 	// Retrieve.WhereTimeRange method.
 	//
-	// Notes on Segmentation of Data:
+	// Notes on Segmentation of data:
 	//
 	//		Retrieve results returned as segments (segment). The segments are not
 	//	 	guaranteed to be in chronological order. This is a performance optimization
@@ -277,7 +277,7 @@ type (
 )
 
 type db struct {
-	kv                kvx.KV
+	kv                kvx.DB
 	wg                signal.WaitGroup
 	shutdown          context.CancelFunc
 	create            query.Factory[Create]

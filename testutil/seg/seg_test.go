@@ -2,7 +2,7 @@ package seg_test
 
 import (
 	"github.com/arya-analytics/cesium"
-	"github.com/arya-analytics/cesium/internal/testutil/seg"
+	"github.com/arya-analytics/cesium/testutil/seg"
 	seg2 "github.com/arya-analytics/cesium/testutil/seg"
 	"github.com/arya-analytics/x/binary"
 	. "github.com/onsi/ginkgo/v2"
@@ -10,7 +10,7 @@ import (
 )
 
 var _ = Describe("Seg", func() {
-	Describe("Data Factories", func() {
+	Describe("data Factories", func() {
 		Describe("Float64", func() {
 			Describe("Sequential", func() {
 				It("Should generate the correct floating point values", func() {

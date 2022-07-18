@@ -10,7 +10,7 @@ type Channel struct {
 	db *gorp.DB
 }
 
-func NewChannel(kve kv.KV) *Channel { return &Channel{db: gorp.Wrap(kve)} }
+func NewChannel(kve kv.DB) *Channel { return &Channel{db: gorp.Wrap(kve)} }
 
 func (c *Channel) Get(keys ...channel.Key) (res []channel.Channel, err error) {
 	return res, gorp.NewRetrieve[channel.Key, channel.Channel]().Entries(&res).WhereKeys(keys...).Exec(c.db)

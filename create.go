@@ -47,7 +47,7 @@ type createConfig struct {
 	// fs is the file system for writing segment data to.
 	fs core.FS
 	// kv is the key-value store for writing segment metadata to.
-	kv kvx.KV
+	kv kvx.DB
 	// logger is where create operations will log their progress.
 	logger *zap.Logger
 	// allocate is used for setting the parameters for allocating a segment to  afile.
@@ -110,7 +110,7 @@ type Create struct {
 	query.Query
 	ops     confluence.Inlet[[]createOperation]
 	lock    lock.Map[channel.Key]
-	kv      kvx.KV
+	kv      kvx.DB
 	logger  *zap.Logger
 	metrics createMetrics
 }
@@ -189,7 +189,7 @@ func (c Create) Stream(ctx context.Context) (chan<- CreateRequest, <-chan Create
 
 type createFactory struct {
 	lock    lock.Map[channel.Key]
-	kv      kvx.KV
+	kv      kvx.DB
 	logger  *zap.Logger
 	header  *kv.Header
 	metrics createMetrics
@@ -215,7 +215,7 @@ func startCreate(ctx signal.Context, cfg createConfig) (query.Factory[Create], e
 
 	mergeCreateConfigDefaults(&cfg)
 
-	// a kv persisted counter that tracks the number of files that a DB has created.
+	// a kv persisted counter that tracks the number of files that a gorpDB has created.
 	// The segment allocator uses it to determine the next file to open.
 	fCount, err := newFileCounter(cfg.kv, []byte(fileCounterKey))
 	if err != nil {

@@ -2,7 +2,7 @@ package cesium_test
 
 //var _ = Describe("Sync", func() {
 //	var (
-//		db cesium.DB
+//		db cesium.gorpDB
 //	)
 //	BeforeEach(func() {
 //		var err error
@@ -14,14 +14,14 @@ package cesium_test
 //		It("Should write the segments to disk", func() {
 //				WithRate(1 * cesium.Hz).
 //				WithType(cesium.Float64).
-//				Exec(ctx)
+//				exec(ctx)
 //			Expect(err).ToNot(HaveOccurred())
 //
 //			segments := []cesium.Segment{
 //				{
 //					CesiumKey: ch.Name,
 //					Start:      cesium.Now(),
-//					Data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
+//					data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
 //				},
 //			}
 //
@@ -41,24 +41,24 @@ package cesium_test
 //			Expect(resSegments).To(HaveLen(1))
 //		})
 //	})
-//	Context("Retrieve", func() {
+//	Context("getAttributes", func() {
 //		It("Should retrieve segments from disk", func() {
 //			ch, err := db.CreateChannel().
 //				WithRate(1 * cesium.Hz).
 //				WithType(cesium.Float64).
-//				Exec(ctx)
+//				exec(ctx)
 //			Expect(err).ToNot(HaveOccurred())
 //
 //			segments := []cesium.Segment{
 //				{
 //					CesiumKey: ch.Name,
 //					Start:      cesium.Now(),
-//					Data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
+//					data:       cesium.MarshalFloat64([]float64{1, 2, 3}),
 //				},
 //				{
 //					CesiumKey: ch.Name,
 //					Start:      cesium.Now().Add(3 * cesium.Second),
-//					Data:       cesium.MarshalFloat64([]float64{4, 5, 6}),
+//					data:       cesium.MarshalFloat64([]float64{4, 5, 6}),
 //				},
 //			}
 //

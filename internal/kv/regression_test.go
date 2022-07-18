@@ -13,12 +13,12 @@ import (
 
 var _ = Describe("Regression", func() {
 	var (
-		kve      kvx.KV
+		kve      kvx.DB
 		headerKV *kv.Header
 		chKV     *kv.Channel
 	)
 	BeforeEach(func() {
-		kve = memkv.Open()
+		kve = memkv.New()
 		chKV = kv.NewChannel(kve)
 		headerKV = kv.NewHeader(kve)
 

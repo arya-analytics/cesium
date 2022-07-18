@@ -49,7 +49,11 @@ func (p *Persist[K, O]) Flow(ctx signal.Context, opts ...confluence.Option) {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case ops := <-p.In.Outlet():
+			case ops, ok := <-p.In.Outlet():
+				if !ok {
+					close(p.ops)
+					return nil
+				}
 				for _, op := range ops {
 					p.ops <- op
 				}
@@ -65,7 +69,10 @@ func (p *Persist[K, O]) start(ctx signal.Context) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case op := <-p.ops:
+				case op, ok := <-p.ops:
+					if !ok {
+						return nil
+					}
 					f, err := p.kfs.Acquire(op.FileKey())
 					if err != nil {
 						op.WriteError(err)

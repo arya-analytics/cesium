@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-var _ = Describe("Retrieve", func() {
+var _ = Describe("getAttributes", func() {
 	Context("Single channel", func() {
 		var (
 			db      cesium.DB
