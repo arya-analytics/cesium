@@ -4,8 +4,9 @@ import (
 	"context"
 	"github.com/arya-analytics/cesium/internal/operation"
 	"github.com/arya-analytics/cesium/internal/persist"
+	"github.com/arya-analytics/x/confluence"
 	"github.com/arya-analytics/x/kfs"
-	"github.com/arya-analytics/x/shutdown"
+	"github.com/arya-analytics/x/signal"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -36,28 +37,28 @@ func (b *BasicOperation) WriteError(err error) {
 var _ = Describe("Persist", func() {
 	var (
 		p  *persist.Persist[int, operation.Operation[int]]
-		sd shutdown.Shutdown
 		fs kfs.FS[int]
 	)
 	BeforeEach(func() {
-		sd = shutdown.New()
 		var err error
 		fs, err = kfs.New[int]("testdata", kfs.WithFS(kfs.NewMem()))
 		Expect(err).ToNot(HaveOccurred())
 		p = persist.New[int, operation.Operation[int]](fs, persist.Config{
 			NumWorkers: 50,
-			Shutdown:   sd,
 		})
 	})
 	Describe("QExec", func() {
 		It("Should execute an operation correctly", func() {
 			b := &BasicOperation{}
-			ops := make(chan []operation.Operation[int])
-			p.Pipe(ops)
-			ops <- []operation.Operation[int]{b}
-			close(ops)
+			ops := confluence.NewStream[[]operation.Operation[int]](1)
+			ctx, cancel := signal.TODO()
+			defer cancel()
+			p.InFrom(ops)
+			p.Flow(ctx)
+			ops.Inlet() <- []operation.Operation[int]{b}
+			ops.Close()
+			Expect(ctx.Wait()).To(Succeed())
 			// Read the file.
-			Expect(sd.Shutdown()).To(Succeed())
 			f, err := fs.Acquire(1)
 			Expect(err).ToNot(HaveOccurred())
 			fs.Release(1)
@@ -73,11 +74,14 @@ var _ = Describe("Persist", func() {
 	Describe("Shutdown", func() {
 		It("Should execute all operations before shutting down", func() {
 			b := &BasicOperation{}
-			ops := make(chan []operation.Operation[int])
-			p.Pipe(ops)
-			ops <- []operation.Operation[int]{b}
-			close(ops)
-			Expect(sd.Shutdown()).To(Succeed())
+			ops := confluence.NewStream[[]operation.Operation[int]](1)
+			p.InFrom(ops)
+			ctx, cancel := signal.TODO()
+			defer cancel()
+			p.Flow(ctx)
+			ops.Inlet() <- []operation.Operation[int]{b}
+			ops.Close()
+			Expect(ctx.Wait()).To(Succeed())
 			Expect(b.executed).To(BeTrue())
 		})
 	})

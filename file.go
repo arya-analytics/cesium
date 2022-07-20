@@ -20,7 +20,7 @@ const (
 
 type fileCounter struct{ kv.PersistedCounter }
 
-func newFileCounter(kve kv.KV, key []byte) (*fileCounter, error) {
+func newFileCounter(kve kv.DB, key []byte) (*fileCounter, error) {
 	counter, err := kv.NewPersistedCounter(kve, key)
 	return &fileCounter{PersistedCounter: *counter}, err
 }

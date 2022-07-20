@@ -162,7 +162,7 @@ type Iterator interface {
 }
 
 // NewIterator opens a new unaryIterator over the specified time range of a channel.
-func NewIterator(kve kv.KV, rng telem.TimeRange, keys ...channel.Key) (iter Iterator) {
+func NewIterator(kve kv.DB, rng telem.TimeRange, keys ...channel.Key) (iter Iterator) {
 	if len(keys) == 0 {
 		panic("[cesium.kv] - NewIterator() called with no keys")
 	}
@@ -191,7 +191,7 @@ type unaryIterator struct {
 }
 
 // NewIterator opens a new unaryIterator over the specified time range of a channel.
-func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *unaryIterator) {
+func newUnaryIterator(kve kv.DB, rng telem.TimeRange, key channel.Key) (iter *unaryIterator) {
 	iter = &unaryIterator{bounds: telem.TimeRangeMax}
 
 	chs, err := NewChannel(kve).Get(key)
@@ -206,7 +206,9 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 
 	iter.channel = chs[0]
 
-	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterPrefix(segment.NewKeyPrefix(key)))
+	iter.internal = gorp.WrapKVIter[segment.Header](
+		kve.NewIterator(kv.PrefixIter(segment.NewKeyPrefix(key))),
+	)
 
 	start, end := iter.key(rng.Start).Bytes(), iter.key(rng.End).Bytes()
 
@@ -235,7 +237,9 @@ func newUnaryIterator(kve kv.KV, rng telem.TimeRange, key channel.Key) (iter *un
 
 	iter.bounds = rng
 	iter.maybeSetError(iter.internal.Close())
-	iter.internal = gorp.WrapKVIter[segment.Header](kve.IterRange(start, end))
+	iter.internal = gorp.WrapKVIter[segment.Header](
+		kve.NewIterator(kv.RangeIter(start, end)),
+	)
 
 	return iter
 }

@@ -40,7 +40,7 @@ type retrieveConfig struct {
 	// fs is the file system for reading segment data from.
 	fs core.FS
 	// kv is the key-value store for reading segment metadata from.
-	kv kv.KV
+	kv kv.DB
 	// logger is where retrieve operations will log their progress.
 	logger *zap.Logger
 	// debounce sets the debounce parameters for retrieve operations.
@@ -84,7 +84,7 @@ type RetrieveResponse struct {
 
 type Retrieve struct {
 	query.Query
-	kve     kv.KV
+	kve     kv.DB
 	ops     confluence.Inlet[[]retrieveOperation]
 	metrics retrieveMetrics
 	logger  *zap.Logger
@@ -139,7 +139,7 @@ func timeRange(q query.Query) TimeRange {
 // |||||| QUERY FACTORY ||||||
 
 type retrieveFactory struct {
-	kve     kv.KV
+	kve     kv.DB
 	logger  *zap.Logger
 	metrics retrieveMetrics
 	confluence.AbstractUnarySource[[]retrieveOperation]

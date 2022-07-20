@@ -45,7 +45,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		return nil, err
 	}
 
-	// |||||| KV ||||||
+	// |||||| txn ||||||
 
 	kve, err := openKV(o)
 	if err != nil {
@@ -81,7 +81,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| CHANNEL ||||||
 
-	// a kv persisted counter that tracks the number of channels that a DB has created.
+	// a kv persisted counter that tracks the number of channels that a gorpDB has created.
 	// this is used to autogenerate unique keys for a channel.
 	channelKeyCounter, err := kv.NewPersistedCounter(kve, []byte(channelCounterKey))
 	if err != nil {
@@ -113,7 +113,7 @@ func openFS(ctx signal.Context, opts *options) (core.FS, error) {
 	return fs, err
 }
 
-func openKV(opts *options) (kv.KV, error) {
+func openKV(opts *options) (kv.DB, error) {
 	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, kvDirectory), &pebble.Options{FS: opts.kvFS})
 	return pebblekv.Wrap(pebbleDB), err
 }

@@ -10,7 +10,7 @@ type Header struct {
 	db *gorp.DB
 }
 
-func NewHeader(kve kv.KV) *Header { return &Header{db: gorp.Wrap(kve, gorp.WithoutTypePrefix())} }
+func NewHeader(kve kv.DB) *Header { return &Header{db: gorp.Wrap(kve, gorp.WithoutTypePrefix())} }
 
 func (s *Header) Get(key segment.Key) (res segment.Header, err error) {
 	return res, gorp.NewRetrieve[[]byte, segment.Header]().Entry(&res).WhereKeys(key.Bytes()).Exec(s.db)

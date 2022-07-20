@@ -14,14 +14,14 @@ import (
 
 var _ = Describe("Iterate", func() {
 	var (
-		kve      kvx.KV
+		kve      kvx.DB
 		ch       channel.Channel
 		headerKV *kv.Header
 	)
 
 	BeforeEach(func() {
 		ch = channel.Channel{Key: 1, DataRate: 1, DataType: 1}
-		kve = memkv.Open()
+		kve = memkv.New()
 		headerKV = kv.NewHeader(kve)
 		chKV := kv.NewChannel(kve)
 		Expect(chKV.Set(ch)).To(Succeed())
