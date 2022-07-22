@@ -278,6 +278,7 @@ type (
 
 type db struct {
 	kv                kvx.DB
+	externalKV        bool
 	wg                signal.WaitGroup
 	shutdown          context.CancelFunc
 	create            query.Factory[Create]

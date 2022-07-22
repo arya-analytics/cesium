@@ -47,8 +47,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// |||||| txn ||||||
 
-	kve, err := openKV(o)
-	if err != nil {
+	if err := maybeOpenKv(o); err != nil {
 		shutdown()
 		return nil, err
 	}
@@ -59,7 +58,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		exp:    o.exp,
 		logger: o.logger,
 		fs:     fs,
-		kv:     kve,
+		kv:     o.kv.engine,
 	})
 	if err != nil {
 		shutdown()
@@ -72,7 +71,7 @@ func Open(dirname string, opts ...Option) (DB, error) {
 		exp:    o.exp,
 		logger: o.logger,
 		fs:     fs,
-		kv:     kve,
+		kv:     o.kv.engine,
 	})
 	if err != nil {
 		shutdown()
@@ -83,14 +82,15 @@ func Open(dirname string, opts ...Option) (DB, error) {
 
 	// a kv persisted counter that tracks the number of channels that a gorpDB has created.
 	// this is used to autogenerate unique keys for a channel.
-	channelKeyCounter, err := kv.NewPersistedCounter(kve, []byte(channelCounterKey))
+	channelKeyCounter, err := kv.NewPersistedCounter(o.kv.engine, []byte(channelCounterKey))
 	if err != nil {
 		shutdown()
 		return nil, err
 	}
 
 	return &db{
-		kv:                kve,
+		kv:                o.kv.engine,
+		externalKV:        o.kv.external,
 		shutdown:          shutdown,
 		create:            create,
 		retrieve:          retrieve,
@@ -102,18 +102,25 @@ func Open(dirname string, opts ...Option) (DB, error) {
 func openFS(ctx signal.Context, opts *options) (core.FS, error) {
 	fs, err := kfs.New[core.FileKey](
 		filepath.Join(opts.dirname, cesiumDirectory),
-		opts.kfs.opts...,
+		opts.fs.opts...,
 	)
 	sync := &kfs.Sync[core.FileKey]{
 		FS:       fs,
-		Interval: opts.kfs.sync.interval,
-		MaxAge:   opts.kfs.sync.maxAge,
+		Interval: opts.fs.sync.interval,
+		MaxAge:   opts.fs.sync.maxAge,
 	}
 	sync.Start(ctx)
 	return fs, err
 }
 
-func openKV(opts *options) (kv.DB, error) {
-	pebbleDB, err := pebble.Open(filepath.Join(opts.dirname, kvDirectory), &pebble.Options{FS: opts.kvFS})
-	return pebblekv.Wrap(pebbleDB), err
+func maybeOpenKv(opts *options) error {
+	if opts.kv.engine == nil {
+		pebbleDB, err := pebble.Open(
+			filepath.Join(opts.dirname, kvDirectory),
+			&pebble.Options{FS: opts.kv.fs},
+		)
+		opts.kv.engine = pebblekv.Wrap(pebbleDB)
+		return err
+	}
+	return nil
 }
