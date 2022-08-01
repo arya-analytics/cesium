@@ -327,7 +327,11 @@ func (d *db) Sync(ctx context.Context, query interface{}, seg *[]Segment) error 
 func (d *db) Close() error {
 	d.shutdown()
 	err := d.wg.Wait()
-	kvErr := d.kv.Close()
+	if d.externalKV {
+		if kvErr := d.kv.Close(); kvErr != nil {
+			return kvErr
+		}
+	}
 	if err != context.Canceled {
 		return err
 	}
